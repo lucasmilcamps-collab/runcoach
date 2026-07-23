@@ -1,10 +1,20 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, garmin
+from app.api import activities, auth, garmin, jobs
 from app.core.config import settings
+from app.core.db import get_db
 
-app = FastAPI(title="RunCoach API")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await get_db().activities.create_index("garmin_activity_id", unique=True)
+    yield
+
+
+app = FastAPI(title="RunCoach API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,6 +26,8 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(garmin.router)
+app.include_router(activities.router)
+app.include_router(jobs.router)
 
 
 @app.get("/health")

@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api/client';
 export type GarminConnectResult = {
   status: 'connected' | 'needs_mfa';
   mfa_token: string | null;
+  sync_job_id: string | null;
 };
 
 /**

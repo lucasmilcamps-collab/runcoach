@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.db import get_db
 from app.core.security import get_current_user
 from app.models.garmin import GarminConnectRequest, GarminConnectResponse, GarminMfaRequest
-from app.services import garmin_service
+from app.services import garmin_service, garmin_sync_service
 
 router = APIRouter(prefix="/api/v1/garmin", tags=["garmin"])
 
@@ -32,7 +32,12 @@ async def connect(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "GARMIN_UPSTREAM_ERROR", "message": "Garmin Connect ne répond pas."},
         ) from exc
-    return GarminConnectResponse(status=result_status, mfa_token=mfa_token)
+
+    sync_job_id = None
+    if result_status == "connected":
+        sync_job_id = await garmin_sync_service.maybe_start_sync(db, str(user["_id"]))
+
+    return GarminConnectResponse(status=result_status, mfa_token=mfa_token, sync_job_id=sync_job_id)
 
 
 @router.post("/connect/mfa", response_model=GarminConnectResponse)
@@ -58,4 +63,6 @@ async def connect_mfa(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "GARMIN_UPSTREAM_ERROR", "message": "Garmin Connect ne répond pas."},
         ) from exc
-    return GarminConnectResponse(status="connected")
+
+    sync_job_id = await garmin_sync_service.maybe_start_sync(db, str(user["_id"]))
+    return GarminConnectResponse(status="connected", sync_job_id=sync_job_id)
