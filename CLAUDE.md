@@ -33,11 +33,17 @@ docs/             Specs fonctionnelles et décisions d'architecture
 ## Commandes
 
 ```bash
-# Backend
+# Backend (uv si disponible)
 cd backend && uv sync                      # installer les dépendances
 uv run uvicorn app.main:app --reload       # lancer en dev (port 8000)
 uv run pytest                              # tests
 uv run ruff check --fix && uv run ruff format   # lint + format
+
+# Backend — repli si `uv` est bloqué (ex. politique de sécurité d'entreprise) :
+# python -m venv .venv && .venv\Scripts\python -m pip install -r requirements-dev.txt
+# .venv\Scripts\python -m uvicorn app.main:app --reload
+# .venv\Scripts\python -m pytest
+# .venv\Scripts\python -m ruff check --fix . && .venv\Scripts\python -m ruff format .
 
 # Mobile
 cd mobile && npm install

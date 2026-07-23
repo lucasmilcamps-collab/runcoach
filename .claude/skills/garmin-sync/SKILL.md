@@ -20,11 +20,12 @@ from garminconnect import Garmin
 
 client = Garmin(email, password)
 client.login()
-# Sérialiser les tokens pour éviter de re-login à chaque sync
-token_data = client.garth.dumps()   # str base64
+# Sérialiser les tokens pour éviter de re-login à chaque sync.
+# Note : sur garminconnect >= 0.3, l'attribut s'appelle `.client` (pas `.garth`).
+token_data = client.client.dumps()   # str JSON
 # Restaurer plus tard :
 client = Garmin()
-client.garth.loads(token_data)
+client.client.loads(token_data)
 ```
 
 Règles :
