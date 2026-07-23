@@ -1,25 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { activityLabel } from '@/lib/activity-labels';
 import { Activity, listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { syncGarmin } from '@/lib/api/garmin';
 import { useAuthStore } from '@/lib/stores/auth-store';
-
-const SPORT_LABELS: Record<Activity['sport'], string> = {
-  RUN: 'Course à pied',
-  PADEL: 'Padel',
-  BASKETBALL: 'Basket',
-  BIKE: 'Vélo',
-  STRENGTH: 'Renfo',
-  OTHER: 'Autre',
-};
 
 function formatDuration(durationS: number): string {
   const minutes = Math.round(durationS / 60);
@@ -102,36 +94,40 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <ThemedText type="title">Votre tableau de bord</ThemedText>
-          <ThemedText type="default" themeColor="textSecondary">
-            {headline}
-          </ThemedText>
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <ThemedText type="title">Votre tableau de bord</ThemedText>
+            <ThemedText type="default" themeColor="textSecondary">
+              {headline}
+            </ThemedText>
+          </View>
+
+          {isSyncing ? (
+            <SyncingCard />
+          ) : activities.length > 0 ? (
+            <ActivityList activities={activities} />
+          ) : (
+            <FlatContour />
+          )}
+        </ScrollView>
+
+        <View style={styles.footer}>
+          {!garminConnected ? (
+            <Button
+              label="Connecter Garmin"
+              variant="ghost"
+              onPress={() => router.push('/garmin-connect')}
+            />
+          ) : (
+            <Button
+              label="Synchroniser Garmin"
+              variant="ghost"
+              loading={isSyncing}
+              onPress={() => syncMutation.mutate()}
+            />
+          )}
         </View>
-
-        {isSyncing ? (
-          <SyncingCard />
-        ) : activities.length > 0 ? (
-          <ActivityList activities={activities} />
-        ) : (
-          <FlatContour />
-        )}
-
-        {!garminConnected ? (
-          <Button
-            label="Connecter Garmin"
-            variant="ghost"
-            onPress={() => router.push('/garmin-connect')}
-          />
-        ) : (
-          <Button
-            label="Synchroniser Garmin"
-            variant="ghost"
-            loading={isSyncing}
-            onPress={() => syncMutation.mutate()}
-          />
-        )}
       </View>
     </SafeAreaView>
   );
@@ -156,7 +152,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
           key={activity.id}
           style={[styles.activityRow, index === activities.length - 1 && styles.activityRowLast]}>
           <View style={styles.activityRowMain}>
-            <ThemedText type="default">{SPORT_LABELS[activity.sport]}</ThemedText>
+            <ThemedText type="default">{activityLabel(activity)}</ThemedText>
             <ThemedText type="waypointLabel" themeColor="textSecondary">
               {formatDate(activity.start_time)}
             </ThemedText>
@@ -193,13 +189,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     paddingHorizontal: Spacing.four,
   },
-  content: {
+  container: {
     flex: 1,
-    gap: Spacing.five,
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     width: '100%',
+  },
+  scrollContent: {
+    gap: Spacing.five,
     paddingTop: Spacing.four,
+    paddingBottom: Spacing.four,
+  },
+  footer: {
+    paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
   },
   header: {

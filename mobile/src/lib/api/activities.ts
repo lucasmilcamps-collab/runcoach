@@ -5,6 +5,7 @@ export type Activity = {
   id: string;
   garmin_activity_id: number;
   sport: SportType;
+  garmin_type_key: string | null;
   start_time: string;
   duration_s: number;
   distance_m: number | null;

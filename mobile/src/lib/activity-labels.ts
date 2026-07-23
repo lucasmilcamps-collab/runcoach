@@ -1,0 +1,45 @@
+import type { Activity } from '@/lib/api/activities';
+
+// French labels for the Garmin activity type keys we've seen; anything not
+// listed falls back to the prettified key so the UI never just says "Autre".
+const GARMIN_TYPE_LABELS: Record<string, string> = {
+  running: 'Course à pied',
+  treadmill_running: 'Tapis de course',
+  trail_running: 'Trail',
+  track_running: 'Piste',
+  virtual_run: 'Course virtuelle',
+  walking: 'Marche',
+  hiking: 'Randonnée',
+  cycling: 'Vélo',
+  road_biking: 'Vélo route',
+  mountain_biking: 'VTT',
+  gravel_cycling: 'Gravel',
+  indoor_cycling: 'Vélo indoor',
+  virtual_ride: 'Vélo virtuel',
+  lap_swimming: 'Natation',
+  open_water_swimming: 'Natation eau libre',
+  strength_training: 'Renforcement',
+  indoor_cardio: 'Cardio',
+  cardio: 'Cardio',
+  yoga: 'Yoga',
+  pilates: 'Pilates',
+  elliptical: 'Elliptique',
+  stair_climbing: 'Escaliers',
+  tennis: 'Tennis',
+  padel: 'Padel',
+  basketball: 'Basket',
+  soccer: 'Football',
+  fitness_equipment: 'Musculation',
+  multi_sport: 'Multisport',
+};
+
+function prettifyKey(key: string): string {
+  const words = key.replace(/_/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function activityLabel(activity: Pick<Activity, 'garmin_type_key'>): string {
+  const key = activity.garmin_type_key;
+  if (!key) return 'Activité';
+  return GARMIN_TYPE_LABELS[key.toLowerCase()] ?? prettifyKey(key);
+}

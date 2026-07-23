@@ -41,12 +41,14 @@ def _map_activity(user_id: str, raw: dict) -> dict | None:
         return None
 
     activity_type = raw.get("activityType") or {}
+    type_key = activity_type.get("typeKey")
     duration = raw.get("duration")
 
     return {
         "garmin_activity_id": int(activity_id),
         "user_id": user_id,
-        "sport": map_garmin_sport(activity_type.get("typeKey")),
+        "sport": map_garmin_sport(type_key),
+        "garmin_type_key": type_key,
         "start_time": start_time,
         "duration_s": int(duration) if duration is not None else 0,
         "distance_m": raw.get("distance"),
