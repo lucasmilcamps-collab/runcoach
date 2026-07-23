@@ -120,15 +120,72 @@ async def test_run_activity_sync_marks_needs_relogin_on_auth_failure(db):
     assert credentials["needs_relogin"] is True
 
 
-async def test_maybe_start_sync_skips_when_recent(db):
+async def test_sync_now_skips_when_recent(db):
     user_id = await _seed_user_and_credentials(db)
     await db.garmin_credentials.update_one(
         {"user_id": user_id}, {"$set": {"last_sync_at": datetime.now(UTC) - timedelta(minutes=2)}}
     )
 
-    job_id = await garmin_sync_service.maybe_start_sync(db, user_id)
+    result = await garmin_sync_service.sync_now(db, user_id)
 
-    assert job_id is None
+    assert result is None
+
+
+async def test_sync_now_runs_and_returns_finished_job(db):
+    user_id = await _seed_user_and_credentials(db)
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        job = await garmin_sync_service.sync_now(db, user_id)
+
+    assert job is not None
+    assert job.status == JobStatus.DONE
+    assert job.result_summary == {"activities_synced": 1}
+
+
+async def test_sync_endpoint_runs_synchronously(client, db):
+    register_response = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    access_token = register_response.json()["access_token"]
+    user = await db.users.find_one({"email": "a@b.com"})
+    user_id = str(user["_id"])
+
+    await db.garmin_credentials.insert_one(
+        {
+            "user_id": user_id,
+            "encrypted_tokens": encrypt_token_blob('{"di_token": "fake"}'),
+            "needs_relogin": False,
+            "connected_at": datetime.now(UTC),
+        }
+    )
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY, PADEL_ACTIVITY], []]
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        response = await client.post(
+            "/api/v1/garmin/sync", headers={"Authorization": f"Bearer {access_token}"}
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "done", "activities_synced": 2, "error_message": None}
+
+
+async def test_sync_endpoint_skips_when_no_credentials(client, db):
+    register_response = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    access_token = register_response.json()["access_token"]
+
+    response = await client.post(
+        "/api/v1/garmin/sync", headers={"Authorization": f"Bearer {access_token}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "skipped"
 
 
 async def test_activities_endpoint_lists_synced_activities(client, db):

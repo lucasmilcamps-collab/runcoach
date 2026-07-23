@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.crypto import decrypt_token_blob
 from app.models.activity import map_garmin_sport
-from app.models.job import JobStatus
+from app.models.job import JobResponse, JobStatus
 from app.services import job_service
 
 SYNC_HISTORY_DAYS = 90  # needed to seed CTL — see training-science skill
@@ -133,12 +133,21 @@ def _as_aware_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
-async def maybe_start_sync(db: AsyncIOMotorDatabase, user_id: str) -> str | None:
-    """Creates and launches a background sync job, unless one ran too
-    recently (garmin-sync skill: max once per user per 15 minutes). Returns
-    the job id, or None if skipped."""
+async def sync_now(db: AsyncIOMotorDatabase, user_id: str) -> JobResponse | None:
+    """Runs an activity sync synchronously and returns the finished job, or
+    None when throttled (a sync already ran within SYNC_MIN_INTERVAL) or no
+    Garmin connection exists.
+
+    Deliberately synchronous rather than a background asyncio.create_task:
+    on a free single-instance host the web process can be recycled at any
+    time, which silently kills a fire-and-forget task mid-sync. Awaiting the
+    work inside the request means the caller always learns the real outcome,
+    and the upsert-by-id write makes a retry safe."""
     credentials = await db.garmin_credentials.find_one({"user_id": user_id})
-    last_sync_at = credentials.get("last_sync_at") if credentials else None
+    if credentials is None:
+        return None
+
+    last_sync_at = credentials.get("last_sync_at")
     if (
         last_sync_at is not None
         and datetime.now(UTC) - _as_aware_utc(last_sync_at) < SYNC_MIN_INTERVAL
@@ -146,5 +155,5 @@ async def maybe_start_sync(db: AsyncIOMotorDatabase, user_id: str) -> str | None
         return None
 
     job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
-    asyncio.create_task(run_activity_sync(db, user_id, job_id))
-    return job_id
+    await run_activity_sync(db, user_id, job_id)
+    return await job_service.get_job(db, job_id, user_id)

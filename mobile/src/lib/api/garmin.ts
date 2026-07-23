@@ -3,7 +3,12 @@ import { apiClient } from '@/lib/api/client';
 export type GarminConnectResult = {
   status: 'connected' | 'needs_mfa';
   mfa_token: string | null;
-  sync_job_id: string | null;
+};
+
+export type GarminSyncResult = {
+  status: 'done' | 'failed' | 'skipped';
+  activities_synced: number | null;
+  error_message: string | null;
 };
 
 /**
@@ -27,4 +32,14 @@ export function completeGarminMfa(mfaToken: string, mfaCode: string) {
     mfa_token: mfaToken,
     mfa_code: mfaCode,
   });
+}
+
+/**
+ * Runs a Garmin activity sync and resolves only when it's finished (the
+ * backend does the work synchronously, on a free host where a background
+ * task could be killed mid-run). Throttled server-side, so a call within
+ * the cooldown resolves quickly with status "skipped".
+ */
+export function syncGarmin() {
+  return apiClient.post<GarminSyncResult>('/api/v1/garmin/sync');
 }

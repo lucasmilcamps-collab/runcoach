@@ -1,21 +1,6 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import garminconnect
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def no_auto_sync():
-    """The connect/mfa endpoints kick off a real background sync job on
-    success (garmin_sync_service.maybe_start_sync); these tests aren't
-    testing that job, so it's patched out everywhere to avoid spinning up
-    asyncio.create_task against a mocked client that never expects it."""
-    with patch(
-        "app.api.garmin.garmin_sync_service.maybe_start_sync",
-        new_callable=AsyncMock,
-        return_value="fake-sync-job-id",
-    ):
-        yield
 
 
 async def _register_and_get_access_token(client) -> str:
@@ -40,11 +25,7 @@ async def test_connect_garmin_success(client, db):
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "connected",
-        "mfa_token": None,
-        "sync_job_id": "fake-sync-job-id",
-    }
+    assert response.json() == {"status": "connected", "mfa_token": None}
 
     stored = await db.garmin_credentials.find_one({})
     assert stored is not None
@@ -124,11 +105,7 @@ async def test_connect_garmin_mfa_flow(client, db):
     )
 
     assert mfa_response.status_code == 200
-    assert mfa_response.json() == {
-        "status": "connected",
-        "mfa_token": None,
-        "sync_job_id": "fake-sync-job-id",
-    }
+    assert mfa_response.json() == {"status": "connected", "mfa_token": None}
     mock_instance.resume_login.assert_called_once_with(None, "123456")
 
     stored = await db.garmin_credentials.find_one({})

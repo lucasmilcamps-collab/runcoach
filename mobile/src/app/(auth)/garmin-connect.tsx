@@ -50,23 +50,15 @@ export default function GarminConnectScreen() {
         return;
       }
       await setGarminConnected(true);
-      router.replace(
-        result.sync_job_id
-          ? { pathname: '/dashboard', params: { syncJobId: result.sync_job_id } }
-          : '/dashboard'
-      );
+      router.replace({ pathname: '/dashboard', params: { sync: '1' } });
     },
   });
 
   const mfaMutation = useMutation({
     mutationFn: () => completeGarminMfa(mfaToken ?? '', mfaCode),
-    onSuccess: async (result) => {
+    onSuccess: async () => {
       await setGarminConnected(true);
-      router.replace(
-        result.sync_job_id
-          ? { pathname: '/dashboard', params: { syncJobId: result.sync_job_id } }
-          : '/dashboard'
-      );
+      router.replace({ pathname: '/dashboard', params: { sync: '1' } });
     },
   });
 

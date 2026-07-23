@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,7 +8,8 @@ import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { Activity, listActivities } from '@/lib/api/activities';
-import { getJob } from '@/lib/api/jobs';
+import { ApiError } from '@/lib/api/client';
+import { syncGarmin } from '@/lib/api/garmin';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 const SPORT_LABELS: Record<Activity['sport'], string> = {
@@ -36,18 +37,9 @@ function formatDate(isoString: string): string {
 
 export default function DashboardScreen() {
   const garminConnected = useAuthStore((state) => state.garminConnected);
-  const { syncJobId } = useLocalSearchParams<{ syncJobId?: string }>();
+  const { sync } = useLocalSearchParams<{ sync?: string }>();
   const queryClient = useQueryClient();
-
-  const jobQuery = useQuery({
-    queryKey: ['job', syncJobId],
-    queryFn: () => getJob(syncJobId as string),
-    enabled: !!syncJobId,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'done' || status === 'failed' ? false : 2000;
-    },
-  });
+  const autoSyncedRef = useRef(false);
 
   const activitiesQuery = useQuery({
     queryKey: ['activities'],
@@ -55,15 +47,58 @@ export default function DashboardScreen() {
     enabled: garminConnected,
   });
 
-  useEffect(() => {
-    if (jobQuery.data?.status === 'done') {
+  const syncMutation = useMutation({
+    mutationFn: syncGarmin,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
-    }
-  }, [jobQuery.data?.status, queryClient]);
+    },
+  });
 
-  const isSyncing = jobQuery.data?.status === 'pending' || jobQuery.data?.status === 'running';
-  const syncFailed = jobQuery.data?.status === 'failed';
+  // Auto-run one sync when arriving straight from a fresh Garmin connect.
+  // The ref guards against re-firing on re-render; the server throttles
+  // anything more frequent than its cooldown anyway.
+  useEffect(() => {
+    if (sync === '1' && garminConnected && !autoSyncedRef.current) {
+      autoSyncedRef.current = true;
+      syncMutation.mutate();
+    }
+  }, [sync, garminConnected, syncMutation]);
+
   const activities = activitiesQuery.data ?? [];
+  const isSyncing = syncMutation.isPending;
+  const syncResult = syncMutation.data;
+
+  const syncErrorMessage = (() => {
+    if (syncMutation.error instanceof ApiError) {
+      if (syncMutation.error.code === 'GARMIN_UPSTREAM_ERROR') {
+        return 'Garmin limite temporairement les connexions. Réessayez dans quelques minutes.';
+      }
+      return syncMutation.error.message;
+    }
+    if (syncResult?.status === 'failed') {
+      return syncResult.error_message ?? 'La synchronisation a échoué.';
+    }
+    if (syncMutation.isError) {
+      return 'Impossible de contacter le serveur. Réessayez.';
+    }
+    return undefined;
+  })();
+
+  const headline = (() => {
+    if (!garminConnected) {
+      return 'Aucune donnée pour l’instant : connectez Garmin pour que votre charge d’entraînement et votre récupération apparaissent ici.';
+    }
+    if (isSyncing) {
+      return 'Synchronisation Garmin en cours (jusqu’à 90 jours d’historique)…';
+    }
+    if (syncErrorMessage) {
+      return syncErrorMessage;
+    }
+    if (activities.length > 0) {
+      return `${activities.length} activité${activities.length > 1 ? 's' : ''} synchronisée${activities.length > 1 ? 's' : ''}.`;
+    }
+    return 'Garmin est connecté, aucune activité pour l’instant.';
+  })();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -71,15 +106,7 @@ export default function DashboardScreen() {
         <View style={styles.header}>
           <ThemedText type="title">Votre tableau de bord</ThemedText>
           <ThemedText type="default" themeColor="textSecondary">
-            {!garminConnected
-              ? 'Aucune donnée pour l’instant : connectez Garmin pour que votre charge d’entraînement et votre récupération apparaissent ici.'
-              : isSyncing
-                ? 'Synchronisation Garmin en cours (jusqu’à 90 jours d’historique)…'
-                : syncFailed
-                  ? (jobQuery.data?.error_message ?? 'La synchronisation a échoué.')
-                  : activities.length > 0
-                    ? `${activities.length} activité${activities.length > 1 ? 's' : ''} synchronisée${activities.length > 1 ? 's' : ''}.`
-                    : 'Garmin est connecté, aucune activité synchronisée pour l’instant.'}
+            {headline}
           </ThemedText>
         </View>
 
@@ -91,8 +118,19 @@ export default function DashboardScreen() {
           <FlatContour />
         )}
 
-        {!garminConnected && (
-          <Button label="Connecter Garmin" variant="ghost" onPress={() => router.push('/garmin-connect')} />
+        {!garminConnected ? (
+          <Button
+            label="Connecter Garmin"
+            variant="ghost"
+            onPress={() => router.push('/garmin-connect')}
+          />
+        ) : (
+          <Button
+            label="Synchroniser Garmin"
+            variant="ghost"
+            loading={isSyncing}
+            onPress={() => syncMutation.mutate()}
+          />
         )}
       </View>
     </SafeAreaView>

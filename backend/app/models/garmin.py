@@ -11,12 +11,17 @@ class GarminConnectRequest(BaseModel):
 class GarminConnectResponse(BaseModel):
     status: str  # "connected" | "needs_mfa"
     mfa_token: str | None = None
-    sync_job_id: str | None = None
 
 
 class GarminMfaRequest(BaseModel):
     mfa_token: str
     mfa_code: str
+
+
+class GarminSyncResponse(BaseModel):
+    status: str  # "done" | "failed" | "skipped"
+    activities_synced: int | None = None
+    error_message: str | None = None
 
 
 class GarminCredentialsDocument(BaseModel):
