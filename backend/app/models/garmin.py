@@ -9,7 +9,13 @@ class GarminConnectRequest(BaseModel):
 
 
 class GarminConnectResponse(BaseModel):
-    status: str = "connected"
+    status: str  # "connected" | "needs_mfa"
+    mfa_token: str | None = None
+
+
+class GarminMfaRequest(BaseModel):
+    mfa_token: str
+    mfa_code: str
 
 
 class GarminCredentialsDocument(BaseModel):

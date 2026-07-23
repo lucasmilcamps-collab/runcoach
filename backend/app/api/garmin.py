@@ -3,7 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import get_current_user
-from app.models.garmin import GarminConnectRequest, GarminConnectResponse
+from app.models.garmin import GarminConnectRequest, GarminConnectResponse, GarminMfaRequest
 from app.services import garmin_service
 
 router = APIRouter(prefix="/api/v1/garmin", tags=["garmin"])
@@ -16,7 +16,7 @@ async def connect(
     user: dict = Depends(get_current_user),
 ):
     try:
-        await garmin_service.connect_garmin(
+        result_status, mfa_token = await garmin_service.connect_garmin(
             db, str(user["_id"]), body.garmin_email, body.garmin_password
         )
     except garmin_service.GarminInvalidCredentialsError as exc:
@@ -32,4 +32,30 @@ async def connect(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "GARMIN_UPSTREAM_ERROR", "message": "Garmin Connect ne répond pas."},
         ) from exc
-    return GarminConnectResponse()
+    return GarminConnectResponse(status=result_status, mfa_token=mfa_token)
+
+
+@router.post("/connect/mfa", response_model=GarminConnectResponse)
+async def connect_mfa(
+    body: GarminMfaRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        await garmin_service.complete_garmin_mfa(
+            db, str(user["_id"]), body.mfa_token, body.mfa_code
+        )
+    except garmin_service.GarminMfaInvalidError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "GARMIN_MFA_INVALID",
+                "message": "Code de vérification incorrect ou expiré.",
+            },
+        ) from exc
+    except garmin_service.GarminUpstreamError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "GARMIN_UPSTREAM_ERROR", "message": "Garmin Connect ne répond pas."},
+        ) from exc
+    return GarminConnectResponse(status="connected")
