@@ -1,3 +1,5 @@
+import json
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +16,18 @@ class Settings(BaseSettings):
 
     garmin_token_encryption_key: str
 
-    cors_origins: list[str] = ["http://localhost:8081"]
+    # Kept as a plain str (not list[str]): pydantic-settings JSON-decodes any
+    # complex-typed env var unconditionally, before validators run, so a
+    # host dashboard value that isn't strict JSON (e.g. a bare comma list)
+    # would crash on startup. Parsing is done ourselves in the property below.
+    cors_origins: str = "http://localhost:8081"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        value = self.cors_origins.strip()
+        if value.startswith("["):
+            return json.loads(value)
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 settings = Settings()
