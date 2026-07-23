@@ -1,0 +1,51 @@
+/**
+ * RunCoach design tokens — see DESIGN.md at the project root for the full
+ * system (Night-Trail Waymarking). Dark is the only theme: this is a project
+ * convention (read at 6am before a run), not a placeholder for a future toggle.
+ */
+
+import '@/global.css';
+
+import { Platform } from 'react-native';
+
+export const Colors = {
+  background: '#14140F',
+  backgroundElement: '#1F2018',
+  backgroundSelected: '#28291F',
+  text: '#F1ECDD',
+  textSecondary: '#A79F8C',
+  contour: '#8A6F47',
+  contourFaint: '#8A6F4733',
+  blaze: '#E8792C',
+  blazeDeep: '#C05F1B',
+  hydro: '#2FA8A0',
+  flare: '#E5484D',
+} as const;
+
+export type ThemeColor = keyof typeof Colors;
+
+/** Body text always stays on the platform's own system font (DESIGN.md); only
+ * the mono signage face is a project token. */
+export const Fonts = Platform.select({
+  default: { mono: 'IBMPlexMono_500Medium' },
+  web: { mono: 'var(--font-mono)' },
+});
+
+export const Spacing = {
+  half: 2,
+  one: 4,
+  two: 8,
+  three: 16,
+  four: 24,
+  five: 32,
+  six: 64,
+} as const;
+
+export const Rounded = {
+  sm: 8,
+  md: 14,
+  lg: 20,
+} as const;
+
+export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+export const MaxContentWidth = 800;
