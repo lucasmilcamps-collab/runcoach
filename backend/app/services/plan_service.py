@@ -19,7 +19,8 @@ from app.services import fitness_service, plan_validation
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
-_ANTHROPIC_TIMEOUT_S = 60.0
+_ANTHROPIC_TIMEOUT_S = 120.0
+_MAX_TOKENS = 8000  # a plan JSON is a few thousand tokens — no need for 16k
 
 
 class PlanGenerationError(Exception):
@@ -118,12 +119,22 @@ async def _call_anthropic(system: str, user: str, feedback: str | None) -> str:
     if feedback is not None:
         messages.append({"role": "user", "content": feedback})
     try:
-        response = await client.messages.create(
+        # Streaming avoids HTTP read timeouts on a large JSON output (claude-api
+        # skill). Thinking is disabled: the schema is explicit and validate_plan
+        # re-prompts on any rule miss, so deep reasoning isn't needed here — and
+        # it keeps generation fast and cheap on a solo app.
+        async with client.messages.stream(
             model=settings.plan_model,
-            max_tokens=16000,
+            max_tokens=_MAX_TOKENS,
             system=system,
             messages=messages,
-        )
+            thinking={"type": "disabled"},
+        ) as stream:
+            response = await stream.get_final_message()
+    except anthropic.APITimeoutError as exc:
+        raise PlanGenerationError(
+            "Le modèle a mis trop de temps à répondre (timeout). Réessayez."
+        ) from exc
     except anthropic.AuthenticationError as exc:
         raise PlanGenerationError(
             "Clé API Anthropic refusée (401). Vérifiez ANTHROPIC_API_KEY sur Render."

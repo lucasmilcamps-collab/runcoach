@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 from app.models.activity import SportType
 from app.models.plan import (
@@ -63,6 +63,27 @@ def _mock_response(text: str):
     return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
 
 
+class _FakeStream:
+    """Mimics the async context manager returned by client.messages.stream()."""
+
+    def __init__(self, message):
+        self._message = message
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get_final_message(self):
+        return self._message
+
+
+def _stream_mock(*messages) -> MagicMock:
+    # client.messages.stream(...) is a sync call returning an async CM.
+    return MagicMock(side_effect=[_FakeStream(m) for m in messages])
+
+
 def _request() -> PlanRequest:
     return PlanRequest(
         goal_type="distance",
@@ -82,8 +103,7 @@ async def _seed_user(db) -> str:
 
 
 def _patched_client(*responses):
-    create = AsyncMock(side_effect=list(responses))
-    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=_stream_mock(*responses)))
     return patch(
         "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
     )
@@ -105,13 +125,11 @@ async def test_generate_plan_success(db):
 
 async def test_generate_plan_retries_on_violation(db):
     user_id = await _seed_user(db)
-    create_mock = AsyncMock(
-        side_effect=[
-            _mock_response(_bad_plan_json()),  # first attempt violates ramp
-            _mock_response(_valid_plan_json()),  # second is valid
-        ]
+    stream_mock = _stream_mock(
+        _mock_response(_bad_plan_json()),  # first attempt violates ramp
+        _mock_response(_valid_plan_json()),  # second is valid
     )
-    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
     with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
         "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
     ):
@@ -119,8 +137,8 @@ async def test_generate_plan_retries_on_violation(db):
 
     assert result.status == "ready"
     # Two model calls: the second carried the violations as feedback.
-    assert create_mock.await_count == 2
-    second_messages = create_mock.await_args_list[1].kwargs["messages"]
+    assert stream_mock.call_count == 2
+    second_messages = stream_mock.call_args_list[1].kwargs["messages"]
     assert any("viole" in m["content"] for m in second_messages if m["role"] == "user")
 
 
