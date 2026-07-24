@@ -25,6 +25,8 @@ _GARMIN_TYPE_KEY_MAP: dict[str, SportType] = {
     "virtual_run": SportType.RUN,
     "tennis": SportType.PADEL,
     "padel": SportType.PADEL,
+    "paddelball": SportType.PADEL,
+    "paddle_ball": SportType.PADEL,
     "basketball": SportType.BASKETBALL,
     "cycling": SportType.BIKE,
     "road_biking": SportType.BIKE,

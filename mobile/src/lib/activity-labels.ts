@@ -27,6 +27,8 @@ const GARMIN_TYPE_LABELS: Record<string, string> = {
   stair_climbing: 'Escaliers',
   tennis: 'Tennis',
   padel: 'Padel',
+  paddelball: 'Padel',
+  paddle_ball: 'Padel',
   basketball: 'Basket',
   soccer: 'Football',
   fitness_equipment: 'Musculation',
