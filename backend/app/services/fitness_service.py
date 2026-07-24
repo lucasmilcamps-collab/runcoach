@@ -21,12 +21,33 @@ def _as_utc_date(value: datetime) -> date:
     return aware.astimezone(UTC).date()
 
 
+async def set_manual_profile(
+    db: AsyncIOMotorDatabase, user_id: str, hr_max: int, hr_rest: int
+) -> None:
+    """Persist athlete-entered HRmax/HRrest, flagged `manual` so the Garmin sync
+    leaves them untouched (see garmin_sync_service._update_fitness_profile)."""
+    await db.fitness_profiles.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
+                "user_id": user_id,
+                "hr_max": hr_max,
+                "hr_rest": hr_rest,
+                "manual": True,
+                "updated_at": datetime.now(UTC),
+            }
+        },
+        upsert=True,
+    )
+
+
 async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResponse:
     today = datetime.now(UTC).date()
 
     profile = await db.fitness_profiles.find_one({"user_id": user_id})
     hr_max = (profile or {}).get("hr_max")
     hr_rest = (profile or {}).get("hr_rest")
+    manual = bool((profile or {}).get("manual"))
     has_profile = hr_max is not None and hr_rest is not None
 
     if not has_profile:
@@ -35,6 +56,7 @@ async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResp
             has_profile=False,
             hr_max=hr_max,
             hr_rest=hr_rest,
+            manual=manual,
             low_confidence=True,
             ctl=0.0,
             atl=0.0,
@@ -58,6 +80,7 @@ async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResp
             has_profile=True,
             hr_max=hr_max,
             hr_rest=hr_rest,
+            manual=manual,
             low_confidence=True,
             ctl=0.0,
             atl=0.0,
@@ -75,6 +98,7 @@ async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResp
         has_profile=True,
         hr_max=hr_max,
         hr_rest=hr_rest,
+        manual=manual,
         low_confidence=low_confidence,
         ctl=round(current.ctl, 1),
         atl=round(current.atl, 1),

@@ -180,6 +180,11 @@ async def _update_fitness_profile(
 ) -> None:
     """Refresh the stored HRmax/HRrest profile. Never raises: a missing profile
     only degrades the load engine to 'low confidence', it must not break sync."""
+    existing = await db.fitness_profiles.find_one({"user_id": user_id})
+    if existing and existing.get("manual"):
+        # Athlete-entered values are authoritative — never overwrite them.
+        return
+
     try:
         hr_max, hr_rest = await asyncio.to_thread(_fetch_hr_profile_sync, client)
     except Exception:  # noqa: BLE001 — profile is best-effort, sync must survive

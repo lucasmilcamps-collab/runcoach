@@ -1,8 +1,13 @@
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import type { Fitness } from '@/lib/api/fitness';
+
+function openProfileEntry() {
+  router.push('/fitness-profile');
+}
 
 // Form (TSB) bands, kept deliberately coarse — this is a directional cue, not a
 // prescription (no medical advice, per the project's guardrails).
@@ -33,16 +38,24 @@ export function FitnessCard({
   }
 
   if (!fitness || !fitness.has_profile || fitness.series.length === 0) {
+    const missingProfile = fitness ? !fitness.has_profile : false;
     return (
       <View style={styles.card}>
         <ThemedText type="waypointLabel" themeColor="textSecondary">
           Forme
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {fitness && !fitness.has_profile
-            ? 'Fréquence cardiaque de référence introuvable : elle sera récupérée à la prochaine synchronisation Garmin.'
+          {missingProfile
+            ? 'Pour calculer votre forme, il faut votre fréquence cardiaque de repos et maximale. Garmin ne les fournit pas ici — renseignez-les à la main.'
             : 'Pas encore assez de séances avec fréquence cardiaque pour estimer votre forme.'}
         </ThemedText>
+        {missingProfile ? (
+          <Pressable onPress={openProfileEntry} accessibilityRole="button" style={styles.cta}>
+            <ThemedText type="waypointLabel" themeColor="blaze">
+              Renseigner ma fréquence cardiaque
+            </ThemedText>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -82,6 +95,12 @@ export function FitnessCard({
           Historique limité : l’estimation s’affinera au fil des semaines.
         </ThemedText>
       ) : null}
+
+      <Pressable onPress={openProfileEntry} accessibilityRole="button" style={styles.cta}>
+        <ThemedText type="waypointLabel" themeColor="textSecondary">
+          {fitness.manual ? 'FC saisie manuellement · modifier' : 'Ajuster ma fréquence cardiaque'}
+        </ThemedText>
+      </Pressable>
     </View>
   );
 }
@@ -181,5 +200,8 @@ const styles = StyleSheet.create({
     width: 1,
     alignSelf: 'stretch',
     backgroundColor: Colors.contourFaint,
+  },
+  cta: {
+    paddingTop: Spacing.one,
   },
 });
