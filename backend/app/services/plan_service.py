@@ -20,7 +20,10 @@ from app.services import fitness_service, plan_validation
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
 _ANTHROPIC_TIMEOUT_S = 120.0
-_MAX_TOKENS = 8000  # a plan JSON is a few thousand tokens — no need for 16k
+# A full multi-week plan JSON (rationale + structure + paces per session) is
+# large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
+# so cap high — the cap only limits, billing is on tokens actually produced.
+_MAX_TOKENS = 32000
 
 
 class PlanGenerationError(Exception):
