@@ -1,0 +1,272 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Button } from '@/components/button';
+import { TextField } from '@/components/text-field';
+import { ThemedText } from '@/components/themed-text';
+import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { ApiError } from '@/lib/api/client';
+import { createPlan, PlanRequest, Weekday } from '@/lib/api/plans';
+
+type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
+
+const OBJECTIVES: Objective[] = [
+  { label: '10 km', goal: 'distance', distanceKm: 10 },
+  { label: 'Semi', goal: 'distance', distanceKm: 21.1 },
+  { label: 'Marathon', goal: 'distance', distanceKm: 42.2 },
+  { label: 'Forme', goal: 'fitness', distanceKm: null },
+];
+
+const DAYS: { label: string; value: Weekday }[] = [
+  { label: 'Lun', value: 'MONDAY' },
+  { label: 'Mar', value: 'TUESDAY' },
+  { label: 'Mer', value: 'WEDNESDAY' },
+  { label: 'Jeu', value: 'THURSDAY' },
+  { label: 'Ven', value: 'FRIDAY' },
+  { label: 'Sam', value: 'SATURDAY' },
+  { label: 'Dim', value: 'SUNDAY' },
+];
+
+const RUN_COUNTS = [2, 3, 4, 5];
+
+function Chip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[styles.chip, selected && styles.chipSelected]}>
+      <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export default function PlanSetupScreen() {
+  const queryClient = useQueryClient();
+
+  const [objectiveIndex, setObjectiveIndex] = useState(1); // Semi by default
+  const [raceDate, setRaceDate] = useState('');
+  const [days, setDays] = useState<Set<Weekday>>(
+    new Set<Weekday>(['TUESDAY', 'THURSDAY', 'SATURDAY']),
+  );
+  const [runCount, setRunCount] = useState(3);
+  const [dateError, setDateError] = useState<string | undefined>();
+
+  const objective = OBJECTIVES[objectiveIndex];
+
+  const mutation = useMutation({
+    mutationFn: (request: PlanRequest) => createPlan(request),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['plan'], data);
+      router.back();
+    },
+  });
+
+  function toggleDay(day: Weekday) {
+    setDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
+  }
+
+  function handleGenerate() {
+    const trimmedDate = raceDate.trim();
+    if (trimmedDate && !ISO_DATE.test(trimmedDate)) {
+      setDateError('Format attendu : AAAA-MM-JJ (ex. 2026-11-15).');
+      return;
+    }
+    setDateError(undefined);
+
+    const hasDate = trimmedDate.length > 0 && objective.goal !== 'fitness';
+    const request: PlanRequest = {
+      goal_type: hasDate ? 'race' : objective.goal,
+      distance_km: objective.distanceKm,
+      race_date: hasDate ? trimmedDate : null,
+      target_time_min: null,
+      available_days: DAYS.map((d) => d.value).filter((v) => days.has(v)),
+      max_run_sessions_per_week: runCount,
+      fixed_sports: [],
+    };
+    mutation.mutate(request);
+  }
+
+  const errorMessage = (() => {
+    if (mutation.data?.status === 'failed') return mutation.data.error_message ?? undefined;
+    if (mutation.error instanceof ApiError) return mutation.error.message;
+    if (mutation.isError) return 'Impossible de générer le plan. Réessayez.';
+    return undefined;
+  })();
+
+  const canSubmit = days.size >= 2 && !mutation.isPending;
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.header}>
+            <ThemedText type="waypointLabel" themeColor="textSecondary">
+              Mon plan
+            </ThemedText>
+            <ThemedText type="title">Configurer mon plan</ThemedText>
+            <ThemedText type="default" themeColor="textSecondary">
+              Le plan s’adapte à votre forme et votre fatigue réelles. Vous pourrez le régénérer à
+              tout moment en changeant ces réglages.
+            </ThemedText>
+          </View>
+
+          <Field label="Objectif">
+            <View style={styles.chipRow}>
+              {OBJECTIVES.map((o, i) => (
+                <Chip
+                  key={o.label}
+                  label={o.label}
+                  selected={i === objectiveIndex}
+                  onPress={() => setObjectiveIndex(i)}
+                />
+              ))}
+            </View>
+          </Field>
+
+          {objective.goal !== 'fitness' ? (
+            <TextField
+              label="Date de course (optionnel)"
+              value={raceDate}
+              onChangeText={(t) => {
+                setRaceDate(t);
+                setDateError(undefined);
+                mutation.reset();
+              }}
+              error={dateError}
+              placeholder="AAAA-MM-JJ"
+              keyboardType="numbers-and-punctuation"
+              autoCapitalize="none"
+            />
+          ) : null}
+
+          <Field label="Jours disponibles">
+            <View style={styles.chipRow}>
+              {DAYS.map((d) => (
+                <Chip
+                  key={d.value}
+                  label={d.label}
+                  selected={days.has(d.value)}
+                  onPress={() => toggleDay(d.value)}
+                />
+              ))}
+            </View>
+          </Field>
+
+          <Field label="Séances de course par semaine">
+            <View style={styles.chipRow}>
+              {RUN_COUNTS.map((n) => (
+                <Chip
+                  key={n}
+                  label={String(n)}
+                  selected={n === runCount}
+                  onPress={() => setRunCount(n)}
+                />
+              ))}
+            </View>
+          </Field>
+
+          {mutation.isPending ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              Génération du plan en cours… l’IA construit et vérifie chaque semaine, ça peut prendre
+              une trentaine de secondes.
+            </ThemedText>
+          ) : null}
+          {errorMessage ? (
+            <ThemedText type="small" themeColor="flare">
+              {errorMessage}
+            </ThemedText>
+          ) : null}
+        </ScrollView>
+
+        <View style={styles.actions}>
+          <Button
+            label="Générer mon plan"
+            onPress={handleGenerate}
+            loading={mutation.isPending}
+            disabled={!canSubmit}
+          />
+          <Button
+            label="Annuler"
+            variant="ghost"
+            disabled={mutation.isPending}
+            onPress={() => router.back()}
+          />
+        </View>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      {children}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.four,
+    justifyContent: 'space-between',
+  },
+  content: {
+    gap: Spacing.four,
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    width: '100%',
+    paddingTop: Spacing.four,
+    paddingBottom: Spacing.four,
+  },
+  header: { gap: Spacing.two },
+  field: { gap: Spacing.two },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  chip: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: Colors.contour,
+    backgroundColor: Colors.backgroundElement,
+  },
+  chipSelected: {
+    backgroundColor: Colors.blaze,
+    borderColor: Colors.blaze,
+  },
+  actions: {
+    gap: Spacing.two,
+    paddingBottom: Spacing.four,
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    width: '100%',
+  },
+});
