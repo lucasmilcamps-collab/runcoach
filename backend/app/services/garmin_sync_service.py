@@ -27,9 +27,27 @@ _HR_MAX_KEY_HINTS = ("maxheartrate", "maxhr", "lactatethresholdheartrate")
 _HR_REST_KEY_HINTS = ("restingheartrate", "resting_heart_rate", "restinghr")
 
 
+def _ensure_display_name(client: garminconnect.Garmin) -> None:
+    """A token-restored client never ran login(), so `display_name` is None —
+    yet every wellness endpoint (resting HR, sleep, HRV, Body Battery) splices
+    it straight into the request URL, turning them all into `.../None` 403s.
+    Backfill it from the social profile. Best-effort: activity sync doesn't need
+    it, so a failure here must never break the sync."""
+    if client.display_name:
+        return
+    try:
+        prof = client.client.connectapi("/userprofile-service/socialProfile")
+    except Exception:  # noqa: BLE001 — profile backfill is best-effort
+        return
+    if isinstance(prof, dict):
+        client.display_name = prof.get("displayName") or prof.get("userName")
+        client.full_name = prof.get("fullName", "")
+
+
 def _restore_client_sync(token_blob: str) -> garminconnect.Garmin:
     client = garminconnect.Garmin()
     client.client.loads(token_blob)
+    _ensure_display_name(client)
     return client
 
 

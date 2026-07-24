@@ -73,6 +73,28 @@ async def test_run_activity_sync_success(db):
     assert credentials["last_sync_at"] is not None
 
 
+def test_ensure_display_name_backfills_from_social_profile():
+    """A token-restored client has no display_name; without it every wellness
+    URL 403s. It must be backfilled from the social profile."""
+    client = MagicMock()
+    client.display_name = None
+    client.client.connectapi.return_value = {"displayName": "abc-123", "fullName": "Al"}
+
+    garmin_sync_service._ensure_display_name(client)
+
+    assert client.display_name == "abc-123"
+    client.client.connectapi.assert_called_once_with("/userprofile-service/socialProfile")
+
+
+def test_ensure_display_name_noop_when_already_set():
+    client = MagicMock()
+    client.display_name = "already-here"
+
+    garmin_sync_service._ensure_display_name(client)
+
+    client.client.connectapi.assert_not_called()
+
+
 async def test_sync_stores_fitness_profile_from_garmin(db):
     """HRmax/HRrest are probed from Garmin's profile payloads and stored so the
     load engine can compute zones. Field names vary across accounts, so the
