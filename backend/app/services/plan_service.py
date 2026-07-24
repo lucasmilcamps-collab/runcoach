@@ -124,9 +124,33 @@ async def _call_anthropic(system: str, user: str, feedback: str | None) -> str:
             system=system,
             messages=messages,
         )
-    except anthropic.APIError as exc:
+    except anthropic.AuthenticationError as exc:
         raise PlanGenerationError(
-            "Le service de génération est momentanément indisponible."
+            "Clé API Anthropic refusée (401). Vérifiez ANTHROPIC_API_KEY sur Render."
+        ) from exc
+    except anthropic.PermissionDeniedError as exc:
+        raise PlanGenerationError(
+            "Accès refusé par Anthropic (403) : facturation/crédits ou permissions du compte."
+        ) from exc
+    except anthropic.NotFoundError as exc:
+        raise PlanGenerationError(
+            f"Modèle « {settings.plan_model} » introuvable (404). Vérifiez PLAN_MODEL."
+        ) from exc
+    except anthropic.RateLimitError as exc:
+        raise PlanGenerationError(
+            "Limite de requêtes Anthropic atteinte (429). Réessayez dans un instant."
+        ) from exc
+    except anthropic.APIStatusError as exc:
+        # Any other non-2xx (incl. 400 "credit balance too low"). Surface the
+        # status and upstream message so the cause is diagnosable — the message
+        # never contains the API key, only Anthropic's own error text.
+        detail = (exc.message or "")[:160]
+        raise PlanGenerationError(
+            f"Erreur Anthropic (HTTP {exc.status_code} · {exc.type}) : {detail}"
+        ) from exc
+    except anthropic.APIConnectionError as exc:
+        raise PlanGenerationError(
+            "Impossible de joindre Anthropic (réseau). Réessayez."
         ) from exc
     return "".join(block.text for block in response.content if block.type == "text")
 
