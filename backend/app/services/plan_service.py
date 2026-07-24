@@ -21,10 +21,17 @@ from app.models.plan import (
     Plan,
     PlanRequest,
     PlanResponse,
+    RecoverySummary,
     TodaySession,
     Week,
 )
-from app.services import fitness_service, plan_adaptation, plan_progress, plan_validation
+from app.services import (
+    fitness_service,
+    plan_adaptation,
+    plan_progress,
+    plan_validation,
+    wellness_service,
+)
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
@@ -371,7 +378,17 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
             message="Pas de séance prévue aujourd'hui — repos.",
         )
 
-    result = plan_adaptation.adjust_for_form(session.type, tsb)
+    signals = await wellness_service.get_recovery_signals(db, user_id, today)
+    result = plan_adaptation.adjust_session(session.type, tsb, signals)
+    recovery = RecoverySummary(
+        hrv=signals.hrv,
+        hrv_baseline=signals.hrv_baseline,
+        resting_hr=signals.resting_hr,
+        resting_hr_baseline=signals.resting_hr_baseline,
+        sleep_hours=signals.sleep_hours,
+        body_battery=signals.body_battery,
+        date=signals.data_date,
+    )
     return TodaySession(
         date=today,
         has_plan=True,
@@ -385,4 +402,5 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
             reason=result.reason,
         ),
         tsb=tsb,
+        recovery=recovery if recovery.has_any else None,
     )

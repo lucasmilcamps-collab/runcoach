@@ -6,6 +6,7 @@ produce; `plan_validation.validate_plan` is the gate every generated plan passes
 before persistence (plan-generator skill: the AI proposes, the code guarantees).
 """
 
+import datetime
 from datetime import date
 from enum import StrEnum
 from typing import Literal
@@ -147,6 +148,28 @@ class DailyAdjustment(BaseModel):
     reason: str  # plain-language explanation, always shown
 
 
+class RecoverySummary(BaseModel):
+    """Overnight recovery readings behind today's adjustment, for UI transparency.
+    Every field is optional — Garmin may not have provided it yet."""
+
+    hrv: float | None = None
+    hrv_baseline: float | None = None
+    resting_hr: float | None = None
+    resting_hr_baseline: float | None = None
+    sleep_hours: float | None = None
+    body_battery: int | None = None
+    # `datetime.date` (not bare `date`): the field name `date` shadows the type
+    # within the class body once its default binds.
+    date: datetime.date | None = None  # the day these readings are from
+
+    @property
+    def has_any(self) -> bool:
+        return any(
+            v is not None
+            for v in (self.hrv, self.resting_hr, self.sleep_hours, self.body_battery)
+        )
+
+
 class TodaySession(BaseModel):
     """The plan's session for today, adjusted for current form."""
 
@@ -157,6 +180,7 @@ class TodaySession(BaseModel):
     session: Session | None = None
     adjustment: DailyAdjustment | None = None
     tsb: float
+    recovery: RecoverySummary | None = None
     message: str | None = None  # e.g. "Plan terminé", "Aucun plan actif"
 
 

@@ -2,10 +2,19 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import garminconnect
+import pytest
 
 from app.core.crypto import encrypt_token_blob
 from app.models.job import JobStatus
 from app.services import garmin_sync_service, job_service
+
+
+@pytest.fixture(autouse=True)
+def _no_rate_limit_sleep():
+    """The rate-limit sleeps (activity paging + wellness backfill) must not slow
+    the suite down. Patch them out for every test in this module."""
+    with patch("app.services.garmin_sync_service.time.sleep"):
+        yield
 
 RUNNING_ACTIVITY = {
     "activityId": 111,
@@ -312,6 +321,97 @@ async def test_activities_endpoint_lists_synced_activities(client, db):
     assert body[0]["garmin_activity_id"] == 111
     assert "raw" not in body[0]
     assert "user_id" not in body[0]
+
+
+# --- Wellness (HRV / sleep / resting HR / Body Battery) --------------------
+
+HRV_PAYLOAD = {"hrvSummary": {"lastNightAvg": 45}}
+SLEEP_PAYLOAD = {
+    "dailySleepDTO": {"sleepTimeSeconds": 25200, "sleepScores": {"overall": {"value": 80}}}
+}
+RHR_PAYLOAD = {
+    "allMetrics": {"metricsMap": {"WELLNESS_RESTING_HEART_RATE": [{"value": 52.0}]}}
+}
+
+
+def test_extract_hrv():
+    assert garmin_sync_service._extract_hrv(HRV_PAYLOAD) == 45
+    assert garmin_sync_service._extract_hrv({"hrvSummary": {}}) is None
+    assert garmin_sync_service._extract_hrv(None) is None
+
+
+def test_extract_sleep():
+    assert garmin_sync_service._extract_sleep_seconds(SLEEP_PAYLOAD) == 25200
+    assert garmin_sync_service._extract_sleep_score(SLEEP_PAYLOAD) == 80
+    assert garmin_sync_service._extract_sleep_seconds({"dailySleepDTO": {}}) is None
+
+
+def test_extract_rhr():
+    assert garmin_sync_service._extract_rhr(RHR_PAYLOAD) == 52
+    assert garmin_sync_service._extract_rhr({}) is None
+
+
+def test_extract_body_battery_takes_daily_high():
+    payload = [
+        {
+            "date": "2026-07-23",
+            "bodyBatteryValuesArray": [
+                [1690000000000, "MEASURED", 55],
+                [1690000600000, "MEASURED", 80],
+            ],
+        }
+    ]
+    assert garmin_sync_service._extract_body_battery_by_date(payload) == {"2026-07-23": 80}
+    assert garmin_sync_service._extract_body_battery_by_date({}) == {}
+
+
+async def test_sync_wellness_stores_daily_records(db):
+    user_id = await _seed_user_and_credentials(db)
+
+    mock = MagicMock()
+    mock.get_hrv_data.return_value = HRV_PAYLOAD
+    mock.get_sleep_data.return_value = SLEEP_PAYLOAD
+    mock.get_rhr_day.return_value = RHR_PAYLOAD
+    mock.get_body_battery.return_value = []
+
+    stored = await garmin_sync_service.sync_wellness(db, user_id, mock)
+
+    # 30-day window is inclusive of both ends → 31 days, all fetched first time.
+    assert stored == 31
+    today = datetime.now(UTC).date().isoformat()
+    doc = await db.wellness_daily.find_one({"user_id": user_id, "day": today})
+    assert doc["hrv"] == 45
+    assert doc["sleep_seconds"] == 25200
+    assert doc["sleep_score"] == 80
+    assert doc["resting_hr"] == 52
+
+
+async def test_sync_wellness_is_incremental(db):
+    user_id = await _seed_user_and_credentials(db)
+    today = datetime.now(UTC).date()
+    for i in range(31):
+        await db.wellness_daily.insert_one({
+            "user_id": user_id,
+            "day": (today - timedelta(days=i)).isoformat(),
+            "hrv": 40,
+        })
+
+    mock = MagicMock()
+    mock.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 50}}
+    mock.get_sleep_data.return_value = {}
+    mock.get_rhr_day.return_value = {}
+    mock.get_body_battery.return_value = []
+
+    stored = await garmin_sync_service.sync_wellness(db, user_id, mock)
+
+    # Only the last 3 days (today, −1, −2) are re-fetched; older days are skipped.
+    assert stored == 3
+    refreshed = await db.wellness_daily.find_one({"user_id": user_id, "day": today.isoformat()})
+    assert refreshed["hrv"] == 50
+    old = await db.wellness_daily.find_one(
+        {"user_id": user_id, "day": (today - timedelta(days=10)).isoformat()}
+    )
+    assert old["hrv"] == 40  # untouched
 
 
 async def test_job_endpoint_requires_ownership(client, db):

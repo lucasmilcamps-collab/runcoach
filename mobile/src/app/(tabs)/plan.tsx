@@ -19,6 +19,7 @@ import {
   PlanResponse,
   PlanSession,
   PlanWeek,
+  RecoverySummary,
   TodaySession,
   Weekday,
 } from '@/lib/api/plans';
@@ -56,6 +57,62 @@ function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const rest = min % 60;
   return rest === 0 ? `${h} h` : `${h} h ${rest}`;
+}
+
+function formatSleep(hours: number): string {
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return m === 0 ? `${h} h` : `${h} h ${m.toString().padStart(2, '0')}`;
+}
+
+/** Overnight recovery readings behind today's adjustment — transparency for why
+ * a session was kept or lightened. Only shows metrics Garmin actually provided. */
+function RecoveryStats({ recovery }: { recovery: RecoverySummary }) {
+  const items: { key: string; label: string; value: string; hint?: string }[] = [];
+  if (recovery.hrv != null) {
+    items.push({
+      key: 'hrv',
+      label: 'HRV',
+      value: `${Math.round(recovery.hrv)} ms`,
+      hint: recovery.hrv_baseline != null ? `base ${Math.round(recovery.hrv_baseline)}` : undefined,
+    });
+  }
+  if (recovery.resting_hr != null) {
+    items.push({
+      key: 'rhr',
+      label: 'FC repos',
+      value: `${Math.round(recovery.resting_hr)} bpm`,
+      hint:
+        recovery.resting_hr_baseline != null
+          ? `base ${Math.round(recovery.resting_hr_baseline)}`
+          : undefined,
+    });
+  }
+  if (recovery.sleep_hours != null) {
+    items.push({ key: 'sleep', label: 'Sommeil', value: formatSleep(recovery.sleep_hours) });
+  }
+  if (recovery.body_battery != null) {
+    items.push({ key: 'bb', label: 'Body Battery', value: `${recovery.body_battery}` });
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <View style={styles.recoveryRow}>
+      {items.map((it) => (
+        <View key={it.key} style={styles.recoveryStat}>
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            {it.label}
+          </ThemedText>
+          <ThemedText type="default">{it.value}</ThemedText>
+          {it.hint ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {it.hint}
+            </ThemedText>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
 }
 
 export default function PlanScreen() {
@@ -171,6 +228,7 @@ function TodayCard({ today }: { today: TodaySession }) {
           Aujourd’hui{weekTag}
         </ThemedText>
         <ThemedText type="default">{today.message ?? 'Repos aujourd’hui.'}</ThemedText>
+        {today.recovery ? <RecoveryStats recovery={today.recovery} /> : null}
       </View>
     );
   }
@@ -201,6 +259,7 @@ function TodayCard({ today }: { today: TodaySession }) {
           {adj.reason}
         </ThemedText>
       ) : null}
+      {today.recovery ? <RecoveryStats recovery={today.recovery} /> : null}
     </View>
   );
 }
@@ -383,6 +442,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  recoveryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.four,
+    paddingTop: Spacing.three,
+    marginTop: Spacing.one,
+    borderTopWidth: 1,
+    borderTopColor: Colors.contourFaint,
+  },
+  recoveryStat: {
+    gap: Spacing.half,
   },
   phase: { gap: Spacing.two },
   card: {

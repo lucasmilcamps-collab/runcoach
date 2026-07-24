@@ -75,6 +75,17 @@ export type DailyAdjustment = {
   reason: string;
 };
 
+/** Overnight recovery readings (Garmin) behind today's adjustment. */
+export type RecoverySummary = {
+  hrv: number | null;
+  hrv_baseline: number | null;
+  resting_hr: number | null;
+  resting_hr_baseline: number | null;
+  sleep_hours: number | null;
+  body_battery: number | null;
+  date: string | null;
+};
+
 export type TodaySession = {
   date: string;
   has_plan: boolean;
@@ -83,6 +94,7 @@ export type TodaySession = {
   session: PlanSession | null;
   adjustment: DailyAdjustment | null;
   tsb: number;
+  recovery: RecoverySummary | null;
   message: string | null;
 };
 

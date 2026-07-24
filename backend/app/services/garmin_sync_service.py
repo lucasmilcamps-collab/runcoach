@@ -16,6 +16,13 @@ _PAGE_SIZE = 20
 _MAX_PAGES = 10  # safety cap: 200 activities per sync
 _RATE_LIMIT_DELAY_S = 1.0
 
+# Daily wellness (HRV / sleep / resting HR / Body Battery) window: 30 days feeds
+# the recovery baselines (training-science skill). Only the missing days plus the
+# last two (which get revised as Garmin finishes processing) are re-fetched, so a
+# steady-state sync only makes a couple of extra requests.
+_WELLNESS_HISTORY_DAYS = 30
+_WELLNESS_REFRESH_DAYS = 2
+
 # Plausible human heart-rate bounds (bpm). Used to reject garbage when probing
 # Garmin's loosely-typed profile payloads for HRmax / HRrest.
 _HR_MIN = 30
@@ -233,6 +240,186 @@ async def _update_fitness_profile(
         )
 
 
+def _extract_hrv(payload: object) -> int | None:
+    """Last-night average HRV (ms) from get_hrv_data → hrvSummary.lastNightAvg."""
+    if isinstance(payload, dict):
+        summary = payload.get("hrvSummary")
+        if isinstance(summary, dict):
+            value = summary.get("lastNightAvg")
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                return int(value)
+    return None
+
+
+def _extract_sleep_seconds(payload: object) -> int | None:
+    """Total sleep (seconds) from get_sleep_data → dailySleepDTO.sleepTimeSeconds."""
+    if isinstance(payload, dict):
+        dto = payload.get("dailySleepDTO")
+        if isinstance(dto, dict):
+            value = dto.get("sleepTimeSeconds")
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                return int(value)
+    return None
+
+
+def _extract_sleep_score(payload: object) -> int | None:
+    """Garmin's 0-100 sleep score (dailySleepDTO.sleepScores.overall.value)."""
+    if not isinstance(payload, dict):
+        return None
+    dto = payload.get("dailySleepDTO")
+    scores = dto.get("sleepScores") if isinstance(dto, dict) else None
+    overall = scores.get("overall") if isinstance(scores, dict) else None
+    value = overall.get("value") if isinstance(overall, dict) else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value)
+    return None
+
+
+def _extract_rhr(payload: object) -> int | None:
+    """Resting HR from get_rhr_day → allMetrics.metricsMap
+    .WELLNESS_RESTING_HEART_RATE[].value, bounded to plausible HR."""
+    if not isinstance(payload, dict):
+        return None
+    metrics = payload.get("allMetrics")
+    metrics_map = metrics.get("metricsMap") if isinstance(metrics, dict) else None
+    series = (
+        metrics_map.get("WELLNESS_RESTING_HEART_RATE") if isinstance(metrics_map, dict) else None
+    )
+    if isinstance(series, list):
+        for item in series:
+            if isinstance(item, dict):
+                hr = _plausible_hr(item.get("value"))
+                if hr is not None:
+                    return hr
+    return None
+
+
+def _extract_body_battery_by_date(payload: object) -> dict[str, int]:
+    """Highest Body Battery level per day from a get_body_battery range payload
+    (a list of day dicts, each with a bodyBatteryValuesArray of [ts, status,
+    level, …] rows). Best-effort: any level in the 0-100 band is a candidate; the
+    daily max approximates the morning peak. Display-only, so shape surprises just
+    yield fewer entries, never an error."""
+    out: dict[str, int] = {}
+    if not isinstance(payload, list):
+        return out
+    for day in payload:
+        if not isinstance(day, dict):
+            continue
+        date_str = day.get("date")
+        values = day.get("bodyBatteryValuesArray")
+        if not isinstance(date_str, str) or not isinstance(values, list):
+            continue
+        high: int | None = None
+        for row in values:
+            if not isinstance(row, list):
+                continue
+            for cell in row:
+                if (
+                    isinstance(cell, (int, float))
+                    and not isinstance(cell, bool)
+                    and 0 <= cell <= 100
+                ):
+                    level = int(cell)
+                    if high is None or level > high:
+                        high = level
+        if high is not None:
+            out[date_str] = high
+    return out
+
+
+def _fetch_wellness_range_sync(
+    client: garminconnect.Garmin, dates: list[str]
+) -> list[dict]:
+    """Runs in a worker thread. One Body Battery range call plus per-day HRV /
+    sleep / resting-HR calls, each guarded independently (a missing metric is
+    normal). Sleeps between days to respect Garmin's informal rate limit. Returns
+    one record per day that yielded at least one metric."""
+    if not dates:
+        return []
+
+    body_battery: dict[str, int] = {}
+    try:
+        body_battery = _extract_body_battery_by_date(
+            client.get_body_battery(dates[0], dates[-1])
+        )
+    except Exception:  # noqa: BLE001 — Body Battery is display-only, never fatal
+        body_battery = {}
+
+    records: list[dict] = []
+    for index, cdate in enumerate(dates):
+        record: dict = {"day": cdate}
+        for getter, extractor, field in (
+            (client.get_hrv_data, _extract_hrv, "hrv"),
+            (client.get_sleep_data, _extract_sleep_seconds, "sleep_seconds"),
+            (client.get_rhr_day, _extract_rhr, "resting_hr"),
+        ):
+            try:
+                payload = getter(cdate)
+            except Exception:  # noqa: BLE001 — each metric is best-effort
+                continue
+            value = extractor(payload)
+            if value is not None:
+                record[field] = value
+            if field == "sleep_seconds":
+                score = _extract_sleep_score(payload)
+                if score is not None:
+                    record["sleep_score"] = score
+        if cdate in body_battery:
+            record["body_battery"] = body_battery[cdate]
+        if len(record) > 1:  # more than just the "day" key
+            records.append(record)
+        if index < len(dates) - 1:
+            time.sleep(_RATE_LIMIT_DELAY_S)
+    return records
+
+
+async def sync_wellness(
+    db: AsyncIOMotorDatabase, user_id: str, client: garminconnect.Garmin
+) -> int:
+    """Backfill daily wellness (HRV / sleep / resting HR / Body Battery) into
+    `wellness_daily`. Best-effort and non-throwing: it enriches the recovery
+    signals but must never break the activity sync it runs after. Only fetches
+    days not already stored, plus the last two (Garmin revises them), so a routine
+    sync makes only a couple of extra requests."""
+    today = datetime.now(UTC).date()
+    window_start = today - timedelta(days=_WELLNESS_HISTORY_DAYS)
+    refresh_from = today - timedelta(days=_WELLNESS_REFRESH_DAYS)
+
+    existing: set[str] = set()
+    cursor = db.wellness_daily.find({"user_id": user_id}, {"day": 1})
+    async for doc in cursor:
+        day = doc.get("day")
+        if isinstance(day, str):
+            existing.add(day)
+
+    dates: list[str] = []
+    day = window_start
+    while day <= today:
+        iso = day.isoformat()
+        if iso not in existing or day >= refresh_from:
+            dates.append(iso)
+        day += timedelta(days=1)
+
+    if not dates:
+        return 0
+
+    try:
+        records = await asyncio.to_thread(_fetch_wellness_range_sync, client, dates)
+    except Exception:  # noqa: BLE001 — wellness is enrichment, never fatal
+        return 0
+
+    stored = 0
+    for record in records:
+        record["user_id"] = user_id
+        record["updated_at"] = datetime.now(UTC)
+        await db.wellness_daily.update_one(
+            {"user_id": user_id, "day": record["day"]}, {"$set": record}, upsert=True
+        )
+        stored += 1
+    return stored
+
+
 async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str) -> None:
     """Fire-and-forget background job (asyncio.create_task) — must never
     raise, or the exception is only ever seen in asyncio's default logger."""
@@ -280,6 +467,13 @@ async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str)
         upserted += 1
 
     await _update_fitness_profile(db, user_id, client, raw_activities)
+
+    # Enrich with overnight recovery data. Best-effort: never let a wellness
+    # hiccup fail an otherwise-successful activity sync.
+    try:
+        await sync_wellness(db, user_id, client)
+    except Exception:  # noqa: BLE001 — recovery data is a nice-to-have
+        pass
 
     await db.garmin_credentials.update_one(
         {"user_id": user_id}, {"$set": {"last_sync_at": datetime.now(UTC)}}
