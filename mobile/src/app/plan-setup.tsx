@@ -9,9 +9,17 @@ import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
-import { createPlan, PlanRequest, Weekday } from '@/lib/api/plans';
+import { createPlan, FixedSport, PlanRequest, Weekday } from '@/lib/api/plans';
+import type { SportType } from '@/lib/api/types';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
+
+const FIXED_SPORT_OPTIONS: { sport: SportType; label: string }[] = [
+  { sport: 'PADEL', label: 'Padel' },
+  { sport: 'STRENGTH', label: 'Renforcement' },
+  { sport: 'BIKE', label: 'Vélo' },
+  { sport: 'BASKETBALL', label: 'Basket' },
+];
 
 const OBJECTIVES: Objective[] = [
   { label: '10 km', goal: 'distance', distanceKm: 10 },
@@ -65,9 +73,19 @@ export default function PlanSetupScreen() {
     new Set<Weekday>(['TUESDAY', 'THURSDAY', 'SATURDAY']),
   );
   const [runCount, setRunCount] = useState(3);
+  const [fixedSports, setFixedSports] = useState<Map<SportType, Weekday>>(new Map());
   const [dateError, setDateError] = useState<string | undefined>();
 
   const objective = OBJECTIVES[objectiveIndex];
+
+  function toggleFixedSport(sport: SportType, day: Weekday) {
+    setFixedSports((prev) => {
+      const next = new Map(prev);
+      if (next.get(sport) === day) next.delete(sport);
+      else next.set(sport, day);
+      return next;
+    });
+  }
 
   const mutation = useMutation({
     mutationFn: (request: PlanRequest) => createPlan(request),
@@ -96,6 +114,7 @@ export default function PlanSetupScreen() {
     setDateError(undefined);
 
     const hasDate = trimmedDate.length > 0 && objective.goal !== 'fitness';
+    const fixed: FixedSport[] = Array.from(fixedSports, ([sport, day]) => ({ sport, day }));
     const request: PlanRequest = {
       goal_type: hasDate ? 'race' : objective.goal,
       distance_km: objective.distanceKm,
@@ -103,7 +122,7 @@ export default function PlanSetupScreen() {
       target_time_min: null,
       available_days: DAYS.map((d) => d.value).filter((v) => days.has(v)),
       max_run_sessions_per_week: runCount,
-      fixed_sports: [],
+      fixed_sports: fixed,
     };
     mutation.mutate(request);
   }
@@ -189,6 +208,30 @@ export default function PlanSetupScreen() {
             </View>
           </Field>
 
+          <Field label="Sports fixes (optionnel)">
+            <ThemedText type="small" themeColor="textSecondary">
+              Choisis un jour pour un sport récurrent : le plan sera construit autour (pas de
+              séance intense le lendemain), il ne le déplacera jamais.
+            </ThemedText>
+            {FIXED_SPORT_OPTIONS.map((option) => (
+              <View key={option.sport} style={styles.fixedRow}>
+                <ThemedText type="default" style={styles.fixedLabel}>
+                  {option.label}
+                </ThemedText>
+                <View style={styles.chipRow}>
+                  {DAYS.map((d) => (
+                    <Chip
+                      key={d.value}
+                      label={d.label}
+                      selected={fixedSports.get(option.sport) === d.value}
+                      onPress={() => toggleFixedSport(option.sport, d.value)}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
+          </Field>
+
           {mutation.isPending ? (
             <ThemedText type="small" themeColor="textSecondary">
               Génération du plan en cours… l’IA construit et vérifie chaque semaine, ça peut prendre
@@ -250,6 +293,8 @@ const styles = StyleSheet.create({
   },
   header: { gap: Spacing.two },
   field: { gap: Spacing.two },
+  fixedRow: { gap: Spacing.one, paddingTop: Spacing.two },
+  fixedLabel: { marginBottom: Spacing.half },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
     paddingHorizontal: Spacing.three,
