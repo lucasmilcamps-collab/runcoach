@@ -10,7 +10,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.activity import SportType
 
@@ -91,6 +91,20 @@ class Session(BaseModel):
     pace_range: PaceRange | None = None
     hr_zone: int | None = None
     rationale: str  # one sentence — feeds UI transparency
+
+    @field_validator("sport", mode="before")
+    @classmethod
+    def _coerce_sport(cls, value: object) -> object:
+        """The model often emits sports outside our enum (swimming, yoga, "rest")
+        for cross-training/rest days. Everything unrecognised is OTHER — the UI
+        labels sessions by `type`, not `sport`, so nothing is lost, and
+        generation never fails on an unexpected sport."""
+        if isinstance(value, str):
+            try:
+                return SportType(value.upper())
+            except ValueError:
+                return SportType.OTHER
+        return value
 
 
 class Week(BaseModel):

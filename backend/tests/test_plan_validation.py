@@ -82,6 +82,17 @@ def _valid_plan() -> Plan:
     )
 
 
+def test_session_coerces_unknown_sport_to_other():
+    session = Session(
+        day=Weekday.MONDAY,
+        sport="SWIMMING",  # not in SportType — should not raise
+        type="cross_training",
+        duration_min=40,
+        rationale="x",
+    )
+    assert session.sport == SportType.OTHER
+
+
 def test_valid_plan_has_no_violations():
     assert plan_validation.validate_plan(_valid_plan(), _valid_request(), TODAY) == []
 

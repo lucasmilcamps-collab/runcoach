@@ -102,7 +102,11 @@ def _system_prompt() -> str:
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
         "- Zones cardiaques via la FC max/repos fournies (Karvonen), jamais "
         "220−âge. Aucune recommandation médicale.\n"
-        "- Chaque séance a un `rationale` d'une phrase expliquant sa place.\n\n"
+        "- Chaque séance a un `rationale` d'une phrase expliquant sa place.\n"
+        "- Le champ `sport` vaut EXACTEMENT l'une de ces valeurs : RUN, PADEL, "
+        "BASKETBALL, BIKE, STRENGTH, OTHER. Pour la natation, le yoga, la "
+        "mobilité, un jour de repos ou tout autre cas, mets sport=OTHER (le "
+        "type de séance précise déjà la nature).\n\n"
         "Réponds UNIQUEMENT avec un objet JSON conforme au schéma, sans texte "
         "autour, sans balises markdown."
     )
