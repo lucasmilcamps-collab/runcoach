@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,9 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import {
+  createPlan,
   getCurrentPlan,
+  getPlanProgress,
   getTodaySession,
   PlanPhase,
+  PlanProgress,
+  PlanRequest,
   PlanResponse,
   PlanSession,
   PlanWeek,
@@ -64,8 +68,24 @@ export default function PlanScreen() {
     queryFn: getTodaySession,
     retry: false,
   });
+  const progressQuery = useQuery({
+    queryKey: ['plan-progress'],
+    queryFn: getPlanProgress,
+    retry: false,
+  });
+  const queryClient = useQueryClient();
+
+  const replanMutation = useMutation({
+    mutationFn: (request: PlanRequest) => createPlan(request),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['plan'], data);
+      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+    },
+  });
 
   const noPlan = query.error instanceof ApiError && query.error.status === 404;
+  const currentRequest = query.data?.request ?? null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -74,6 +94,14 @@ export default function PlanScreen() {
           <View style={styles.header}>
             <ThemedText type="title">Mon plan</ThemedText>
           </View>
+
+          {progressQuery.data?.replan_suggested && currentRequest ? (
+            <ReplanBanner
+              progress={progressQuery.data}
+              onReplan={() => replanMutation.mutate(currentRequest)}
+              isReplanning={replanMutation.isPending}
+            />
+          ) : null}
 
           {todayQuery.data?.has_plan ? <TodayCard today={todayQuery.data} /> : null}
 
@@ -101,6 +129,34 @@ export default function PlanScreen() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+function ReplanBanner({
+  progress,
+  onReplan,
+  isReplanning,
+}: {
+  progress: PlanProgress;
+  onReplan: () => void;
+  isReplanning: boolean;
+}) {
+  return (
+    <View style={styles.replanBanner}>
+      <ThemedText type="waypointLabel" themeColor="flare">
+        Plan à réajuster
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Régénérer les semaines
+        restantes à partir de ta forme actuelle ?
+      </ThemedText>
+      <Button
+        label="Régénérer un plan adapté"
+        variant="ghost"
+        loading={isReplanning}
+        onPress={onReplan}
+      />
+    </View>
   );
 }
 
@@ -273,6 +329,14 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     borderLeftWidth: 2,
     borderLeftColor: Colors.blaze,
+  },
+  replanBanner: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.three,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.flare,
   },
   todayTitleRow: {
     flexDirection: 'row',

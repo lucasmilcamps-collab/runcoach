@@ -3,8 +3,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import get_current_user
-from app.models.plan import PlanRequest, PlanResponse, TodaySession
-from app.services import plan_service
+from app.models.plan import PlanProgress, PlanRequest, PlanResponse, TodaySession
+from app.services import plan_progress, plan_service
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
 
@@ -28,6 +28,16 @@ async def today_session(
 ):
     """Today's planned session, deterministically adjusted for current form."""
     return await plan_service.get_today_session(db, str(user["_id"]))
+
+
+@router.get("/progress", response_model=PlanProgress)
+async def plan_progress_endpoint(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Recent adherence + whether a replan is warranted (missed key sessions or
+    persistent fatigue)."""
+    return await plan_progress.compute_progress(db, str(user["_id"]))
 
 
 @router.get("/current", response_model=PlanResponse)

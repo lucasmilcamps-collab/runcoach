@@ -86,6 +86,22 @@ export type TodaySession = {
   message: string | null;
 };
 
+export type PlanProgress = {
+  has_plan: boolean;
+  week_current: number | null;
+  weeks_total: number | null;
+  recent_key_planned: number;
+  recent_key_completed: number;
+  recent_key_missed: number;
+  tsb: number;
+  replan_suggested: boolean;
+  replan_reason: string | null;
+};
+
+export function getPlanProgress() {
+  return apiClient.get<PlanProgress>('/api/v1/plans/progress');
+}
+
 export function getCurrentPlan() {
   return apiClient.get<PlanResponse>('/api/v1/plans/current');
 }

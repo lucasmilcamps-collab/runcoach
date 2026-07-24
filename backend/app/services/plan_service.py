@@ -24,7 +24,7 @@ from app.models.plan import (
     TodaySession,
     Week,
 )
-from app.services import fitness_service, plan_adaptation, plan_validation
+from app.services import fitness_service, plan_adaptation, plan_progress, plan_validation
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
@@ -142,7 +142,9 @@ def _user_prompt(request: PlanRequest, context: dict, today: date) -> str:
         f"{_weeks_directive(request, today)}\n"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif. La sortie longue progresse d'au plus 15 min d'une "
-        "semaine à l'autre. Le cross-training compte comme charge.\n\n"
+        "semaine à l'autre. Le cross-training compte comme charge. Si des séances "
+        "récentes ont été manquées (voir progression_recente), repars du niveau "
+        "actuel sans chercher à rattraper le retard.\n\n"
         f"Schéma JSON attendu (respecte-le exactement) :\n{schema}"
     )
 
@@ -250,6 +252,18 @@ async def generate_plan(
     background task can be killed mid-run, so the caller awaits the real result."""
     today = datetime.now(UTC).date()
     context = await build_context(db, user_id)
+
+    # Replan awareness: if a prior plan exists, tell the model what was actually
+    # done recently so the regenerated plan restarts from reality, not the paper
+    # plan (plan-generator skill: pass the real completed history).
+    progress = await plan_progress.compute_progress(db, user_id)
+    if progress.has_plan:
+        context["progression_recente"] = {
+            "seances_cles_prevues_14j": progress.recent_key_planned,
+            "seances_cles_realisees_14j": progress.recent_key_completed,
+            "seances_cles_manquees_14j": progress.recent_key_missed,
+        }
+
     version = await _next_version(db, user_id)
 
     try:

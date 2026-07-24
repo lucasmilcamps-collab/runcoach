@@ -158,3 +158,17 @@ class TodaySession(BaseModel):
     adjustment: DailyAdjustment | None = None
     tsb: float
     message: str | None = None  # e.g. "Plan terminé", "Aucun plan actif"
+
+
+class PlanProgress(BaseModel):
+    """Adherence over the recent window, and whether a replan is warranted."""
+
+    has_plan: bool
+    week_current: int | None = None
+    weeks_total: int | None = None
+    recent_key_planned: int = 0
+    recent_key_completed: int = 0
+    recent_key_missed: int = 0
+    tsb: float = 0.0
+    replan_suggested: bool = False
+    replan_reason: str | None = None
