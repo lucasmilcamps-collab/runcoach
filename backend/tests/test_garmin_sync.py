@@ -82,9 +82,9 @@ async def test_sync_stores_fitness_profile_from_garmin(db):
 
     mock_instance = MagicMock()
     mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
-    mock_instance.get_userprofile_settings.return_value = {
-        "userData": {"maxHeartRate": 192, "restingHeartRate": 48}
-    }
+    # HRmax lives in profile settings; HRrest lives in the daily wellness summary.
+    mock_instance.get_userprofile_settings.return_value = {"userData": {"maxHeartRate": 192}}
+    mock_instance.get_user_summary.return_value = {"lastSevenDaysAvgRestingHeartRate": 48}
 
     with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
         await garmin_sync_service.run_activity_sync(db, user_id, job_id)
@@ -102,10 +102,10 @@ async def test_sync_falls_back_to_observed_max_hr(db):
 
     mock_instance = MagicMock()
     mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY, PADEL_ACTIVITY], []]
-    # No usable HR anywhere in the profile payloads.
+    # No usable HR anywhere: empty profile settings and empty wellness summary.
     mock_instance.get_userprofile_settings.return_value = {}
     mock_instance.get_user_profile.return_value = {}
-    mock_instance.get_rhr_day.return_value = {}
+    mock_instance.get_user_summary.return_value = {}
     mock_instance.get_heart_rates.return_value = {}
 
     with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
@@ -168,10 +168,35 @@ async def test_sync_now_skips_when_recent(db):
     await db.garmin_credentials.update_one(
         {"user_id": user_id}, {"$set": {"last_sync_at": datetime.now(UTC) - timedelta(minutes=2)}}
     )
+    # A complete profile means the normal throttle applies.
+    await db.fitness_profiles.insert_one({"user_id": user_id, "hr_max": 190, "hr_rest": 50})
 
     result = await garmin_sync_service.sync_now(db, user_id)
 
     assert result is None
+
+
+async def test_sync_now_bypasses_throttle_until_profile_complete(db):
+    """A recent sync must not block backfilling a missing HR profile — without
+    it the load engine can never leave 'low confidence'."""
+    user_id = await _seed_user_and_credentials(db)
+    await db.garmin_credentials.update_one(
+        {"user_id": user_id}, {"$set": {"last_sync_at": datetime.now(UTC) - timedelta(minutes=2)}}
+    )  # recent — would normally skip, but there's no fitness_profiles doc yet
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_userprofile_settings.return_value = {"maxHeartRate": 190}
+    mock_instance.get_user_summary.return_value = {"restingHeartRate": 50}
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        result = await garmin_sync_service.sync_now(db, user_id)
+
+    assert result is not None
+    assert result.status == JobStatus.DONE
+    profile = await db.fitness_profiles.find_one({"user_id": user_id})
+    assert profile["hr_max"] == 190
+    assert profile["hr_rest"] == 50
 
 
 async def test_sync_now_runs_and_returns_finished_job(db):

@@ -112,42 +112,64 @@ def _search_hr_value(data: object, key_hints: tuple[str, ...]) -> int | None:
     return None
 
 
-def _fetch_hr_profile_sync(client: garminconnect.Garmin) -> tuple[int | None, int | None]:
-    """Best-effort HRmax / HRrest from Garmin (runs in a worker thread).
+def _plausible_hr(value: object) -> int | None:
+    if isinstance(value, (int, float)):
+        ivalue = int(value)
+        if _HR_MIN <= ivalue <= _HR_MAX_CEILING:
+            return ivalue
+    return None
 
-    Every call is guarded independently: a physiology profile is a nice-to-have
-    for the load engine, never a reason to fail an activity sync. Garmin exposes
-    these values inconsistently, so we try a few endpoints and probe their
-    payloads defensively."""
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
-    hr_max: int | None = None
-    hr_rest: int | None = None
 
+def _fetch_max_hr_sync(client: garminconnect.Garmin) -> int | None:
+    """The athlete's configured max HR, if Garmin exposes it in profile
+    settings. Often absent (Garmin auto-detects it), so the caller falls back
+    to the highest observed activity max — an empirically sound ceiling."""
     for getter in (
-        lambda: client.get_userprofile_settings(),
-        lambda: client.get_user_profile(),
+        client.get_userprofile_settings,
+        client.get_user_profile,
     ):
         try:
             payload = getter()
         except Exception:  # noqa: BLE001 — probing loosely-typed upstream, tolerate anything
             continue
-        hr_max = hr_max or _search_hr_value(payload, _HR_MAX_KEY_HINTS)
-        hr_rest = hr_rest or _search_hr_value(payload, _HR_REST_KEY_HINTS)
+        found = _search_hr_value(payload, _HR_MAX_KEY_HINTS)
+        if found is not None:
+            return found
+    return None
 
-    if hr_rest is None:
-        for getter in (
-            lambda: client.get_rhr_day(today),
-            lambda: client.get_heart_rates(today),
-        ):
+
+def _fetch_resting_hr_sync(client: garminconnect.Garmin) -> int | None:
+    """Resting HR from Garmin's daily wellness summary — NOT the profile
+    settings (it isn't there). We prefer the 7-day average (stable) over a
+    single day, and walk back a couple of days because 'today' is usually still
+    null early on. Bounded to a few calls to respect the rate limit."""
+    today = datetime.now(UTC).date()
+    for days_ago in (1, 7):
+        cdate = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        for getter in (client.get_user_summary, client.get_heart_rates):
             try:
-                payload = getter()
+                payload = getter(cdate)
             except Exception:  # noqa: BLE001
                 continue
-            hr_rest = _search_hr_value(payload, _HR_REST_KEY_HINTS)
-            if hr_rest is not None:
-                break
+            if not isinstance(payload, dict):
+                continue
+            hr = (
+                _plausible_hr(payload.get("lastSevenDaysAvgRestingHeartRate"))
+                or _plausible_hr(payload.get("restingHeartRate"))
+                or _search_hr_value(payload, _HR_REST_KEY_HINTS)
+            )
+            if hr is not None:
+                return hr
+        time.sleep(_RATE_LIMIT_DELAY_S)
+    return None
 
-    return hr_max, hr_rest
+
+def _fetch_hr_profile_sync(client: garminconnect.Garmin) -> tuple[int | None, int | None]:
+    """Best-effort HRmax / HRrest from Garmin (runs in a worker thread).
+
+    Every call is guarded independently: a physiology profile is a nice-to-have
+    for the load engine, never a reason to fail an activity sync."""
+    return _fetch_max_hr_sync(client), _fetch_resting_hr_sync(client)
 
 
 async def _update_fitness_profile(
@@ -262,9 +284,16 @@ async def sync_now(db: AsyncIOMotorDatabase, user_id: str) -> JobResponse | None
     if credentials is None:
         return None
 
+    # Until we have a complete HR profile the load engine can't compute zones,
+    # so a manual sync always runs to backfill it — bypassing the throttle.
+    # Once HRmax and HRrest are known, the normal rate-limit guard applies.
+    profile = await db.fitness_profiles.find_one({"user_id": user_id})
+    has_full_profile = bool(profile and profile.get("hr_max") and profile.get("hr_rest"))
+
     last_sync_at = credentials.get("last_sync_at")
     if (
-        last_sync_at is not None
+        has_full_profile
+        and last_sync_at is not None
         and datetime.now(UTC) - _as_aware_utc(last_sync_at) < SYNC_MIN_INTERVAL
     ):
         return None
