@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
@@ -21,6 +21,17 @@ function formatDuration(durationS: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
+}
+
+function formatDistance(distanceM: number): string {
+  return `${(distanceM / 1000).toFixed(2)} km`;
+}
+
+function formatPace(durationS: number, distanceM: number): string {
+  const secPerKm = durationS / (distanceM / 1000);
+  const min = Math.floor(secPerKm / 60);
+  const sec = Math.round(secPerKm % 60);
+  return `${min}:${sec.toString().padStart(2, '0')} /km`;
 }
 
 function formatDate(isoString: string): string {
@@ -158,20 +169,72 @@ function ActivityList({ activities }: { activities: Activity[] }) {
   return (
     <View style={styles.activityList}>
       {activities.map((activity, index) => (
-        <View
+        <ActivityRow
           key={activity.id}
-          style={[styles.activityRow, index === activities.length - 1 && styles.activityRowLast]}>
-          <View style={styles.activityRowMain}>
-            <ThemedText type="default">{activityLabel(activity)}</ThemedText>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
-              {formatDate(activity.start_time)}
-            </ThemedText>
-          </View>
+          activity={activity}
+          isLast={index === activities.length - 1}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hasDistance = activity.distance_m != null && activity.distance_m > 0;
+  const hasDetail = hasDistance || activity.avg_hr != null || activity.max_hr != null;
+
+  return (
+    <Pressable
+      disabled={!hasDetail}
+      onPress={() => setOpen((v) => !v)}
+      accessibilityRole={hasDetail ? 'button' : undefined}
+      style={[styles.activityRow, isLast && styles.activityRowLast]}>
+      <View style={styles.activityRowTop}>
+        <View style={styles.activityRowMain}>
+          <ThemedText type="default">
+            {activityLabel(activity)}
+            {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
+          </ThemedText>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {formatDuration(activity.duration_s)}
+            {formatDate(activity.start_time)}
           </ThemedText>
         </View>
-      ))}
+        <ThemedText type="waypointLabel" themeColor="textSecondary">
+          {formatDuration(activity.duration_s)}
+        </ThemedText>
+      </View>
+
+      {open ? (
+        <View style={styles.activityDetail}>
+          {hasDistance ? (
+            <Detail label="Distance" value={formatDistance(activity.distance_m as number)} />
+          ) : null}
+          {hasDistance ? (
+            <Detail
+              label="Allure"
+              value={formatPace(activity.duration_s, activity.distance_m as number)}
+            />
+          ) : null}
+          {activity.avg_hr != null ? (
+            <Detail label="FC moyenne" value={`${activity.avg_hr} bpm`} />
+          ) : null}
+          {activity.max_hr != null ? (
+            <Detail label="FC max" value={`${activity.max_hr} bpm`} />
+          ) : null}
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      <ThemedText type="small">{value}</ThemedText>
     </View>
   );
 }
@@ -214,18 +277,32 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   activityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderBottomWidth: 1,
     borderBottomColor: Colors.contourFaint,
+  },
+  activityRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   activityRowLast: {
     borderBottomWidth: 0,
   },
   activityRowMain: {
     gap: Spacing.half,
+  },
+  activityDetail: {
+    gap: Spacing.half,
+    paddingTop: Spacing.two,
+    marginTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: Colors.contourFaint,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });

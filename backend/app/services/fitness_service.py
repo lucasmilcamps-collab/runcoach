@@ -11,9 +11,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.models.fitness import FitnessDay, FitnessResponse
 from app.services import load_service
 
-# Trailing window returned to the client. CTL/ATL are still seeded from the
-# full history the maths sees; this only bounds how much of the curve we ship.
-_SERIES_WINDOW_DAYS = 42
+# Trailing window returned to the client (90 days = the form curve horizon).
+# CTL/ATL are still seeded from the full history the maths sees; this only
+# bounds how much of the curve we ship.
+_SERIES_WINDOW_DAYS = 90
 
 
 def _as_utc_date(value: datetime) -> date:

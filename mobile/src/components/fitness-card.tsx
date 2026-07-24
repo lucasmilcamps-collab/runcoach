@@ -82,7 +82,10 @@ export function FitnessCard({
         </ThemedText>
       </View>
 
-      <LoadSparkline series={fitness.series} />
+      <ThemedText type="waypointLabel" themeColor="textSecondary">
+        Forme (fitness) — 90 jours
+      </ThemedText>
+      <FitnessSparkline series={fitness.series} />
 
       <View style={styles.statsRow}>
         <Stat label="Fitness 42j" value={Math.round(fitness.ctl)} />
@@ -116,25 +119,21 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function LoadSparkline({ series }: { series: Fitness['series'] }) {
-  const maxLoad = Math.max(...series.map((d) => d.load), 1);
+function FitnessSparkline({ series }: { series: Fitness['series'] }) {
+  // Plot CTL (fitness) — the smooth trend that reads as "form over 90 days",
+  // rather than spiky daily load.
+  const maxCtl = Math.max(...series.map((d) => d.ctl), 1);
   const lastIndex = series.length - 1;
 
   return (
-    <View style={styles.sparkline} accessibilityLabel="Charge des dernières semaines">
+    <View style={styles.sparkline} accessibilityLabel="Forme (fitness) sur 90 jours">
       {series.map((day, index) => {
-        const ratio = day.load / maxLoad;
-        // A rest day still reads as a baseline tick rather than nothing.
-        const heightPct = day.load > 0 ? Math.max(ratio * 100, 8) : 4;
+        const heightPct = Math.max((day.ctl / maxCtl) * 100, 3);
         const isLast = index === lastIndex;
         return (
           <View key={day.day} style={styles.barSlot}>
             <View
-              style={[
-                styles.bar,
-                { height: `${heightPct}%` },
-                isLast ? styles.barLast : day.load > 0 ? styles.barActive : styles.barRest,
-              ]}
+              style={[styles.bar, { height: `${heightPct}%` }, isLast ? styles.barLast : styles.barActive]}
             />
           </View>
         );
@@ -167,7 +166,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     height: 44,
-    gap: 2,
+    gap: 1,
   },
   barSlot: {
     flex: 1,
@@ -181,9 +180,6 @@ const styles = StyleSheet.create({
   },
   barActive: {
     backgroundColor: Colors.contour,
-  },
-  barRest: {
-    backgroundColor: Colors.contourFaint,
   },
   barLast: {
     backgroundColor: Colors.blaze,
