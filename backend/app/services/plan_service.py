@@ -6,6 +6,7 @@ proposes; validate_plan guarantees. The API key lives server-side only and is
 never logged, nor is any health data (project security rules)."""
 
 import json
+import math
 from datetime import UTC, date, datetime, timedelta
 
 import anthropic
@@ -112,14 +113,28 @@ def _system_prompt() -> str:
     )
 
 
-def _user_prompt(request: PlanRequest, context: dict) -> str:
+def _weeks_directive(request: PlanRequest, today: date) -> str:
+    if request.race_date is not None:
+        weeks = max(1, math.ceil((request.race_date - today).days / 7))
+        return (
+            f"Le plan doit compter EXACTEMENT {weeks} semaines (il reste {weeks} "
+            "semaines avant la course), la dernière étant la semaine de course "
+            "avec un affûtage (taper) et une charge réduite. N'ajoute ni ne "
+            "retire de semaines."
+        )
+    return "Construis un plan de 8 à 12 semaines."
+
+
+def _user_prompt(request: PlanRequest, context: dict, today: date) -> str:
     schema = json.dumps(Plan.model_json_schema(), ensure_ascii=False)
     req = request.model_dump(mode="json")
     return (
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
+        f"{_weeks_directive(request, today)}\n"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
-        "jusqu'à l'objectif. Le cross-training compte comme charge.\n\n"
+        "jusqu'à l'objectif. La sortie longue progresse d'au plus 15 min d'une "
+        "semaine à l'autre. Le cross-training compte comme charge.\n\n"
         f"Schéma JSON attendu (respecte-le exactement) :\n{schema}"
     )
 
@@ -184,7 +199,7 @@ async def _generate_valid_plan(request: PlanRequest, context: dict, today: date)
         raise PlanGenerationError("Génération IA non configurée (clé API absente).")
 
     system = _system_prompt()
-    user = _user_prompt(request, context)
+    user = _user_prompt(request, context, today)
     feedback: str | None = None
 
     last_problem = "aucune réponse exploitable"
