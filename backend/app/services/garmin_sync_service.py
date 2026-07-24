@@ -16,6 +16,16 @@ _PAGE_SIZE = 20
 _MAX_PAGES = 10  # safety cap: 200 activities per sync
 _RATE_LIMIT_DELAY_S = 1.0
 
+# Plausible human heart-rate bounds (bpm). Used to reject garbage when probing
+# Garmin's loosely-typed profile payloads for HRmax / HRrest.
+_HR_MIN = 30
+_HR_MAX_CEILING = 230
+# Substrings (lowercased key names) that carry each value across Garmin's
+# several profile/settings shapes. Order doesn't matter — we take the first
+# plausible number found.
+_HR_MAX_KEY_HINTS = ("maxheartrate", "maxhr", "lactatethresholdheartrate")
+_HR_REST_KEY_HINTS = ("restingheartrate", "resting_heart_rate", "restinghr")
+
 
 def _restore_client_sync(token_blob: str) -> garminconnect.Garmin:
     client = garminconnect.Garmin()
@@ -77,6 +87,107 @@ def _fetch_activities_sync(client: garminconnect.Garmin, cutoff: datetime) -> li
     return collected
 
 
+def _search_hr_value(data: object, key_hints: tuple[str, ...]) -> int | None:
+    """Recursively walk a Garmin payload for a plausible HR under any key whose
+    lowercased name contains one of key_hints. Garmin's profile/settings shapes
+    differ across accounts and library versions, so we probe rather than assume
+    a fixed path — and only accept values inside human HR bounds."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, (int, float)) and any(
+                hint in str(key).lower() for hint in key_hints
+            ):
+                ivalue = int(value)
+                if _HR_MIN <= ivalue <= _HR_MAX_CEILING:
+                    return ivalue
+        for value in data.values():
+            found = _search_hr_value(value, key_hints)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _search_hr_value(item, key_hints)
+            if found is not None:
+                return found
+    return None
+
+
+def _fetch_hr_profile_sync(client: garminconnect.Garmin) -> tuple[int | None, int | None]:
+    """Best-effort HRmax / HRrest from Garmin (runs in a worker thread).
+
+    Every call is guarded independently: a physiology profile is a nice-to-have
+    for the load engine, never a reason to fail an activity sync. Garmin exposes
+    these values inconsistently, so we try a few endpoints and probe their
+    payloads defensively."""
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    hr_max: int | None = None
+    hr_rest: int | None = None
+
+    for getter in (
+        lambda: client.get_userprofile_settings(),
+        lambda: client.get_user_profile(),
+    ):
+        try:
+            payload = getter()
+        except Exception:  # noqa: BLE001 — probing loosely-typed upstream, tolerate anything
+            continue
+        hr_max = hr_max or _search_hr_value(payload, _HR_MAX_KEY_HINTS)
+        hr_rest = hr_rest or _search_hr_value(payload, _HR_REST_KEY_HINTS)
+
+    if hr_rest is None:
+        for getter in (
+            lambda: client.get_rhr_day(today),
+            lambda: client.get_heart_rates(today),
+        ):
+            try:
+                payload = getter()
+            except Exception:  # noqa: BLE001
+                continue
+            hr_rest = _search_hr_value(payload, _HR_REST_KEY_HINTS)
+            if hr_rest is not None:
+                break
+
+    return hr_max, hr_rest
+
+
+async def _update_fitness_profile(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    client: garminconnect.Garmin,
+    raw_activities: list[dict],
+) -> None:
+    """Refresh the stored HRmax/HRrest profile. Never raises: a missing profile
+    only degrades the load engine to 'low confidence', it must not break sync."""
+    try:
+        hr_max, hr_rest = await asyncio.to_thread(_fetch_hr_profile_sync, client)
+    except Exception:  # noqa: BLE001 — profile is best-effort, sync must survive
+        hr_max, hr_rest = None, None
+
+    # Fallback for HRmax: the highest max-HR Garmin recorded across synced
+    # sessions is a sound lower bound when the profile field is absent.
+    observed_max = [
+        int(raw["maxHR"])
+        for raw in raw_activities
+        if isinstance(raw.get("maxHR"), (int, float))
+        and _HR_MIN <= int(raw["maxHR"]) <= _HR_MAX_CEILING
+    ]
+    if hr_max is None and observed_max:
+        hr_max = max(observed_max)
+
+    update: dict = {"user_id": user_id, "updated_at": datetime.now(UTC)}
+    if hr_max is not None:
+        update["hr_max"] = hr_max
+    if hr_rest is not None:
+        update["hr_rest"] = hr_rest
+
+    # Only touch the doc when we actually learned something, so a transient
+    # upstream blank never wipes a previously good value.
+    if hr_max is not None or hr_rest is not None:
+        await db.fitness_profiles.update_one(
+            {"user_id": user_id}, {"$set": update}, upsert=True
+        )
+
+
 async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str) -> None:
     """Fire-and-forget background job (asyncio.create_task) — must never
     raise, or the exception is only ever seen in asyncio's default logger."""
@@ -122,6 +233,8 @@ async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str)
             upsert=True,
         )
         upserted += 1
+
+    await _update_fitness_profile(db, user_id, client, raw_activities)
 
     await db.garmin_credentials.update_one(
         {"user_id": user_id}, {"$set": {"last_sync_at": datetime.now(UTC)}}

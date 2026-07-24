@@ -5,11 +5,13 @@ import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
+import { getFitness } from '@/lib/api/fitness';
 import { syncGarmin } from '@/lib/api/garmin';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
@@ -39,10 +41,17 @@ export default function DashboardScreen() {
     enabled: garminConnected,
   });
 
+  const fitnessQuery = useQuery({
+    queryKey: ['fitness'],
+    queryFn: getFitness,
+    enabled: garminConnected,
+  });
+
   const syncMutation = useMutation({
     mutationFn: syncGarmin,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['fitness'] });
     },
   });
 
@@ -105,11 +114,12 @@ export default function DashboardScreen() {
 
           {isSyncing ? (
             <SyncingCard />
-          ) : activities.length > 0 ? (
-            <ActivityList activities={activities} />
-          ) : (
-            <FlatContour />
-          )}
+          ) : garminConnected ? (
+            <>
+              <FitnessCard fitness={fitnessQuery.data} isLoading={fitnessQuery.isLoading} />
+              {activities.length > 0 ? <ActivityList activities={activities} /> : null}
+            </>
+          ) : null}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -166,23 +176,6 @@ function ActivityList({ activities }: { activities: Activity[] }) {
   );
 }
 
-function FlatContour() {
-  return (
-    <View style={styles.contourCard}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
-        Charge — 7 derniers jours
-      </ThemedText>
-      <View style={styles.contourLineWrapper}>
-        <View style={styles.contourLine} />
-        <View style={styles.contourDot} />
-      </View>
-      <ThemedText type="small" themeColor="textSecondary">
-        Aucune charge enregistrée pour l'instant.
-      </ThemedText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -215,23 +208,6 @@ const styles = StyleSheet.create({
   },
   syncingCard: {
     alignItems: 'center',
-  },
-  contourLineWrapper: {
-    height: 48,
-    justifyContent: 'center',
-    width: '100%',
-  },
-  contourLine: {
-    height: 1,
-    backgroundColor: Colors.contour,
-  },
-  contourDot: {
-    position: 'absolute',
-    left: 0,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.textSecondary,
   },
   activityList: {
     backgroundColor: Colors.backgroundElement,

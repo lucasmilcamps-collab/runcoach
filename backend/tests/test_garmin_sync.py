@@ -73,6 +73,49 @@ async def test_run_activity_sync_success(db):
     assert credentials["last_sync_at"] is not None
 
 
+async def test_sync_stores_fitness_profile_from_garmin(db):
+    """HRmax/HRrest are probed from Garmin's profile payloads and stored so the
+    load engine can compute zones. Field names vary across accounts, so the
+    probe is by key-substring, not a fixed path."""
+    user_id = await _seed_user_and_credentials(db)
+    job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_userprofile_settings.return_value = {
+        "userData": {"maxHeartRate": 192, "restingHeartRate": 48}
+    }
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    profile = await db.fitness_profiles.find_one({"user_id": user_id})
+    assert profile["hr_max"] == 192
+    assert profile["hr_rest"] == 48
+
+
+async def test_sync_falls_back_to_observed_max_hr(db):
+    """When Garmin exposes no HRmax field, the highest recorded activity maxHR
+    is a sound fallback lower bound."""
+    user_id = await _seed_user_and_credentials(db)
+    job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY, PADEL_ACTIVITY], []]
+    # No usable HR anywhere in the profile payloads.
+    mock_instance.get_userprofile_settings.return_value = {}
+    mock_instance.get_user_profile.return_value = {}
+    mock_instance.get_rhr_day.return_value = {}
+    mock_instance.get_heart_rates.return_value = {}
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    profile = await db.fitness_profiles.find_one({"user_id": user_id})
+    assert profile["hr_max"] == 175  # highest maxHR across the two activities
+    assert "hr_rest" not in profile  # never invented
+
+
 async def test_run_activity_sync_is_idempotent(db):
     """A resync must upsert, never duplicate (garmin-sync skill)."""
     user_id = await _seed_user_and_credentials(db)

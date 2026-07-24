@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import activities, auth, garmin, jobs
+from app.api import activities, auth, fitness, garmin, jobs
 from app.core.config import settings
 from app.core.db import get_db
 
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(garmin.router)
 app.include_router(activities.router)
+app.include_router(fitness.router)
 app.include_router(jobs.router)
 
 
