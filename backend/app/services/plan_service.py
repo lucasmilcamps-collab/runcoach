@@ -28,15 +28,21 @@ class PlanGenerationError(Exception):
     failure, or 3 failed validation attempts). Carries a user-safe message."""
 
 
-def _strip_fences(text: str) -> str:
+def _extract_json(text: str) -> str:
+    """Isolate the JSON object even if the model wraps it in ```fences``` or adds
+    a sentence before/after — the model doesn't always obey 'JSON only'."""
     stripped = text.strip()
     if stripped.startswith("```"):
-        # Drop the opening ``` / ```json line and the closing fence.
         lines = stripped.splitlines()
         lines = lines[1:] if lines else lines
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
-        stripped = "\n".join(lines)
+        stripped = "\n".join(lines).strip()
+    if not stripped.startswith("{"):
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            stripped = stripped[start : end + 1]
     return stripped.strip()
 
 
@@ -174,27 +180,30 @@ async def _generate_valid_plan(request: PlanRequest, context: dict, today: date)
     user = _user_prompt(request, context)
     feedback: str | None = None
 
+    last_problem = "aucune réponse exploitable"
     for _ in range(_MAX_ATTEMPTS):
         raw = await _call_anthropic(system, user, feedback)
         try:
-            plan = Plan.model_validate_json(_strip_fences(raw))
+            plan = Plan.model_validate_json(_extract_json(raw))
         except ValidationError as exc:
-            feedback = (
-                f"Le JSON précédent était invalide ({exc.error_count()} erreurs). "
-                "Renvoie un JSON conforme au schéma."
+            errors = exc.errors()[:3]
+            last_problem = "JSON non conforme au schéma : " + "; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])} → {e['msg']}" for e in errors
             )
+            feedback = last_problem + ". Renvoie un JSON strictement conforme au schéma."
             continue
         violations = plan_validation.validate_plan(plan, request, today)
         if not violations:
             return plan
+        last_problem = " ; ".join(violations)
         feedback = (
             "Le plan viole ces règles : "
-            + " ; ".join(violations)
+            + last_problem
             + ". Corrige uniquement ces points, garde le reste."
         )
 
     raise PlanGenerationError(
-        "Impossible de produire un plan valide après plusieurs tentatives. Réessayez."
+        f"Plan invalide après {_MAX_ATTEMPTS} tentatives. Dernier problème : {last_problem[:400]}"
     )
 
 
