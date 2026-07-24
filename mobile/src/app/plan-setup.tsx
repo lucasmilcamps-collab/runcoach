@@ -73,6 +73,7 @@ export default function PlanSetupScreen() {
     mutationFn: (request: PlanRequest) => createPlan(request),
     onSuccess: (data) => {
       queryClient.setQueryData(['plan'], data);
+      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
       router.back();
     },
   });

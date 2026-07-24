@@ -187,6 +187,70 @@ async def test_plans_endpoint_generates(client, db):
     assert body["plan"]["phases"][0]["weeks"][0]["index"] == 1
 
 
+async def _seed_ready_plan(db, user_id: str, sessions_by_day: dict) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=today.weekday())  # Monday of this week
+    sessions = [_s(day, stype, 45) for day, stype in sessions_by_day.items()]
+    week = Week(index=1, is_deload=False, target_load=100.0, sessions=sessions)
+    plan = Plan(goal=PlanGoal(description="Test"), phases=[Phase(name="base", weeks=[week])])
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "request": _request().model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+
+async def test_today_session_returns_todays_session(db):
+    from datetime import UTC, datetime
+
+    from app.models.plan import WEEKDAY_ORDER
+
+    user_id = await _seed_user(db)
+    today_weekday = WEEKDAY_ORDER[datetime.now(UTC).date().weekday()]
+    await _seed_ready_plan(db, user_id, {today_weekday: "easy"})
+
+    result = await plan_service.get_today_session(db, user_id)
+
+    assert result.has_plan is True
+    assert result.has_session is True
+    assert result.week_index == 1
+    assert result.session is not None
+    assert result.session.type == "easy"
+    # No HR profile → tsb 0 → session kept.
+    assert result.adjustment is not None
+    assert result.adjustment.adjusted is False
+
+
+async def test_today_session_no_plan(db):
+    user_id = await _seed_user(db)
+    result = await plan_service.get_today_session(db, user_id)
+    assert result.has_plan is False
+    assert result.has_session is False
+
+
+async def test_today_session_rest_day(db):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.plan import WEEKDAY_ORDER
+
+    user_id = await _seed_user(db)
+    # Put a session on a different weekday than today → today is a rest day.
+    other = WEEKDAY_ORDER[(datetime.now(UTC).date() + timedelta(days=1)).weekday()]
+    await _seed_ready_plan(db, user_id, {other: "tempo"})
+
+    result = await plan_service.get_today_session(db, user_id)
+    assert result.has_plan is True
+    assert result.has_session is False
+
+
 async def test_current_plan_endpoint_404_when_none(client, db):
     register = await client.post(
         "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}

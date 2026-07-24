@@ -7,7 +7,16 @@ import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
-import { getCurrentPlan, PlanPhase, PlanResponse, PlanSession, PlanWeek, Weekday } from '@/lib/api/plans';
+import {
+  getCurrentPlan,
+  getTodaySession,
+  PlanPhase,
+  PlanResponse,
+  PlanSession,
+  PlanWeek,
+  TodaySession,
+  Weekday,
+} from '@/lib/api/plans';
 
 const PHASE_LABELS: Record<PlanPhase['name'], string> = {
   base: 'Base',
@@ -50,6 +59,11 @@ export default function PlanScreen() {
     queryFn: getCurrentPlan,
     retry: false,
   });
+  const todayQuery = useQuery({
+    queryKey: ['plan-today'],
+    queryFn: getTodaySession,
+    retry: false,
+  });
 
   const noPlan = query.error instanceof ApiError && query.error.status === 404;
 
@@ -60,6 +74,8 @@ export default function PlanScreen() {
           <View style={styles.header}>
             <ThemedText type="title">Mon plan</ThemedText>
           </View>
+
+          {todayQuery.data?.has_plan ? <TodayCard today={todayQuery.data} /> : null}
 
           {query.isLoading ? (
             <View style={styles.centered}>
@@ -85,6 +101,50 @@ export default function PlanScreen() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+function TodayCard({ today }: { today: TodaySession }) {
+  const weekTag = today.week_index ? ` · Semaine ${today.week_index}` : '';
+
+  if (!today.has_session) {
+    return (
+      <View style={styles.todayCard}>
+        <ThemedText type="waypointLabel" themeColor="blaze">
+          Aujourd’hui{weekTag}
+        </ThemedText>
+        <ThemedText type="default">{today.message ?? 'Repos aujourd’hui.'}</ThemedText>
+      </View>
+    );
+  }
+
+  const adj = today.adjustment;
+  const shownType = adj?.adjusted ? adj.suggested_type : (today.session?.type ?? 'easy');
+
+  return (
+    <View style={styles.todayCard}>
+      <ThemedText type="waypointLabel" themeColor="blaze">
+        Aujourd’hui{weekTag}
+      </ThemedText>
+      <View style={styles.todayTitleRow}>
+        <ThemedText type="subtitle">{SESSION_LABELS[shownType]}</ThemedText>
+        {today.session ? (
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            {formatDuration(today.session.duration_min)}
+          </ThemedText>
+        ) : null}
+      </View>
+      {adj?.adjusted ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          Prévu : {SESSION_LABELS[adj.original_type]}
+        </ThemedText>
+      ) : null}
+      {adj ? (
+        <ThemedText type="small" themeColor={adj.adjusted ? 'hydro' : 'textSecondary'}>
+          {adj.reason}
+        </ThemedText>
+      ) : null}
+    </View>
   );
 }
 
@@ -206,6 +266,19 @@ const styles = StyleSheet.create({
     paddingBottom: BottomTabInset + Spacing.four,
   },
   planBody: { gap: Spacing.four },
+  todayCard: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.two,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.blaze,
+  },
+  todayTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   phase: { gap: Spacing.two },
   card: {
     backgroundColor: Colors.backgroundElement,

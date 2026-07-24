@@ -68,8 +68,34 @@ export type PlanResponse = {
   error_message: string | null;
 };
 
+export type DailyAdjustment = {
+  adjusted: boolean;
+  original_type: SessionType;
+  suggested_type: SessionType;
+  reason: string;
+};
+
+export type TodaySession = {
+  date: string;
+  has_plan: boolean;
+  has_session: boolean;
+  week_index: number | null;
+  session: PlanSession | null;
+  adjustment: DailyAdjustment | null;
+  tsb: number;
+  message: string | null;
+};
+
 export function getCurrentPlan() {
   return apiClient.get<PlanResponse>('/api/v1/plans/current');
+}
+
+/**
+ * Today's planned session, deterministically adjusted for current form (TSB).
+ * No AI, no cost — the adjustment and its reason are computed server-side.
+ */
+export function getTodaySession() {
+  return apiClient.get<TodaySession>('/api/v1/plans/today');
 }
 
 /**

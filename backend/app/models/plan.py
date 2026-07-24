@@ -138,3 +138,23 @@ class PlanResponse(BaseModel):
     request: PlanRequest | None = None
     plan: Plan | None = None
     error_message: str | None = None
+
+
+class DailyAdjustment(BaseModel):
+    adjusted: bool  # true if the planned session was downgraded
+    original_type: str
+    suggested_type: str
+    reason: str  # plain-language explanation, always shown
+
+
+class TodaySession(BaseModel):
+    """The plan's session for today, adjusted for current form."""
+
+    date: date
+    has_plan: bool
+    has_session: bool  # false on rest days / off-plan days
+    week_index: int | None = None
+    session: Session | None = None
+    adjustment: DailyAdjustment | None = None
+    tsb: float
+    message: str | None = None  # e.g. "Plan terminé", "Aucun plan actif"

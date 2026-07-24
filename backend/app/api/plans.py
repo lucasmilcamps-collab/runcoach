@@ -3,7 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import get_current_user
-from app.models.plan import PlanRequest, PlanResponse
+from app.models.plan import PlanRequest, PlanResponse, TodaySession
 from app.services import plan_service
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
@@ -19,6 +19,15 @@ async def create_plan(
     resolves only once the plan is generated, validated, and stored (or failed
     with a message)."""
     return await plan_service.generate_plan(db, str(user["_id"]), body)
+
+
+@router.get("/today", response_model=TodaySession)
+async def today_session(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Today's planned session, deterministically adjusted for current form."""
+    return await plan_service.get_today_session(db, str(user["_id"]))
 
 
 @router.get("/current", response_model=PlanResponse)

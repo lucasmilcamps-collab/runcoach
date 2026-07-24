@@ -15,8 +15,16 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.activity import SportType
-from app.models.plan import Plan, PlanRequest, PlanResponse
-from app.services import fitness_service, plan_validation
+from app.models.plan import (
+    WEEKDAY_ORDER,
+    DailyAdjustment,
+    Plan,
+    PlanRequest,
+    PlanResponse,
+    TodaySession,
+    Week,
+)
+from app.services import fitness_service, plan_adaptation, plan_validation
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
@@ -264,12 +272,16 @@ async def generate_plan(
             error_message=str(exc),
         )
 
+    # Anchor the plan to the Monday of the generation week so "today's session"
+    # maps cleanly onto weekday-labelled sessions.
+    start_date = today - timedelta(days=today.weekday())
     doc = {
         "user_id": user_id,
         "version": version,
         "status": "ready",
         "request": request.model_dump(mode="json"),
         "plan": plan.model_dump(mode="json"),
+        "start_date": start_date.isoformat(),
         "error_message": None,
         "created_at": datetime.now(UTC),
     }
@@ -289,4 +301,74 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
         request=PlanRequest.model_validate(doc["request"]) if doc.get("request") else None,
         plan=Plan.model_validate(doc["plan"]) if doc.get("plan") else None,
         error_message=doc.get("error_message"),
+    )
+
+
+def _plan_start_date(doc: dict, today: date) -> date:
+    stored = doc.get("start_date")
+    if isinstance(stored, str):
+        try:
+            return date.fromisoformat(stored)
+        except ValueError:
+            pass
+    # Pre-Phase-4 plans have no start_date: anchor to the Monday of the week the
+    # plan was created.
+    created = doc.get("created_at")
+    base = created.date() if created is not None else today
+    return base - timedelta(days=base.weekday())
+
+
+def _flatten_weeks(plan: Plan) -> list[Week]:
+    return [week for phase in plan.phases for week in phase.weeks]
+
+
+async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySession:
+    """Today's planned session, adjusted for current form (Phase 4, step 1)."""
+    today = datetime.now(UTC).date()
+    fitness = await fitness_service.compute_fitness(db, user_id)
+    tsb = fitness.tsb
+
+    doc = await db.plans.find_one(
+        {"user_id": user_id, "status": "ready"}, sort=[("version", -1)]
+    )
+    if doc is None or not doc.get("plan"):
+        return TodaySession(
+            date=today, has_plan=False, has_session=False, tsb=tsb,
+            message="Aucun plan actif. Créez-en un dans l'onglet Plan.",
+        )
+
+    plan = Plan.model_validate(doc["plan"])
+    weeks = _flatten_weeks(plan)
+    start = _plan_start_date(doc, today)
+    week_pos = (today - start).days // 7  # 0-based position
+
+    if week_pos < 0 or week_pos >= len(weeks):
+        return TodaySession(
+            date=today, has_plan=True, has_session=False, tsb=tsb,
+            message="Plan terminé — générez-en un nouveau pour continuer.",
+        )
+
+    week = weeks[week_pos]
+    weekday = WEEKDAY_ORDER[today.weekday()]
+    session = next((s for s in week.sessions if s.day == weekday), None)
+    if session is None:
+        return TodaySession(
+            date=today, has_plan=True, has_session=False, week_index=week_pos + 1, tsb=tsb,
+            message="Pas de séance prévue aujourd'hui — repos.",
+        )
+
+    result = plan_adaptation.adjust_for_form(session.type, tsb)
+    return TodaySession(
+        date=today,
+        has_plan=True,
+        has_session=True,
+        week_index=week_pos + 1,
+        session=session,
+        adjustment=DailyAdjustment(
+            adjusted=result.adjusted,
+            original_type=result.original_type,
+            suggested_type=result.suggested_type,
+            reason=result.reason,
+        ),
+        tsb=tsb,
     )
