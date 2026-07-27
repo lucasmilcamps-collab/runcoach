@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { PlanView } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
@@ -13,51 +13,13 @@ import {
   getCurrentPlan,
   getPlanProgress,
   getTodaySession,
-  PlanPhase,
   PlanProgress,
   PlanRequest,
   PlanResponse,
-  PlanSession,
-  PlanWeek,
   RecoverySummary,
   TodaySession,
-  Weekday,
 } from '@/lib/api/plans';
-
-const PHASE_LABELS: Record<PlanPhase['name'], string> = {
-  base: 'Base',
-  build: 'Développement',
-  peak: 'Pic',
-  taper: 'Affûtage',
-};
-
-const SESSION_LABELS: Record<PlanSession['type'], string> = {
-  easy: 'Footing',
-  long_run: 'Sortie longue',
-  tempo: 'Tempo',
-  threshold: 'Seuil',
-  intervals: 'Fractionné',
-  recovery: 'Récupération',
-  cross_training: 'Cross-training',
-  rest: 'Repos',
-};
-
-const DAY_LABELS: Record<Weekday, string> = {
-  MONDAY: 'Lun',
-  TUESDAY: 'Mar',
-  WEDNESDAY: 'Mer',
-  THURSDAY: 'Jeu',
-  FRIDAY: 'Ven',
-  SATURDAY: 'Sam',
-  SUNDAY: 'Dim',
-};
-
-function formatDuration(min: number): string {
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const rest = min % 60;
-  return rest === 0 ? `${h} h` : `${h} h ${rest}`;
-}
+import { SESSION_LABELS, formatDuration } from '@/lib/plan-format';
 
 function formatSleep(hours: number): string {
   const h = Math.floor(hours);
@@ -149,8 +111,18 @@ export default function PlanScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
+          <View style={styles.headerRow}>
             <ThemedText type="title">Mon plan</ThemedText>
+            {query.data?.status === 'ready' ? (
+              <Pressable
+                onPress={() => router.push('/plan-history')}
+                accessibilityRole="button"
+                hitSlop={8}>
+                <ThemedText type="waypointLabel" themeColor="blaze">
+                  Historique
+                </ThemedText>
+              </Pressable>
+            ) : null}
           </View>
 
           {progressQuery.data?.replan_suggested && currentRequest ? (
@@ -307,110 +279,7 @@ function PlanBody({ response }: { response: PlanResponse }) {
     );
   }
   if (!response.plan) return null;
-  const { plan } = response;
-
-  return (
-    <View style={styles.planBody}>
-      <View style={styles.card}>
-        <ThemedText type="subtitle">{plan.goal.description}</ThemedText>
-        {plan.goal.race_date ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            Objectif le {plan.goal.race_date}
-          </ThemedText>
-        ) : null}
-      </View>
-
-      {plan.phases.map((phase, pi) => (
-        <View key={`${phase.name}-${pi}`} style={styles.phase}>
-          <ThemedText type="waypointLabel" themeColor="blaze">
-            {PHASE_LABELS[phase.name]}
-          </ThemedText>
-          {phase.weeks.map((week) => (
-            <WeekCard key={week.index} week={week} />
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function WeekCard({ week }: { week: PlanWeek }) {
-  return (
-    <View style={styles.card}>
-      <View style={styles.weekHeader}>
-        <ThemedText type="default">Semaine {week.index}</ThemedText>
-        {week.is_deload ? (
-          <ThemedText type="waypointLabel" themeColor="hydro">
-            Deload
-          </ThemedText>
-        ) : (
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            Charge {Math.round(week.target_load)}
-          </ThemedText>
-        )}
-      </View>
-      {week.sessions.map((session, si) => (
-        <SessionRow key={si} session={session} />
-      ))}
-    </View>
-  );
-}
-
-function SessionRow({ session }: { session: PlanSession }) {
-  const [open, setOpen] = useState(false);
-  const hasDetail =
-    session.structure.length > 0 || session.pace_range !== null || session.hr_zone !== null;
-
-  return (
-    <View style={styles.sessionRow}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.sessionDay}>
-        {DAY_LABELS[session.day]}
-      </ThemedText>
-      <Pressable
-        style={styles.sessionMain}
-        disabled={!hasDetail}
-        onPress={() => setOpen((v) => !v)}
-        accessibilityRole={hasDetail ? 'button' : undefined}>
-        <View style={styles.sessionTitleRow}>
-          <ThemedText type="default">
-            {SESSION_LABELS[session.type]}
-            {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
-          </ThemedText>
-          {session.type !== 'rest' ? (
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
-              {formatDuration(session.duration_min)}
-            </ThemedText>
-          ) : null}
-        </View>
-        <ThemedText type="small" themeColor="textSecondary">
-          {session.rationale}
-        </ThemedText>
-
-        {open ? (
-          <View style={styles.sessionDetail}>
-            {session.structure.map((block, bi) => (
-              <View key={bi} style={styles.blockRow}>
-                <ThemedText type="small">{block.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {formatDuration(block.duration_min)}
-                </ThemedText>
-              </View>
-            ))}
-            {session.pace_range ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Allure {session.pace_range.min_per_km_low}–{session.pace_range.min_per_km_high} /km
-              </ThemedText>
-            ) : null}
-            {session.hr_zone ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Zone cardiaque {session.hr_zone}
-              </ThemedText>
-            ) : null}
-          </View>
-        ) : null}
-      </Pressable>
-    </View>
-  );
+  return <PlanView plan={response.plan} />;
 }
 
 const styles = StyleSheet.create({
@@ -430,14 +299,17 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.four,
     paddingBottom: Spacing.four,
   },
-  header: { gap: Spacing.two },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   footer: {
     gap: Spacing.two,
     paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
   },
-  planBody: { gap: Spacing.four },
   todayCard: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
@@ -471,43 +343,10 @@ const styles = StyleSheet.create({
   recoveryStat: {
     gap: Spacing.half,
   },
-  phase: { gap: Spacing.two },
   card: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.two,
-  },
-  weekHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.one,
-  },
-  sessionRow: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-    paddingTop: Spacing.two,
-    borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
-  },
-  sessionDay: { width: 32, paddingTop: Spacing.half },
-  sessionMain: { flex: 1, gap: Spacing.half },
-  sessionTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sessionDetail: {
-    gap: Spacing.half,
-    paddingTop: Spacing.two,
-    marginTop: Spacing.one,
-    borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
-  },
-  blockRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
 });

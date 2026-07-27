@@ -151,6 +151,19 @@ class PlanResponse(BaseModel):
     error_message: str | None = None
 
 
+class PlanVersionSummary(BaseModel):
+    """One entry in the read-only plan history. Versions are immutable (never
+    mutated in place); the newest is always the active plan."""
+
+    version: int
+    created_at: datetime.datetime
+    goal_description: str | None = None
+    race_date: date | None = None
+    weeks_total: int | None = None
+    reason: str  # "Plan initial" / "Objectif ajusté" / "Reprise après blessure" / "Replanification"
+    injury_area: str | None = None
+
+
 class DailyAdjustment(BaseModel):
     adjusted: bool  # true if the planned session was downgraded
     original_type: str

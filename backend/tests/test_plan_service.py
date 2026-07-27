@@ -228,6 +228,72 @@ async def test_get_current_plan_returns_latest_version(db):
     assert latest["version"] == 2
 
 
+async def test_list_plan_versions_infers_reason(db):
+    user_id = await _seed_user(db)
+    injury = InjuryReport(area="mollet", severity="douleur", days_off=7)
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
+        _mock_response(_valid_plan_json()),  # v1: initial
+        _mock_response(_valid_plan_json()),  # v2: injury comeback
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+        await plan_service.generate_plan(db, user_id, _request(), injury=injury)
+
+    versions = await plan_service.list_plan_versions(db, user_id)
+
+    assert [v.version for v in versions] == [2, 1]  # newest first
+    assert versions[0].reason == "Reprise après blessure"
+    assert versions[0].injury_area == "mollet"
+    assert versions[1].reason == "Plan initial"
+    assert versions[0].weeks_total == 4
+
+
+async def test_get_plan_version_returns_that_version(db):
+    user_id = await _seed_user(db)
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
+        _mock_response(_valid_plan_json()), _mock_response(_valid_plan_json())
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+        await plan_service.generate_plan(db, user_id, _request())
+
+    v1 = await plan_service.get_plan_version(db, user_id, 1)
+    assert v1 is not None
+    assert v1.plan is not None
+    assert await plan_service.get_plan_version(db, user_id, 99) is None
+
+
+async def test_versions_endpoint(client, db):
+    register = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    token = register.json()["access_token"]
+
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
+        _mock_response(_valid_plan_json())
+    ):
+        await client.post(
+            "/api/v1/plans",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_request().model_dump(mode="json"),
+        )
+
+    listing = await client.get(
+        "/api/v1/plans/versions", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert listing.status_code == 200
+    assert listing.json()[0]["version"] == 1
+
+    detail = await client.get(
+        "/api/v1/plans/versions/1", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert detail.status_code == 200
+    assert detail.json()["plan"]["goal"]["description"] == "Semi"
+
+    missing = await client.get(
+        "/api/v1/plans/versions/42", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert missing.status_code == 404
+
+
 async def test_plans_endpoint_generates(client, db):
     register = await client.post(
         "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}

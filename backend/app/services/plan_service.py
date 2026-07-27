@@ -22,6 +22,7 @@ from app.models.plan import (
     Plan,
     PlanRequest,
     PlanResponse,
+    PlanVersionSummary,
     RecoverySummary,
     TodaySession,
     Week,
@@ -353,6 +354,68 @@ async def generate_plan(
 
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
     doc = await db.plans.find_one({"user_id": user_id}, sort=[("version", -1)])
+    if doc is None:
+        return None
+    return PlanResponse(
+        id=str(doc["_id"]),
+        status=doc["status"],
+        request=PlanRequest.model_validate(doc["request"]) if doc.get("request") else None,
+        plan=Plan.model_validate(doc["plan"]) if doc.get("plan") else None,
+        error_message=doc.get("error_message"),
+    )
+
+
+def _version_reason(doc: dict, prev_request: dict | None) -> str:
+    """Why this version was created, inferred from what we stored. An injury is
+    explicit; the first version is the initial plan; otherwise a changed request
+    means the objective moved, an identical one means a plain replan."""
+    if doc.get("injury"):
+        return "Reprise après blessure"
+    if prev_request is None:
+        return "Plan initial"
+    if doc.get("request") != prev_request:
+        return "Objectif ajusté"
+    return "Replanification"
+
+
+async def list_plan_versions(
+    db: AsyncIOMotorDatabase, user_id: str
+) -> list[PlanVersionSummary]:
+    """Read-only history of successful plan versions, newest first."""
+    cursor = db.plans.find({"user_id": user_id, "status": "ready"}).sort("version", 1)
+    docs = [doc async for doc in cursor]
+
+    summaries: list[PlanVersionSummary] = []
+    prev_request: dict | None = None
+    for doc in docs:
+        plan = doc.get("plan") or {}
+        goal = plan.get("goal") or {}
+        weeks = sum(len(phase.get("weeks", [])) for phase in plan.get("phases", []))
+        injury = doc.get("injury") or None
+        summaries.append(
+            PlanVersionSummary(
+                version=doc["version"],
+                created_at=doc["created_at"],
+                goal_description=goal.get("description"),
+                race_date=goal.get("race_date"),
+                weeks_total=weeks or None,
+                reason=_version_reason(doc, prev_request),
+                injury_area=(injury or {}).get("area"),
+            )
+        )
+        prev_request = doc.get("request")
+
+    summaries.reverse()  # newest first
+    return summaries
+
+
+async def get_plan_version(
+    db: AsyncIOMotorDatabase, user_id: str, version: int
+) -> PlanResponse | None:
+    """A single stored version, read-only (versions are never mutated)."""
+    doc = await db.plans.find_one(
+        {"user_id": user_id, "version": version, "status": "ready"}
+    )
     if doc is None:
         return None
     return PlanResponse(

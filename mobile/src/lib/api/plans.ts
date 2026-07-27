@@ -133,6 +133,25 @@ export function getCurrentPlan() {
   return apiClient.get<PlanResponse>('/api/v1/plans/current');
 }
 
+/** One entry in the read-only plan history. */
+export type PlanVersionSummary = {
+  version: number;
+  created_at: string;
+  goal_description: string | null;
+  race_date: string | null;
+  weeks_total: number | null;
+  reason: string;
+  injury_area: string | null;
+};
+
+export function getPlanVersions() {
+  return apiClient.get<PlanVersionSummary[]>('/api/v1/plans/versions');
+}
+
+export function getPlanVersion(version: number) {
+  return apiClient.get<PlanResponse>(`/api/v1/plans/versions/${version}`);
+}
+
 /**
  * Today's planned session, deterministically adjusted for current form (TSB).
  * No AI, no cost — the adjustment and its reason are computed server-side.

@@ -8,6 +8,7 @@ from app.models.plan import (
     PlanProgress,
     PlanRequest,
     PlanResponse,
+    PlanVersionSummary,
     TodaySession,
 )
 from app.services import plan_progress, plan_service
@@ -75,5 +76,30 @@ async def current_plan(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NO_PLAN", "message": "Aucun plan pour l'instant."},
+        )
+    return plan
+
+
+@router.get("/versions", response_model=list[PlanVersionSummary])
+async def plan_versions(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Read-only history of successful plan versions, newest first."""
+    return await plan_service.list_plan_versions(db, str(user["_id"]))
+
+
+@router.get("/versions/{version}", response_model=PlanResponse)
+async def plan_version(
+    version: int,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """A single past plan version, read-only."""
+    plan = await plan_service.get_plan_version(db, str(user["_id"]), version)
+    if plan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_PLAN_VERSION", "message": "Version introuvable."},
         )
     return plan
