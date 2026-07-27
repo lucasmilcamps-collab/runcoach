@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
 
@@ -8,6 +9,12 @@ import { Colors } from '@/constants/theme';
  * additional tabs invented ahead of the surfaces they'd belong to.
  */
 export default function TabsLayout() {
+  // The bar height must include the bottom safe-area inset (iPhone home
+  // indicator, drawn under the app because of viewport-fit=cover +
+  // black-translucent): without it the labels sit behind the indicator and
+  // vanish on mobile / installed PWA.
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -23,9 +30,9 @@ export default function TabsLayout() {
           backgroundColor: Colors.backgroundElement,
           borderTopColor: Colors.contour,
           borderTopWidth: 1,
-          height: 68,
-          paddingTop: 10,
-          paddingBottom: 12,
+          height: 58 + insets.bottom,
+          paddingTop: 8,
+          paddingBottom: insets.bottom + 8,
         },
         tabBarItemStyle: {
           paddingVertical: 2,
