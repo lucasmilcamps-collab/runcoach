@@ -1,3 +1,4 @@
+import { useMutation } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,6 +7,8 @@ import Svg, { G, Path } from 'react-native-svg';
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { ApiError } from '@/lib/api/client';
+import { pushWorkoutToWatch, WorkoutPushPayload } from '@/lib/api/garmin';
 import type { PlanSession } from '@/lib/api/plans';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
@@ -76,6 +79,9 @@ function hrZoneLabel(type: PlanSession['type'], zone: number): string {
 export default function SessionDetailScreen() {
   const data = useSessionParam();
   const paceFirst = usePreferencesStore((s) => s.primaryMetric) === 'pace';
+  const pushMutation = useMutation({
+    mutationFn: (payload: WorkoutPushPayload) => pushWorkoutToWatch(payload),
+  });
 
   if (!data) {
     return (
@@ -111,6 +117,15 @@ export default function SessionDetailScreen() {
   const targets = (paceFirst ? [paceTarget, hrTarget] : [hrTarget, paceTarget]).filter(
     (t): t is { label: string; value: string } => t != null,
   );
+
+  const pushMessage = (() => {
+    if (pushMutation.isSuccess) {
+      return 'Séance envoyée — elle apparaîtra sur votre montre à la prochaine synchro Garmin.';
+    }
+    if (pushMutation.error instanceof ApiError) return pushMutation.error.message;
+    if (pushMutation.isError) return 'Envoi impossible. Réessayez.';
+    return undefined;
+  })();
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -227,6 +242,14 @@ export default function SessionDetailScreen() {
 
       {/* Footer */}
       <View style={styles.footer}>
+        {pushMessage ? (
+          <ThemedText
+            type="small"
+            themeColor={pushMutation.isSuccess ? 'hydro' : 'flare'}
+            style={styles.pushMessage}>
+            {pushMessage}
+          </ThemedText>
+        ) : null}
         <Button
           label="J’ai fait cette séance"
           onPress={() =>
@@ -236,6 +259,25 @@ export default function SessionDetailScreen() {
             })
           }
         />
+        {session.sport === 'RUN' ? (
+          <Button
+            label={pushMutation.isSuccess ? 'Envoyée sur Garmin ✓' : 'Envoyer vers ma montre'}
+            variant="ghost"
+            loading={pushMutation.isPending}
+            disabled={pushMutation.isSuccess}
+            onPress={() =>
+              pushMutation.mutate({
+                session_type: session.type,
+                duration_min: session.duration_min,
+                structure: session.structure,
+                pace_range: session.pace_range,
+                hr_zone: session.hr_zone,
+                rationale: session.rationale,
+                week_number: weekNumber,
+              })
+            }
+          />
+        ) : null}
         <Button label="Voir la semaine" variant="ghost" onPress={() => router.back()} />
       </View>
     </SafeAreaView>
@@ -367,5 +409,8 @@ const styles = StyleSheet.create({
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     width: '100%',
+  },
+  pushMessage: {
+    paddingBottom: Spacing.one,
   },
 });

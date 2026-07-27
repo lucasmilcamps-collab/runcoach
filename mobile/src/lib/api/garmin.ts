@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/client';
+import type { PaceRange, PlanBlock } from '@/lib/api/plans';
 
 export type GarminConnectResult = {
   status: 'connected' | 'needs_mfa';
@@ -42,4 +43,29 @@ export function completeGarminMfa(mfaToken: string, mfaCode: string) {
  */
 export function syncGarmin() {
   return apiClient.post<GarminSyncResult>('/api/v1/garmin/sync');
+}
+
+export type WorkoutPushResult = {
+  status: 'done' | 'failed';
+  workout_name: string | null;
+  error_message: string | null;
+};
+
+export type WorkoutPushPayload = {
+  session_type: string;
+  duration_min: number;
+  structure: PlanBlock[];
+  pace_range: PaceRange | null;
+  hr_zone: number | null;
+  rationale?: string | null;
+  week_number?: number | null;
+};
+
+/**
+ * Upload a plan session to Garmin Connect as a structured running workout. It
+ * lands in the user's Garmin workout library and syncs to the paired watch on
+ * Garmin's next connection (no direct device push exists).
+ */
+export function pushWorkoutToWatch(payload: WorkoutPushPayload) {
+  return apiClient.post<WorkoutPushResult>('/api/v1/garmin/workout', payload);
 }
