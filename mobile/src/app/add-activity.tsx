@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,12 +43,20 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   );
 }
 
+function nearestDuration(n: number): number {
+  return DURATIONS.reduce((best, d) => (Math.abs(d - n) < Math.abs(best - n) ? d : best), DURATIONS[0]);
+}
+
 export default function AddActivityScreen() {
   const queryClient = useQueryClient();
+  // Optional prefill when arriving from a plan session ("J'ai fait cette séance").
+  const params = useLocalSearchParams<{ sport?: string; duration?: string }>();
+  const prefillSport = SPORT_OPTIONS.find((o) => o.sport === params.sport)?.sport ?? 'RUN';
+  const prefillDuration = params.duration ? nearestDuration(Number(params.duration)) : 45;
 
-  const [sport, setSport] = useState<SportType>('RUN');
+  const [sport, setSport] = useState<SportType>(prefillSport);
   const [date, setDate] = useState(todayISO());
-  const [durationMin, setDurationMin] = useState(45);
+  const [durationMin, setDurationMin] = useState(prefillDuration);
   const [rpe, setRpe] = useState(5);
   const [note, setNote] = useState('');
   const [dateError, setDateError] = useState<string | undefined>();

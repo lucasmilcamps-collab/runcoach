@@ -72,16 +72,20 @@ class InjuryReport(BaseModel):
     days_off: int = Field(ge=0, le=365)  # days the athlete can't run
 
 
-class Block(BaseModel):
-    """One segment of a session (warm-up, 6×800m, cool-down)."""
-
-    label: str
-    duration_min: int
-
-
 class PaceRange(BaseModel):
     min_per_km_low: str  # "5:10"
     min_per_km_high: str  # "5:30"
+
+
+class Block(BaseModel):
+    """One segment of a session (warm-up, 6×800m, cool-down). Per-block target
+    zone/pace are optional: the model fills them for run segments, leaves them
+    null for cross-training or when only a session-level target makes sense."""
+
+    label: str
+    duration_min: int
+    hr_zone: int | None = None
+    pace_range: PaceRange | None = None
 
 
 class Session(BaseModel):

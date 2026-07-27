@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import type { Plan, PlanSession, PlanWeek } from '@/lib/api/plans';
 import { DAY_LABELS, PHASE_LABELS, SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+
+const KEY_TYPES = new Set<PlanSession['type']>(['tempo', 'threshold', 'intervals', 'long_run']);
 
 /** Read-only rendering of a plan (goal + phases → weeks → expandable sessions).
  * Shared by the Plan tab and the version-history detail screen. */
@@ -35,6 +37,8 @@ export function PlanView({ plan }: { plan: Plan }) {
 }
 
 function WeekCard({ week }: { week: PlanWeek }) {
+  const total = week.sessions.filter((s) => s.type !== 'rest').length;
+  let counter = 0;
   return (
     <View style={styles.card}>
       <View style={styles.weekHeader}>
@@ -49,34 +53,67 @@ function WeekCard({ week }: { week: PlanWeek }) {
           </ThemedText>
         )}
       </View>
-      {week.sessions.map((session, si) => (
-        <SessionRow key={si} session={session} />
-      ))}
+      {week.sessions.map((session, si) => {
+        const position = session.type !== 'rest' ? (counter += 1) : 0;
+        return (
+          <SessionRow
+            key={si}
+            session={session}
+            weekNumber={week.index}
+            position={position}
+            total={total}
+          />
+        );
+      })}
     </View>
   );
 }
 
-function SessionRow({ session }: { session: PlanSession }) {
-  const [open, setOpen] = useState(false);
-  const hasDetail =
-    session.structure.length > 0 || session.pace_range !== null || session.hr_zone !== null;
+function SessionRow({
+  session,
+  weekNumber,
+  position,
+  total,
+}: {
+  session: PlanSession;
+  weekNumber: number;
+  position: number;
+  total: number;
+}) {
+  const navigable = session.type !== 'rest';
+  const isKey = KEY_TYPES.has(session.type);
+
+  function open() {
+    if (!navigable) return;
+    router.push({
+      pathname: '/session-detail',
+      params: { s: JSON.stringify({ session, weekNumber, position, total, isKey }) },
+    });
+  }
 
   return (
-    <View style={styles.sessionRow}>
+    <Pressable
+      style={styles.sessionRow}
+      disabled={!navigable}
+      onPress={open}
+      accessibilityRole={navigable ? 'button' : undefined}>
       <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.sessionDay}>
         {DAY_LABELS[session.day]}
       </ThemedText>
-      <Pressable
-        style={styles.sessionMain}
-        disabled={!hasDetail}
-        onPress={() => setOpen((v) => !v)}
-        accessibilityRole={hasDetail ? 'button' : undefined}>
+      <View style={styles.sessionMain}>
         <View style={styles.sessionTitleRow}>
-          <ThemedText type="default">
-            {SESSION_LABELS[session.type]}
-            {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
-          </ThemedText>
-          {session.type !== 'rest' ? (
+          <View style={styles.sessionTitleLeft}>
+            <ThemedText type="default">
+              {SESSION_LABELS[session.type]}
+              {navigable ? '  ›' : ''}
+            </ThemedText>
+            {isKey ? (
+              <ThemedText type="waypointLabel" themeColor="blaze">
+                Clé
+              </ThemedText>
+            ) : null}
+          </View>
+          {navigable ? (
             <ThemedText type="waypointLabel" themeColor="textSecondary">
               {formatDuration(session.duration_min)}
             </ThemedText>
@@ -85,31 +122,8 @@ function SessionRow({ session }: { session: PlanSession }) {
         <ThemedText type="small" themeColor="textSecondary">
           {session.rationale}
         </ThemedText>
-
-        {open ? (
-          <View style={styles.sessionDetail}>
-            {session.structure.map((block, bi) => (
-              <View key={bi} style={styles.blockRow}>
-                <ThemedText type="small">{block.label}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {formatDuration(block.duration_min)}
-                </ThemedText>
-              </View>
-            ))}
-            {session.pace_range ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Allure {session.pace_range.min_per_km_low}–{session.pace_range.min_per_km_high} /km
-              </ThemedText>
-            ) : null}
-            {session.hr_zone ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Zone cardiaque {session.hr_zone}
-              </ThemedText>
-            ) : null}
-          </View>
-        ) : null}
-      </Pressable>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -142,16 +156,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  sessionDetail: {
-    gap: Spacing.half,
-    paddingTop: Spacing.two,
-    marginTop: Spacing.one,
-    borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
-  },
-  blockRow: {
+  sessionTitleLeft: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.two,
   },
 });

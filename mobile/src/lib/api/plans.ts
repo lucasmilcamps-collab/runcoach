@@ -32,13 +32,22 @@ export type SessionType =
   | 'cross_training'
   | 'rest';
 
+export type PaceRange = { min_per_km_low: string; min_per_km_high: string };
+
+export type PlanBlock = {
+  label: string;
+  duration_min: number;
+  hr_zone: number | null;
+  pace_range: PaceRange | null;
+};
+
 export type PlanSession = {
   day: Weekday;
   sport: SportType;
   type: SessionType;
   duration_min: number;
-  structure: { label: string; duration_min: number }[];
-  pace_range: { min_per_km_low: string; min_per_km_high: string } | null;
+  structure: PlanBlock[];
+  pace_range: PaceRange | null;
   hr_zone: number | null;
   rationale: string;
 };

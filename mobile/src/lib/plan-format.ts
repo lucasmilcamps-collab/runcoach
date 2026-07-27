@@ -1,4 +1,4 @@
-import type { PlanPhase, PlanSession, Weekday } from '@/lib/api/plans';
+import type { PaceRange, PlanBlock, PlanPhase, PlanSession, Weekday } from '@/lib/api/plans';
 
 export const PHASE_LABELS: Record<PlanPhase['name'], string> = {
   base: 'Base',
@@ -33,4 +33,89 @@ export function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const rest = min % 60;
   return rest === 0 ? `${h} h` : `${h} h ${rest}`;
+}
+
+// --- Intensity: the Night-Trail "thermal" ramp (contour → blaze). One accent
+// that heats up with zone, rather than a rainbow (DESIGN.md: one accent). ---
+
+const ZONE_COLORS: Record<number, string> = {
+  1: '#6B5A3E',
+  2: '#8A6F47',
+  3: '#B5722F',
+  4: '#D66A28',
+  5: '#E8792C',
+};
+const ZONE_HEIGHT_PCT: Record<number, number> = { 1: 22, 2: 36, 3: 55, 4: 78, 5: 100 };
+
+export function zoneColor(zone: number): string {
+  return ZONE_COLORS[Math.min(5, Math.max(1, zone))] ?? ZONE_COLORS[2];
+}
+
+export function zoneHeightPct(zone: number): number {
+  return ZONE_HEIGHT_PCT[Math.min(5, Math.max(1, zone))] ?? 36;
+}
+
+const TYPE_ZONE: Record<PlanSession['type'], number> = {
+  easy: 2,
+  recovery: 1,
+  long_run: 2,
+  tempo: 3,
+  threshold: 4,
+  intervals: 5,
+  cross_training: 2,
+  rest: 1,
+};
+
+const TYPE_DIFFICULTY: Record<PlanSession['type'], number> = {
+  recovery: 1,
+  easy: 1,
+  cross_training: 2,
+  long_run: 3,
+  tempo: 3,
+  threshold: 4,
+  intervals: 4,
+  rest: 0,
+};
+
+/** Difficulty on a 0–4 lightning scale, derived from the session type. */
+export function sessionDifficulty(type: PlanSession['type']): number {
+  return TYPE_DIFFICULTY[type] ?? 2;
+}
+
+function zoneFromLabel(label: string): number | null {
+  const l = label.toLowerCase();
+  if (/récup|recup|calme|cool|repos/.test(l)) return 1;
+  if (/vma|fractionn|interval|sprint|répét|repet|\b800|\b400|\b200/.test(l)) return 5;
+  if (/seuil|threshold/.test(l)) return 4;
+  if (/tempo/.test(l)) return 3;
+  if (/échauff|echauff|warm|footing|endurance|facile|easy|allure ef/.test(l)) return 2;
+  return null;
+}
+
+/** Best zone estimate for a block: its own value, else the label, else the
+ * session's zone, else the type's default. */
+export function blockZone(block: PlanBlock, session: PlanSession): number {
+  return block.hr_zone ?? zoneFromLabel(block.label) ?? session.hr_zone ?? TYPE_ZONE[session.type] ?? 2;
+}
+
+function paceMidSeconds(pace: PaceRange): number | null {
+  const toSec = (v: string): number | null => {
+    const m = v.match(/^(\d+):(\d{1,2})$/);
+    if (!m) return null;
+    return Number(m[1]) * 60 + Number(m[2]);
+  };
+  const low = toSec(pace.min_per_km_low);
+  const high = toSec(pace.min_per_km_high);
+  if (low == null && high == null) return null;
+  if (low == null) return high;
+  if (high == null) return low;
+  return (low + high) / 2;
+}
+
+/** Rough distance (km) from a session's average pace × duration. */
+export function estimateDistanceKm(durationMin: number, pace: PaceRange | null): number | null {
+  if (!pace) return null;
+  const secPerKm = paceMidSeconds(pace);
+  if (!secPerKm) return null;
+  return Math.round(((durationMin * 60) / secPerKm) * 10) / 10;
 }
