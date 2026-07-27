@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import type { Fitness } from '@/lib/api/fitness';
@@ -50,11 +51,9 @@ export function FitnessCard({
             : 'Pas encore assez de séances avec fréquence cardiaque pour estimer votre forme.'}
         </ThemedText>
         {missingProfile ? (
-          <Pressable onPress={openProfileEntry} accessibilityRole="button" style={styles.cta}>
-            <ThemedText type="waypointLabel" themeColor="blaze">
-              Renseigner ma fréquence cardiaque
-            </ThemedText>
-          </Pressable>
+          <View style={styles.ctaButton}>
+            <Button label="Renseigner ma fréquence cardiaque" onPress={openProfileEntry} />
+          </View>
         ) : null}
       </View>
     );
@@ -199,5 +198,8 @@ const styles = StyleSheet.create({
   },
   cta: {
     paddingTop: Spacing.one,
+  },
+  ctaButton: {
+    paddingTop: Spacing.two,
   },
 });

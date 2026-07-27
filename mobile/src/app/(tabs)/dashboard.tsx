@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -112,48 +113,81 @@ export default function DashboardScreen() {
     return 'Garmin est connecté, aucune activité pour l’instant.';
   })();
 
+  const showConnectEmpty = !isSyncing && !garminConnected;
+  const showNoActivitiesEmpty = !isSyncing && garminConnected && activities.length === 0;
+  const showEmpty = showConnectEmpty || showNoActivitiesEmpty;
+  const showContent = garminConnected && activities.length > 0 && !isSyncing;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <ThemedText type="title">Votre tableau de bord</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
-              {headline}
-            </ThemedText>
+            {!showEmpty || syncErrorMessage ? (
+              <ThemedText type="default" themeColor={syncErrorMessage ? 'flare' : 'textSecondary'}>
+                {headline}
+              </ThemedText>
+            ) : null}
           </View>
 
-          {isSyncing ? (
-            <SyncingCard />
-          ) : garminConnected ? (
+          {isSyncing ? <SyncingCard /> : null}
+
+          {showConnectEmpty ? (
+            <EmptyState
+              title="Reliez votre Garmin"
+              description="RunCoach lit vos activités, votre fréquence cardiaque, votre sommeil et votre récupération pour calculer votre forme et adapter votre plan."
+              pin="summit">
+              <Button label="Connecter Garmin" onPress={() => router.push('/garmin-connect')} />
+              <Button
+                label="Ajouter une séance à la main"
+                variant="ghost"
+                onPress={() => router.push('/add-activity')}
+              />
+            </EmptyState>
+          ) : null}
+
+          {showNoActivitiesEmpty ? (
+            <EmptyState
+              title="Aucune activité pour l’instant"
+              description="Lancez une synchronisation pour importer jusqu’à 90 jours d’historique Garmin, ou enregistrez une séance à la main."
+              pin="edge">
+              <Button
+                label="Synchroniser Garmin"
+                loading={isSyncing}
+                onPress={() => syncMutation.mutate()}
+              />
+              <Button
+                label="Ajouter une séance"
+                variant="ghost"
+                onPress={() => router.push('/add-activity')}
+              />
+            </EmptyState>
+          ) : null}
+
+          {showContent ? (
             <>
               <FitnessCard fitness={fitnessQuery.data} isLoading={fitnessQuery.isLoading} />
-              {activities.length > 0 ? <ActivityList activities={activities} /> : null}
+              <ActivityList activities={activities} />
             </>
           ) : null}
         </ScrollView>
 
-        <View style={styles.footer}>
-          {!garminConnected ? (
-            <Button
-              label="Connecter Garmin"
-              variant="ghost"
-              onPress={() => router.push('/garmin-connect')}
-            />
-          ) : (
+        {showContent ? (
+          <View style={styles.footer}>
             <Button
               label="Synchroniser Garmin"
               variant="ghost"
               loading={isSyncing}
               onPress={() => syncMutation.mutate()}
             />
-          )}
-          <Button
-            label="Ajouter une séance"
-            variant="ghost"
-            onPress={() => router.push('/add-activity')}
-          />
-        </View>
+            <Button
+              label="Ajouter une séance"
+              variant="ghost"
+              onPress={() => router.push('/add-activity')}
+            />
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );

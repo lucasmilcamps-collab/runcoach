@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { EmptyState } from '@/components/empty-state';
 import { PlanView } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
@@ -150,28 +151,20 @@ export default function PlanScreen() {
           ) : null}
         </ScrollView>
 
-        <View style={styles.footer}>
-          {query.data?.status === 'ready' ? (
-            <>
-              <Button
-                label="Modifier mon objectif"
-                variant="ghost"
-                onPress={() => router.push('/plan-setup')}
-              />
-              <Button
-                label="Signaler une blessure / gêne"
-                variant="ghost"
-                onPress={() => router.push('/injury-report')}
-              />
-            </>
-          ) : (
+        {query.data?.status === 'ready' ? (
+          <View style={styles.footer}>
             <Button
-              label="Créer mon plan"
+              label="Modifier mon objectif"
               variant="ghost"
               onPress={() => router.push('/plan-setup')}
             />
-          )}
-        </View>
+            <Button
+              label="Signaler une blessure / gêne"
+              variant="ghost"
+              onPress={() => router.push('/injury-report')}
+            />
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -253,15 +246,12 @@ function TodayCard({ today }: { today: TodaySession }) {
 
 function EmptyPlan() {
   return (
-    <View style={styles.card}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
-        Aucun plan
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        Créez un plan d’entraînement qui s’adapte à votre forme et intègre votre cross-training
-        comme charge.
-      </ThemedText>
-    </View>
+    <EmptyState
+      title="Aucun plan pour l’instant"
+      description="Créez un plan course à pied qui s’adapte à votre forme réelle et intègre vos autres sports comme charge d’entraînement."
+      pin="summit">
+      <Button label="Créer mon plan" onPress={() => router.push('/plan-setup')} />
+    </EmptyState>
   );
 }
 
