@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
+import { PrimaryMetric, usePreferencesStore } from '@/lib/stores/preferences-store';
 
 // Kept in sync with the backend bounds (FitnessProfileUpdate). Client-side
 // checks give an instant, French message; the server still validates.
@@ -27,6 +28,9 @@ function parseHr(value: string): number | null {
 export default function FitnessProfileScreen() {
   const queryClient = useQueryClient();
   const fitnessQuery = useQuery({ queryKey: ['fitness'], queryFn: getFitness });
+
+  const primaryMetric = usePreferencesStore((s) => s.primaryMetric);
+  const setPrimaryMetric = usePreferencesStore((s) => s.setPrimaryMetric);
 
   const [hrMax, setHrMax] = useState('');
   const [hrRest, setHrRest] = useState('');
@@ -136,6 +140,25 @@ export default function FitnessProfileScreen() {
               </ThemedText>
             ) : null}
           </View>
+
+          <View style={styles.form}>
+            <ThemedText type="waypointLabel" themeColor="textSecondary">
+              Repère principal
+            </ThemedText>
+            <Segmented
+              value={primaryMetric}
+              onChange={setPrimaryMetric}
+              options={[
+                { value: 'pace', label: 'Allure' },
+                { value: 'hr', label: 'Fréquence cardiaque' },
+              ]}
+            />
+            <ThemedText type="small" themeColor="textSecondary">
+              {primaryMetric === 'pace'
+                ? 'Chaque séance affiche l’allure en premier ; la zone FC reste indiquée, en plafond sur les séances faciles.'
+                : 'Chaque séance affiche la zone FC en premier ; l’allure reste indiquée en secondaire.'}
+            </ThemedText>
+          </View>
         </View>
 
         <View style={styles.actions}>
@@ -152,9 +175,56 @@ export default function FitnessProfileScreen() {
   );
 }
 
+function Segmented({
+  value,
+  onChange,
+  options,
+}: {
+  value: PrimaryMetric;
+  onChange: (v: PrimaryMetric) => void;
+  options: { value: PrimaryMetric; label: string }[];
+}) {
+  return (
+    <View style={styles.segmented}>
+      {options.map((opt) => {
+        const selected = opt.value === value;
+        return (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            style={[styles.segment, selected && styles.segmentSelected]}>
+            <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
+              {opt.label}
+            </ThemedText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: Colors.contour,
+    backgroundColor: Colors.backgroundElement,
+  },
+  segmentSelected: {
+    backgroundColor: Colors.blaze,
+    borderColor: Colors.blaze,
   },
   safeArea: {
     flex: 1,

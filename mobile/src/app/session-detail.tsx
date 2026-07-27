@@ -7,11 +7,13 @@ import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import type { PlanSession } from '@/lib/api/plans';
+import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
   SESSION_LABELS,
   blockZone,
   estimateDistanceKm,
   formatDuration,
+  hrIsCeiling,
   sessionDifficulty,
   zoneColor,
   zoneHeightPct,
@@ -66,8 +68,14 @@ function ContourTexture() {
   );
 }
 
+/** Zone label for the HR side, framed as a ceiling on easy days ("≤ Zx"). */
+function hrZoneLabel(type: PlanSession['type'], zone: number): string {
+  return hrIsCeiling(type) ? `≤ Z${zone}` : `Z${zone}`;
+}
+
 export default function SessionDetailScreen() {
   const data = useSessionParam();
+  const paceFirst = usePreferencesStore((s) => s.primaryMetric) === 'pace';
 
   if (!data) {
     return (
@@ -86,6 +94,23 @@ export default function SessionDetailScreen() {
   const difficulty = sessionDifficulty(session.type);
   const distanceKm = estimateDistanceKm(session.duration_min, session.pace_range);
   const structureTotal = session.structure.reduce((sum, b) => sum + b.duration_min, 0) || 1;
+
+  const paceTarget = session.pace_range
+    ? {
+        label: 'Allure cible',
+        value: `${session.pace_range.min_per_km_low}–${session.pace_range.min_per_km_high} /km`,
+      }
+    : null;
+  const hrTarget =
+    session.hr_zone != null
+      ? {
+          label: hrIsCeiling(session.type) ? 'Plafond FC' : 'Zone FC',
+          value: hrZoneLabel(session.type, session.hr_zone),
+        }
+      : null;
+  const targets = (paceFirst ? [paceTarget, hrTarget] : [hrTarget, paceTarget]).filter(
+    (t): t is { label: string; value: string } => t != null,
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -167,14 +192,19 @@ export default function SessionDetailScreen() {
             {session.structure.map((block, i) => {
               const zone = blockZone(block, session);
               const pace = block.pace_range;
+              const paceStr = pace ? `${pace.min_per_km_low}–${pace.min_per_km_high} /km` : null;
+              const zoneStr = `Zone ${zone}`;
+              const subtitle =
+                paceFirst && paceStr
+                  ? `${paceStr} · ${zoneStr}`
+                  : `${zoneStr}${paceStr ? ` · ${paceStr}` : ''}`;
               return (
                 <View key={i} style={styles.block}>
                   <View style={[styles.tick, { backgroundColor: zoneColor(zone) }]} />
                   <View style={styles.blockMain}>
                     <ThemedText type="default">{block.label}</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
-                      Zone {zone}
-                      {pace ? ` · ${pace.min_per_km_low}–${pace.min_per_km_high} /km` : ''}
+                      {subtitle}
                     </ThemedText>
                   </View>
                   <ThemedText type="small" themeColor="textSecondary">
@@ -184,17 +214,11 @@ export default function SessionDetailScreen() {
               );
             })}
 
-            {session.pace_range || session.hr_zone ? (
+            {targets.length > 0 ? (
               <View style={styles.targets}>
-                {session.pace_range ? (
-                  <Target
-                    label="Allure cible"
-                    value={`${session.pace_range.min_per_km_low}–${session.pace_range.min_per_km_high} /km`}
-                  />
-                ) : null}
-                {session.hr_zone ? (
-                  <Target label="Zone FC" value={`Z${session.hr_zone}`} bordered={!!session.pace_range} />
-                ) : null}
+                {targets.map((t, idx) => (
+                  <Target key={t.label} label={t.label} value={t.value} bordered={idx > 0} />
+                ))}
               </View>
             ) : null}
           </View>

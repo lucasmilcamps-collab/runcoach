@@ -82,6 +82,22 @@ export function sessionDifficulty(type: PlanSession['type']): number {
   return TYPE_DIFFICULTY[type] ?? 2;
 }
 
+// On easy days the HR is a ceiling, not a target: you run by feel/pace and
+// simply keep the heart rate under a cap (training-science: ~80% of volume in
+// Z1–Z2). On quality sessions the zone is the actual target.
+const HR_CEILING_TYPES = new Set<PlanSession['type']>([
+  'easy',
+  'recovery',
+  'long_run',
+  'cross_training',
+]);
+
+/** True when the HR zone should be shown as a ceiling ("≤ Zx") rather than a
+ * target — i.e. on easy/recovery/long-run days. */
+export function hrIsCeiling(type: PlanSession['type']): boolean {
+  return HR_CEILING_TYPES.has(type);
+}
+
 function zoneFromLabel(label: string): number | null {
   const l = label.toLowerCase();
   if (/récup|recup|calme|cool|repos/.test(l)) return 1;
