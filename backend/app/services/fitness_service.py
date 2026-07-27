@@ -68,9 +68,14 @@ async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResp
     daily_loads: dict[date, float] = {}
     cursor = db.activities.find({"user_id": user_id})
     async for doc in cursor:
+        duration_s = doc.get("duration_s") or 0
         trimp = load_service.compute_trimp(
-            doc.get("duration_s") or 0, doc.get("avg_hr"), hr_max, hr_rest
+            duration_s, doc.get("avg_hr"), hr_max, hr_rest
         )
+        if trimp is None:
+            # No HR sample (typically a manually-logged session): fall back to the
+            # athlete's session-RPE (training-science skill).
+            trimp = load_service.compute_session_rpe_load(duration_s, doc.get("rpe"))
         if trimp is None:
             continue
         day = _as_utc_date(doc["start_time"])

@@ -1,4 +1,15 @@
 import type { Activity } from '@/lib/api/activities';
+import type { SportType } from '@/lib/api/types';
+
+// Fallback labels by sport, used for manually-logged sessions (no Garmin type key).
+const SPORT_LABELS: Record<SportType, string> = {
+  RUN: 'Course à pied',
+  PADEL: 'Padel',
+  BASKETBALL: 'Basket',
+  BIKE: 'Vélo',
+  STRENGTH: 'Renforcement',
+  OTHER: 'Autre',
+};
 
 // French labels for the Garmin activity type keys we've seen; anything not
 // listed falls back to the prettified key so the UI never just says "Autre".
@@ -40,8 +51,8 @@ function prettifyKey(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function activityLabel(activity: Pick<Activity, 'garmin_type_key'>): string {
+export function activityLabel(activity: Pick<Activity, 'garmin_type_key' | 'sport'>): string {
   const key = activity.garmin_type_key;
-  if (!key) return 'Activité';
+  if (!key) return SPORT_LABELS[activity.sport] ?? 'Activité';
   return GARMIN_TYPE_LABELS[key.toLowerCase()] ?? prettifyKey(key);
 }

@@ -44,6 +44,17 @@ def compute_trimp(
     return duration_min * zone_for_hr(avg_hr, hr_max, hr_rest)
 
 
+def compute_session_rpe_load(duration_s: int, rpe: int | None) -> float | None:
+    """Session-RPE fallback (Foster) for a manually-logged session with no HR:
+    RPE (1–10) × duration(min) / 10 (training-science skill — the /10 keeps it on
+    the same scale as the Edwards TRIMP used everywhere else). Returns None when
+    RPE is absent or out of range, so the caller never invents a load."""
+    if rpe is None or not 1 <= rpe <= 10:
+        return None
+    duration_min = duration_s / 60
+    return rpe * duration_min / 10
+
+
 class FitnessPoint:
     __slots__ = ("day", "load", "ctl", "atl", "tsb")
 

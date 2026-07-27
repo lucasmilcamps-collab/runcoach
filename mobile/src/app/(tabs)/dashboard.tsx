@@ -9,7 +9,7 @@ import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
-import { Activity, listActivities } from '@/lib/api/activities';
+import { Activity, deleteActivity, listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { getFitness } from '@/lib/api/fitness';
 import { syncGarmin } from '@/lib/api/garmin';
@@ -148,6 +148,11 @@ export default function DashboardScreen() {
               onPress={() => syncMutation.mutate()}
             />
           )}
+          <Button
+            label="Ajouter une séance"
+            variant="ghost"
+            onPress={() => router.push('/add-activity')}
+          />
         </View>
       </View>
     </SafeAreaView>
@@ -181,8 +186,18 @@ function ActivityList({ activities }: { activities: Activity[] }) {
 
 function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean }) {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
   const hasDistance = activity.distance_m != null && activity.distance_m > 0;
-  const hasDetail = hasDistance || activity.avg_hr != null || activity.max_hr != null;
+  const hasDetail =
+    activity.manual || hasDistance || activity.avg_hr != null || activity.max_hr != null;
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteActivity(activity.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activities'] });
+      queryClient.invalidateQueries({ queryKey: ['fitness'] });
+    },
+  });
 
   return (
     <Pressable
@@ -192,10 +207,17 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
       style={[styles.activityRow, isLast && styles.activityRowLast]}>
       <View style={styles.activityRowTop}>
         <View style={styles.activityRowMain}>
-          <ThemedText type="default">
-            {activityLabel(activity)}
-            {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
-          </ThemedText>
+          <View style={styles.activityLabelRow}>
+            <ThemedText type="default">
+              {activityLabel(activity)}
+              {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
+            </ThemedText>
+            {activity.manual ? (
+              <ThemedText type="waypointLabel" themeColor="hydro">
+                Manuel
+              </ThemedText>
+            ) : null}
+          </View>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             {formatDate(activity.start_time)}
           </ThemedText>
@@ -221,6 +243,21 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
           ) : null}
           {activity.max_hr != null ? (
             <Detail label="FC max" value={`${activity.max_hr} bpm`} />
+          ) : null}
+          {activity.rpe != null ? (
+            <Detail label="Effort (RPE)" value={`${activity.rpe}/10`} />
+          ) : null}
+          {activity.note ? <Detail label="Note" value={activity.note} /> : null}
+          {activity.manual ? (
+            <Pressable
+              onPress={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              accessibilityRole="button"
+              style={styles.deleteButton}>
+              <ThemedText type="waypointLabel" themeColor="flare">
+                {deleteMutation.isPending ? 'Suppression…' : 'Supprimer cette séance'}
+              </ThemedText>
+            </Pressable>
           ) : null}
         </View>
       ) : null}
@@ -257,6 +294,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.four,
   },
   footer: {
+    gap: Spacing.two,
     paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
   },
@@ -292,6 +330,15 @@ const styles = StyleSheet.create({
   },
   activityRowMain: {
     gap: Spacing.half,
+  },
+  activityLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  deleteButton: {
+    paddingTop: Spacing.two,
+    alignSelf: 'flex-start',
   },
   activityDetail: {
     gap: Spacing.half,

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SportType(StrEnum):
@@ -45,11 +45,23 @@ def map_garmin_sport(type_key: str | None) -> SportType:
     return _GARMIN_TYPE_KEY_MAP.get(type_key.lower(), SportType.OTHER)
 
 
+class ManualActivityCreate(BaseModel):
+    """A session logged by hand (Garmin missed it, or it has no HR). Load comes
+    from session-RPE (training-science skill), so RPE + duration are required."""
+
+    sport: SportType
+    start_time: datetime
+    duration_min: int = Field(ge=1, le=600)
+    rpe: int = Field(ge=1, le=10)  # perceived effort, 1–10
+    distance_km: float | None = Field(default=None, ge=0, le=500)
+    note: str | None = Field(default=None, max_length=200)
+
+
 class ActivityResponse(BaseModel):
     """Public shape — never includes `raw` or `user_id` (api-conventions)."""
 
     id: str
-    garmin_activity_id: int
+    garmin_activity_id: int | None = None  # None for manually-logged sessions
     sport: SportType
     garmin_type_key: str | None = None  # raw Garmin type, so the UI shows the real sport
     start_time: datetime
@@ -58,3 +70,6 @@ class ActivityResponse(BaseModel):
     avg_hr: int | None = None
     max_hr: int | None = None
     training_load: float | None = None
+    manual: bool = False
+    rpe: int | None = None
+    note: str | None = None
