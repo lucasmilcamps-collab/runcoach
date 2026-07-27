@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -45,9 +45,7 @@ function formatDate(isoString: string): string {
 
 export default function DashboardScreen() {
   const garminConnected = useAuthStore((state) => state.garminConnected);
-  const { sync } = useLocalSearchParams<{ sync?: string }>();
   const queryClient = useQueryClient();
-  const autoSyncedRef = useRef(false);
 
   const activitiesQuery = useQuery({
     queryKey: ['activities'],
@@ -74,18 +72,28 @@ export default function DashboardScreen() {
     registerServiceWorker();
   }, []);
 
-  // Auto-run one sync when arriving straight from a fresh Garmin connect.
-  // The ref guards against re-firing on re-render; the server throttles
-  // anything more frequent than its cooldown anyway.
-  useEffect(() => {
-    if (sync === '1' && garminConnected && !autoSyncedRef.current) {
-      autoSyncedRef.current = true;
-      syncMutation.mutate();
-    }
-  }, [sync, garminConnected, syncMutation]);
+  // Auto-refresh Garmin whenever the dashboard comes into view. The backend
+  // throttles to SYNC_MIN_INTERVAL (15 min) and returns "skipped" instantly
+  // within the cooldown, so firing on every focus is cheap — no manual tap
+  // needed to keep the data current.
+  const syncingRef = useRef(false);
+  syncingRef.current = syncMutation.isPending;
+  useFocusEffect(
+    useCallback(() => {
+      if (garminConnected && !syncingRef.current) {
+        syncMutation.mutate();
+      }
+      // syncMutation.mutate is stable; the ref avoids a stale isPending here.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [garminConnected])
+  );
 
   const activities = activitiesQuery.data ?? [];
+  const hasActivities = activities.length > 0;
   const isSyncing = syncMutation.isPending;
+  // A refresh with data already on screen stays quiet (small chip); only the
+  // very first import takes over the screen with the big syncing card.
+  const backgroundSyncing = isSyncing && hasActivities;
   const syncResult = syncMutation.data;
 
   const syncErrorMessage = (() => {
@@ -108,7 +116,7 @@ export default function DashboardScreen() {
     if (!garminConnected) {
       return 'Aucune donnée pour l’instant : connectez Garmin pour que votre charge d’entraînement et votre récupération apparaissent ici.';
     }
-    if (isSyncing) {
+    if (isSyncing && !hasActivities) {
       return 'Synchronisation Garmin en cours (jusqu’à 90 jours d’historique)…';
     }
     if (syncErrorMessage) {
@@ -120,10 +128,10 @@ export default function DashboardScreen() {
     return 'Garmin est connecté, aucune activité pour l’instant.';
   })();
 
-  const showConnectEmpty = !isSyncing && !garminConnected;
-  const showNoActivitiesEmpty = !isSyncing && garminConnected && activities.length === 0;
+  const showConnectEmpty = !garminConnected;
+  const showNoActivitiesEmpty = !isSyncing && garminConnected && !hasActivities;
   const showEmpty = showConnectEmpty || showNoActivitiesEmpty;
-  const showContent = garminConnected && activities.length > 0 && !isSyncing;
+  const showContent = garminConnected && hasActivities;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -136,9 +144,17 @@ export default function DashboardScreen() {
                 {headline}
               </ThemedText>
             ) : null}
+            {backgroundSyncing ? (
+              <View style={styles.syncChip}>
+                <ActivityIndicator size="small" color={Colors.blaze} />
+                <ThemedText type="small" themeColor="textSecondary">
+                  Synchronisation Garmin…
+                </ThemedText>
+              </View>
+            ) : null}
           </View>
 
-          {isSyncing ? <SyncingCard /> : null}
+          {isSyncing && !hasActivities ? <SyncingCard /> : null}
 
           {showConnectEmpty ? (
             <EmptyState
@@ -180,23 +196,25 @@ export default function DashboardScreen() {
           ) : null}
 
           <NotificationsCard />
-        </ScrollView>
 
-        {showContent ? (
-          <View style={styles.footer}>
-            <Button
-              label="Synchroniser Garmin"
-              variant="ghost"
-              loading={isSyncing}
-              onPress={() => syncMutation.mutate()}
-            />
-            <Button
-              label="Ajouter une séance"
-              variant="ghost"
-              onPress={() => router.push('/add-activity')}
-            />
-          </View>
-        ) : null}
+          {showContent ? (
+            <View style={styles.actions}>
+              <Button
+                label="Synchroniser Garmin"
+                variant="ghost"
+                style={styles.actionBtn}
+                loading={isSyncing}
+                onPress={() => syncMutation.mutate()}
+              />
+              <Button
+                label="Ajouter une séance"
+                variant="ghost"
+                style={styles.actionBtn}
+                onPress={() => router.push('/add-activity')}
+              />
+            </View>
+          ) : null}
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
@@ -334,15 +352,24 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: Spacing.five,
     paddingTop: Spacing.four,
-    paddingBottom: Spacing.four,
-  },
-  footer: {
-    gap: Spacing.two,
-    paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
   },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: Colors.contourFaint,
+  },
+  actionBtn: { flex: 1 },
   header: {
     gap: Spacing.two,
+  },
+  syncChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
   },
   contourCard: {
     backgroundColor: Colors.backgroundElement,
