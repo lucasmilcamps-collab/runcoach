@@ -7,7 +7,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
-import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
@@ -194,8 +193,6 @@ export default function DashboardScreen() {
               <ActivityList activities={activities} />
             </>
           ) : null}
-
-          <NotificationsCard />
 
           {showContent ? (
             <View style={styles.actions}>
