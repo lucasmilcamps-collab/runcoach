@@ -30,7 +30,7 @@ rien ne casse.
 ## 3. Planificateur (GitHub Actions)
 
 Le workflow [`.github/workflows/push-cron.yml`](.github/workflows/push-cron.yml)
-appelle `/push/run` chaque matin (06:00 UTC). Dans **Settings → Secrets and
+appelle `/push/run` chaque matin (07:00 UTC ≈ 8-9h Paris). Dans **Settings → Secrets and
 variables → Actions**, ajoute :
 
 | Secret | Valeur |
