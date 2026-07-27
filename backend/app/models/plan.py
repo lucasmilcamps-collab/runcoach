@@ -62,6 +62,16 @@ class PlanRequest(BaseModel):
     fixed_sports: list[FixedSport] = Field(default_factory=list)
 
 
+class InjuryReport(BaseModel):
+    """A user-declared injury/soreness — a structural replan trigger (plan-
+    generator skill). Drives a comeback: an eased-off period then a gradual ramp.
+    Never a medical assessment; the plan only adapts training load."""
+
+    area: str = Field(min_length=1, max_length=120)  # free text: "mollet droit"
+    severity: Literal["gene", "douleur", "arret"]  # gêne légère / douleur / arrêt
+    days_off: int = Field(ge=0, le=365)  # days the athlete can't run
+
+
 class Block(BaseModel):
     """One segment of a session (warm-up, 6×800m, cool-down)."""
 

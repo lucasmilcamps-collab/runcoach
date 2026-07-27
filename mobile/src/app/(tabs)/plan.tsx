@@ -179,11 +179,26 @@ export default function PlanScreen() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <Button
-            label={query.data?.status === 'ready' ? 'Modifier / régénérer' : 'Créer mon plan'}
-            variant="ghost"
-            onPress={() => router.push('/plan-setup')}
-          />
+          {query.data?.status === 'ready' ? (
+            <>
+              <Button
+                label="Modifier mon objectif"
+                variant="ghost"
+                onPress={() => router.push('/plan-setup')}
+              />
+              <Button
+                label="Signaler une blessure / gêne"
+                variant="ghost"
+                onPress={() => router.push('/injury-report')}
+              />
+            </>
+          ) : (
+            <Button
+              label="Créer mon plan"
+              variant="ghost"
+              onPress={() => router.push('/plan-setup')}
+            />
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -418,6 +433,7 @@ const styles = StyleSheet.create({
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   footer: {
+    gap: Spacing.two,
     paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
   },

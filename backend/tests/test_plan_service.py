@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from app.models.activity import SportType
 from app.models.plan import (
+    InjuryReport,
     Phase,
     Plan,
     PlanGoal,
@@ -140,6 +141,67 @@ async def test_generate_plan_retries_on_violation(db):
     assert stream_mock.call_count == 2
     second_messages = stream_mock.call_args_list[1].kwargs["messages"]
     assert any("viole" in m["content"] for m in second_messages if m["role"] == "user")
+
+
+async def test_generate_plan_with_injury_passes_comeback_directive(db):
+    user_id = await _seed_user(db)
+    injury = InjuryReport(area="mollet droit", severity="douleur", days_off=10)
+    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
+        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request(), injury=injury)
+
+    assert result.status == "ready"
+    # The comeback directive (zone + days off) reached the prompt.
+    prompt = stream_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "BLESSURE DÉCLARÉE" in prompt
+    assert "mollet droit" in prompt
+    assert "10 jour" in prompt
+    # And the injury is persisted on the new version for traceability.
+    stored = await db.plans.find_one({"user_id": user_id})
+    assert stored["injury"]["area"] == "mollet droit"
+    assert stored["injury"]["days_off"] == 10
+
+
+async def test_replan_injury_endpoint(client, db):
+    register = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    token = register.json()["access_token"]
+
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
+        _mock_response(_valid_plan_json()),  # initial plan
+        _mock_response(_valid_plan_json()),  # injury comeback
+    ):
+        await client.post(
+            "/api/v1/plans",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_request().model_dump(mode="json"),
+        )
+        response = await client.post(
+            "/api/v1/plans/replan-injury",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"area": "genou gauche", "severity": "gene", "days_off": 5},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
+async def test_replan_injury_requires_existing_plan(client, db):
+    register = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    token = register.json()["access_token"]
+
+    response = await client.post(
+        "/api/v1/plans/replan-injury",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"area": "cheville", "severity": "arret", "days_off": 14},
+    )
+    assert response.status_code == 404
 
 
 async def test_generate_plan_without_key_fails_gracefully(db):

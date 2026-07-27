@@ -110,8 +110,23 @@ export type PlanProgress = {
   replan_reason: string | null;
 };
 
+/** A user-declared injury — triggers a comeback replan. */
+export type InjuryReport = {
+  area: string;
+  severity: 'gene' | 'douleur' | 'arret';
+  days_off: number;
+};
+
 export function getPlanProgress() {
   return apiClient.get<PlanProgress>('/api/v1/plans/progress');
+}
+
+/**
+ * Declare an injury and regenerate the remaining plan as a comeback (eased-off
+ * period then a gradual ramp). Reuses the current plan's objective.
+ */
+export function reportInjury(injury: InjuryReport) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/replan-injury', injury);
 }
 
 export function getCurrentPlan() {

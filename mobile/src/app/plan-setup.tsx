@@ -9,7 +9,7 @@ import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
-import { createPlan, FixedSport, PlanRequest, Weekday } from '@/lib/api/plans';
+import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
@@ -64,16 +64,28 @@ function Chip({
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+function objectiveIndexFor(request: PlanRequest | null): number {
+  if (!request) return 1; // Semi by default
+  if (request.goal_type === 'fitness') return OBJECTIVES.findIndex((o) => o.goal === 'fitness');
+  const match = OBJECTIVES.findIndex((o) => o.distanceKm === request.distance_km);
+  return match >= 0 ? match : 1;
+}
+
 export default function PlanSetupScreen() {
   const queryClient = useQueryClient();
+  // Prefill from the current plan (already cached by the Plan tab) so "change my
+  // objective" is a quick edit rather than re-entering everything.
+  const prefill = queryClient.getQueryData<PlanResponse>(['plan'])?.request ?? null;
 
-  const [objectiveIndex, setObjectiveIndex] = useState(1); // Semi by default
-  const [raceDate, setRaceDate] = useState('');
+  const [objectiveIndex, setObjectiveIndex] = useState(objectiveIndexFor(prefill));
+  const [raceDate, setRaceDate] = useState(prefill?.race_date ?? '');
   const [days, setDays] = useState<Set<Weekday>>(
-    new Set<Weekday>(['TUESDAY', 'THURSDAY', 'SATURDAY']),
+    new Set<Weekday>(prefill?.available_days ?? ['TUESDAY', 'THURSDAY', 'SATURDAY']),
   );
-  const [runCount, setRunCount] = useState(3);
-  const [fixedSports, setFixedSports] = useState<Map<SportType, Weekday>>(new Map());
+  const [runCount, setRunCount] = useState(prefill?.max_run_sessions_per_week ?? 3);
+  const [fixedSports, setFixedSports] = useState<Map<SportType, Weekday>>(
+    new Map((prefill?.fixed_sports ?? []).map((f) => [f.sport, f.day])),
+  );
   const [dateError, setDateError] = useState<string | undefined>();
 
   const objective = OBJECTIVES[objectiveIndex];

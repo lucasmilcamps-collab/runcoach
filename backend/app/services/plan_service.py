@@ -18,6 +18,7 @@ from app.models.activity import SportType
 from app.models.plan import (
     WEEKDAY_ORDER,
     DailyAdjustment,
+    InjuryReport,
     Plan,
     PlanRequest,
     PlanResponse,
@@ -140,13 +141,35 @@ def _weeks_directive(request: PlanRequest, today: date) -> str:
     return "Construis un plan de 8 à 12 semaines."
 
 
-def _user_prompt(request: PlanRequest, context: dict, today: date) -> str:
+_SEVERITY_LABELS = {"gene": "gêne légère", "douleur": "douleur", "arret": "arrêt"}
+
+
+def _injury_directive(injury: InjuryReport | None) -> str:
+    if injury is None:
+        return ""
+    severity = _SEVERITY_LABELS.get(injury.severity, injury.severity)
+    return (
+        f"\nBLESSURE DÉCLARÉE — zone « {injury.area} », gravité « {severity} », "
+        f"{injury.days_off} jour(s) sans course possible. Construis une REPRISE : "
+        f"commence par une phase allégée couvrant au moins ces {injury.days_off} "
+        "premiers jours sans aucune course à impact ni sollicitation de la zone "
+        "touchée (repos ou cross-training doux uniquement), puis remonte la charge "
+        "très progressivement depuis un niveau réduit, sans jamais chercher à "
+        "rattraper le retard. Priorité absolue à une reprise sûre. Aucune "
+        "recommandation médicale.\n"
+    )
+
+
+def _user_prompt(
+    request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
+) -> str:
     schema = json.dumps(Plan.model_json_schema(), ensure_ascii=False)
     req = request.model_dump(mode="json")
     return (
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
         f"{_weeks_directive(request, today)}\n"
+        f"{_injury_directive(injury)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif. La sortie longue progresse d'au plus 15 min d'une "
         "semaine à l'autre. Le cross-training compte comme charge. Si des séances "
@@ -211,12 +234,14 @@ async def _call_anthropic(system: str, user: str, feedback: str | None) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
-async def _generate_valid_plan(request: PlanRequest, context: dict, today: date) -> Plan:
+async def _generate_valid_plan(
+    request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
+) -> Plan:
     if not settings.anthropic_api_key:
         raise PlanGenerationError("Génération IA non configurée (clé API absente).")
 
     system = _system_prompt()
-    user = _user_prompt(request, context, today)
+    user = _user_prompt(request, context, today, injury)
     feedback: str | None = None
 
     last_problem = "aucune réponse exploitable"
@@ -252,11 +277,17 @@ async def _next_version(db: AsyncIOMotorDatabase, user_id: str) -> int:
 
 
 async def generate_plan(
-    db: AsyncIOMotorDatabase, user_id: str, request: PlanRequest
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    request: PlanRequest,
+    injury: InjuryReport | None = None,
 ) -> PlanResponse:
     """Generate, validate, and persist a new plan version. Runs synchronously
     inside the request (like the Garmin sync): on a free single-instance host a
-    background task can be killed mid-run, so the caller awaits the real result."""
+    background task can be killed mid-run, so the caller awaits the real result.
+
+    `injury`, when set, makes it a comeback replan: the prompt steers the early
+    weeks toward recovery and a gradual ramp (plan-generator skill)."""
     today = datetime.now(UTC).date()
     context = await build_context(db, user_id)
 
@@ -271,10 +302,17 @@ async def generate_plan(
             "seances_cles_manquees_14j": progress.recent_key_missed,
         }
 
+    if injury is not None:
+        context["blessure"] = {
+            "zone": injury.area,
+            "gravite": injury.severity,
+            "jours_sans_course": injury.days_off,
+        }
+
     version = await _next_version(db, user_id)
 
     try:
-        plan = await _generate_valid_plan(request, context, today)
+        plan = await _generate_valid_plan(request, context, today, injury)
     except PlanGenerationError as exc:
         doc = {
             "user_id": user_id,
@@ -303,6 +341,7 @@ async def generate_plan(
         "request": request.model_dump(mode="json"),
         "plan": plan.model_dump(mode="json"),
         "start_date": start_date.isoformat(),
+        "injury": injury.model_dump(mode="json") if injury else None,
         "error_message": None,
         "created_at": datetime.now(UTC),
     }

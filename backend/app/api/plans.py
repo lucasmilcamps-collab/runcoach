@@ -3,7 +3,13 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import get_current_user
-from app.models.plan import PlanProgress, PlanRequest, PlanResponse, TodaySession
+from app.models.plan import (
+    InjuryReport,
+    PlanProgress,
+    PlanRequest,
+    PlanResponse,
+    TodaySession,
+)
 from app.services import plan_progress, plan_service
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
@@ -19,6 +25,25 @@ async def create_plan(
     resolves only once the plan is generated, validated, and stored (or failed
     with a message)."""
     return await plan_service.generate_plan(db, str(user["_id"]), body)
+
+
+@router.post("/replan-injury", response_model=PlanResponse)
+async def replan_injury(
+    body: InjuryReport,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Declare an injury and regenerate the remaining plan as a comeback (eased-off
+    period then a gradual ramp). Reuses the current plan's objective; a plan must
+    already exist."""
+    user_id = str(user["_id"])
+    current = await plan_service.get_current_plan(db, user_id)
+    if current is None or current.request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_PLAN", "message": "Aucun plan à réadapter."},
+        )
+    return await plan_service.generate_plan(db, user_id, current.request, injury=body)
 
 
 @router.get("/today", response_model=TodaySession)
