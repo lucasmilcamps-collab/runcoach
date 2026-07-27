@@ -19,7 +19,11 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // No icons in this app: hide the reserved icon slot so the label gets
+        // the full height and stays centered (otherwise the empty icon + label
+        // stack overflows the bar height and the text is clipped away).
         tabBarIcon: () => null,
+        tabBarIconStyle: { display: 'none' },
         tabBarActiveTintColor: Colors.blaze,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarLabelStyle: {
@@ -30,12 +34,8 @@ export default function TabsLayout() {
           backgroundColor: Colors.backgroundElement,
           borderTopColor: Colors.contour,
           borderTopWidth: 1,
-          height: 58 + insets.bottom,
-          paddingTop: 8,
-          paddingBottom: insets.bottom + 8,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 2,
+          height: 56 + insets.bottom,
+          paddingBottom: insets.bottom,
         },
       }}>
       <Tabs.Screen name="dashboard" options={{ title: 'Dashboard' }} />
