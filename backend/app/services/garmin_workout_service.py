@@ -14,6 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.crypto import decrypt_token_blob
 from app.models.garmin import WorkoutPushRequest
+from app.models.plan import Block
 from app.services.garmin_sync_service import _restore_client_sync
 
 
@@ -36,6 +37,12 @@ _TIME_END = {
     "displayOrder": 2,
     "displayable": True,
 }
+_DISTANCE_END = {
+    "conditionTypeId": gw.ConditionType.DISTANCE,
+    "conditionTypeKey": "distance",
+    "displayOrder": 3,
+    "displayable": True,
+}
 
 _SESSION_LABELS = {
     "easy": "Footing",
@@ -52,6 +59,19 @@ _WARMUP_RE = re.compile(r"échauff|echauff|warm", re.IGNORECASE)
 _COOLDOWN_RE = re.compile(r"retour au calme|retour|cool|calme", re.IGNORECASE)
 _RECOVERY_RE = re.compile(r"récup|recup|repos", re.IGNORECASE)
 _PACE_RE = re.compile(r"^(\d+):(\d{1,2})$")
+
+# "6×800m", "10 x 400m", "5×(3min)" — count then the effort descriptor.
+_REP_RE = re.compile(r"(\d+)\s*[x×✕╳*]\s*(.+)", re.IGNORECASE)
+# Where the effort ends and the recovery begins inside a rep descriptor.
+_RECOVERY_MARKER = re.compile(
+    r"r[ée]cup[ée]?(?:ration)?|repos|\brec\b|/|\+|\br(?=\s*\d)",
+    re.IGNORECASE,
+)
+# A distance ("800m", "1km") — the unit must not be followed by another letter,
+# so "3min" is never read as 3 metres.
+_DIST_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(km|m)(?![a-zà-ÿ])", re.IGNORECASE)
+_MIN_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:min|mn|minutes?|’|')(?![a-zà-ÿ])", re.IGNORECASE)
+_SEC_RE = re.compile(r"(\d+)\s*(?:sec(?:ondes?)?|s|”|\")(?![a-zà-ÿ])", re.IGNORECASE)
 
 
 def _pace_to_speed(pace: str) -> float | None:
@@ -115,15 +135,110 @@ def _step_type(label: str, idx: int, total: int) -> tuple[int, str]:
     return gw.StepType.INTERVAL, "interval"
 
 
-def _make_step(order, step_type_id, step_type_key, dur_s, target_type, extra):
+def _dist_or_time(text: str) -> tuple[str, int] | None:
+    """First distance (metres) or duration (seconds) in a fragment, or None."""
+    md = _DIST_RE.search(text)
+    if md:
+        value = float(md.group(1).replace(",", "."))
+        metres = value * 1000 if md.group(2).lower() == "km" else value
+        return "distance", round(metres)
+    mm = _MIN_RE.search(text)
+    if mm:
+        return "time", round(float(mm.group(1).replace(",", ".")) * 60)
+    ms = _SEC_RE.search(text)
+    if ms:
+        return "time", int(ms.group(1))
+    return None
+
+
+def _parse_repeat(label: str, block_total_s: int) -> dict | None:
+    """Detect an interval set ("6×800m récup 200m") in a block label. Returns
+    {iterations, work: (kind, value), recovery: (kind, value) | None} or None
+    when the label isn't a repetition."""
+    m = _REP_RE.search(label)
+    if not m:
+        return None
+    iterations = int(m.group(1))
+    if not 2 <= iterations <= 40:
+        return None
+
+    descriptor = m.group(2)
+    marker = _RECOVERY_MARKER.search(descriptor)
+    if marker:
+        work_text, recovery_text = descriptor[: marker.start()], descriptor[marker.end() :]
+    else:
+        work_text, recovery_text = descriptor, ""
+
+    work = _dist_or_time(work_text)
+    if work is None:
+        return None
+
+    recovery = _dist_or_time(recovery_text) if recovery_text else None
+    # No explicit recovery but the effort is timed: split the leftover block
+    # time evenly between reps as jog recovery.
+    if recovery is None and work[0] == "time":
+        leftover = block_total_s - iterations * work[1]
+        if leftover > 0:
+            recovery = ("time", round(leftover / iterations))
+    return {"iterations": iterations, "work": work, "recovery": recovery}
+
+
+def _end_condition(kind: str) -> dict:
+    return dict(_DISTANCE_END) if kind == "distance" else dict(_TIME_END)
+
+
+def _make_step(order, step_type_id, step_type_key, end_condition, end_value, target_type, extra):
     return gw.ExecutableStep(
         stepOrder=order,
-        stepType={"stepTypeId": step_type_id, "stepTypeKey": step_type_key, "displayOrder": order},
-        endCondition=dict(_TIME_END),
-        endConditionValue=float(dur_s),
+        stepType={
+            "stepTypeId": step_type_id,
+            "stepTypeKey": step_type_key,
+            "displayOrder": step_type_id,
+        },
+        endCondition=end_condition,
+        endConditionValue=float(end_value),
         targetType=target_type,
         **extra,
     )
+
+
+def _build_repeat_group(order: int, rep: dict, block: Block) -> tuple["gw.RepeatGroup", int]:
+    """A REPEAT group of [effort, (recovery)] steps. Returns (group, next_order)."""
+    group_order = order
+    order += 1
+
+    target_type, extra = _target_for(block.hr_zone, block.pace_range)
+    work_kind, work_value = rep["work"]
+    children = [
+        _make_step(
+            order,
+            gw.StepType.INTERVAL,
+            "interval",
+            _end_condition(work_kind),
+            work_value,
+            target_type,
+            extra,
+        )
+    ]
+    order += 1
+
+    if rep["recovery"] is not None:
+        rec_kind, rec_value = rep["recovery"]
+        no_target, no_extra = _target_for(None, None)
+        children.append(
+            _make_step(
+                order,
+                gw.StepType.RECOVERY,
+                "recovery",
+                _end_condition(rec_kind),
+                rec_value,
+                no_target,
+                no_extra,
+            )
+        )
+        order += 1
+
+    return gw.create_repeat_group(rep["iterations"], children, group_order), order
 
 
 def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
@@ -135,20 +250,39 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
         name = f"{name} (S{req.week_number})"
 
     blocks = req.structure or []
-    steps = []
+    steps: list = []
+    order = 1
     if blocks:
         total = len(blocks)
         for i, b in enumerate(blocks):
+            block_total_s = max(1, b.duration_min) * 60
+            rep = _parse_repeat(b.label, block_total_s)
+            if rep is not None:
+                group, order = _build_repeat_group(order, rep, b)
+                steps.append(group)
+                continue
             step_id, step_key = _step_type(b.label, i, total)
             target_type, extra = _target_for(b.hr_zone, b.pace_range)
-            dur_s = max(1, b.duration_min) * 60
-            steps.append(_make_step(i + 1, step_id, step_key, dur_s, target_type, extra))
+            steps.append(
+                _make_step(
+                    order,
+                    step_id,
+                    step_key,
+                    _end_condition("time"),
+                    block_total_s,
+                    target_type,
+                    extra,
+                )
+            )
+            order += 1
         est = sum(max(1, b.duration_min) for b in blocks) * 60
     else:
         target_type, extra = _target_for(req.hr_zone, req.pace_range)
-        dur_s = max(1, req.duration_min) * 60
         steps.append(
-            _make_step(1, gw.StepType.INTERVAL, "interval", dur_s, target_type, extra)
+            _make_step(
+                1, gw.StepType.INTERVAL, "interval", _end_condition("time"),
+                max(1, req.duration_min) * 60, target_type, extra,
+            )
         )
         est = max(1, req.duration_min) * 60
 
