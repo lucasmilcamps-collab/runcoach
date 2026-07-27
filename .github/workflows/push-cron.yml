@@ -1,0 +1,22 @@
+name: Daily push notifications
+
+# Render's free tier has no scheduler, so GitHub Actions plays cron: it hits the
+# secured /push/run endpoint, which sends each subscribed user their due
+# notifications (today's session + any replan nudge).
+on:
+  schedule:
+    # 06:00 UTC ≈ 07:00–08:00 in France — a morning "session of the day" nudge.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger due notifications
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          PUSH_RUN_SECRET: ${{ secrets.PUSH_RUN_SECRET }}
+        run: |
+          curl -fsS -X POST "$BACKEND_URL/api/v1/push/run" \
+            -H "X-Push-Secret: $PUSH_RUN_SECRET"

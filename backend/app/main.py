@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import activities, auth, fitness, garmin, jobs, plans
+from app.api import activities, auth, fitness, garmin, jobs, plans, push
 from app.core.config import settings
 from app.core.db import get_db
 
@@ -30,6 +30,7 @@ app.include_router(activities.router)
 app.include_router(fitness.router)
 app.include_router(plans.router)
 app.include_router(jobs.router)
+app.include_router(push.router)
 
 
 @app.get("/health")

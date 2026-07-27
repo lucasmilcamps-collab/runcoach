@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     plan_model: str = "claude-sonnet-5"
 
+    # Web Push (VAPID). Only the private key is stored (single-line base64url of
+    # the DER PKCS8); the browser applicationServerKey is derived from it. The
+    # subject is a mailto:/https: contact per the Web Push spec. push_run_secret
+    # guards the scheduler-triggered /push/run endpoint. All empty = push off.
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:coach@runcoach.app"
+    push_run_secret: str = ""
+
     # Kept as a plain str (not list[str]): pydantic-settings JSON-decodes any
     # complex-typed env var unconditionally, before validators run, so a
     # host dashboard value that isn't strict JSON (e.g. a bare comma list)

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
+import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
@@ -14,6 +15,7 @@ import { Activity, deleteActivity, listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { getFitness } from '@/lib/api/fitness';
 import { syncGarmin } from '@/lib/api/garmin';
+import { registerServiceWorker } from '@/lib/push';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 function formatDuration(durationS: number): string {
@@ -66,6 +68,11 @@ export default function DashboardScreen() {
       queryClient.invalidateQueries({ queryKey: ['fitness'] });
     },
   });
+
+  // Register the Web Push service worker on web (no-op on native / unsupported).
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   // Auto-run one sync when arriving straight from a fresh Garmin connect.
   // The ref guards against re-firing on re-render; the server throttles
@@ -171,6 +178,8 @@ export default function DashboardScreen() {
               <ActivityList activities={activities} />
             </>
           ) : null}
+
+          <NotificationsCard />
         </ScrollView>
 
         {showContent ? (
