@@ -15,10 +15,20 @@ export default function TabsLayout() {
         tabBarIcon: () => null,
         tabBarActiveTintColor: Colors.blaze,
         tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarLabelStyle: {
+          fontSize: 15,
+          fontWeight: '600',
+        },
         tabBarStyle: {
           backgroundColor: Colors.backgroundElement,
           borderTopColor: Colors.contour,
           borderTopWidth: 1,
+          height: 68,
+          paddingTop: 10,
+          paddingBottom: 12,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
       }}>
       <Tabs.Screen name="dashboard" options={{ title: 'Dashboard' }} />

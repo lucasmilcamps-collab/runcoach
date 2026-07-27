@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
-import { PlanView } from '@/components/plan-view';
+import { PlanWeekPager } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
@@ -147,26 +147,32 @@ export default function PlanScreen() {
               Impossible de charger votre plan. Réessayez.
             </ThemedText>
           ) : query.data ? (
-            <PlanBody response={query.data} />
+            <PlanBody response={query.data} currentWeek={progressQuery.data?.week_current ?? null} />
           ) : null}
-        </ScrollView>
 
-        {query.data?.status === 'ready' ? (
-          <View style={styles.footer}>
-            <Button
-              label="Modifier mon objectif"
-              variant="ghost"
-              onPress={() => router.push('/plan-setup')}
-            />
-            <Button
-              label="Signaler une blessure / gêne"
-              variant="ghost"
-              onPress={() => router.push('/injury-report')}
-            />
-          </View>
-        ) : null}
+          {query.data?.status === 'ready' ? <PlanActions /> : null}
+        </ScrollView>
       </View>
     </SafeAreaView>
+  );
+}
+
+function PlanActions() {
+  return (
+    <View style={styles.actions}>
+      <Button
+        label="Modifier l’objectif"
+        variant="ghost"
+        style={styles.actionBtn}
+        onPress={() => router.push('/plan-setup')}
+      />
+      <Button
+        label="Signaler une gêne"
+        variant="ghost"
+        style={styles.actionBtn}
+        onPress={() => router.push('/injury-report')}
+      />
+    </View>
   );
 }
 
@@ -255,7 +261,13 @@ function EmptyPlan() {
   );
 }
 
-function PlanBody({ response }: { response: PlanResponse }) {
+function PlanBody({
+  response,
+  currentWeek,
+}: {
+  response: PlanResponse;
+  currentWeek: number | null;
+}) {
   if (response.status === 'failed') {
     return (
       <View style={styles.card}>
@@ -269,7 +281,7 @@ function PlanBody({ response }: { response: PlanResponse }) {
     );
   }
   if (!response.plan) return null;
-  return <PlanView plan={response.plan} />;
+  return <PlanWeekPager plan={response.plan} currentWeek={currentWeek} />;
 }
 
 const styles = StyleSheet.create({
@@ -287,7 +299,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: Spacing.four,
     paddingTop: Spacing.four,
-    paddingBottom: Spacing.four,
+    paddingBottom: BottomTabInset + Spacing.four,
   },
   headerRow: {
     flexDirection: 'row',
@@ -295,11 +307,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
-  footer: {
+  actions: {
+    flexDirection: 'row',
     gap: Spacing.two,
-    paddingTop: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.four,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: Colors.contourFaint,
   },
+  actionBtn: { flex: 1 },
   todayCard: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
