@@ -1,0 +1,17 @@
+{
+  "name": "RunCoach",
+  "short_name": "RunCoach",
+  "description": "Votre coach de course adaptatif : des plans générés par IA qui s'ajustent à votre récupération réelle (Garmin).",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "fr",
+  "background_color": "#14140F",
+  "theme_color": "#14140F",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "RunCoach",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,15 +20,14 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "output": "static"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#14140F",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
