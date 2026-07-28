@@ -191,3 +191,94 @@ def test_wrong_week_count_for_race_flagged():
     request = _valid_request(goal_type="race", race_date=race_date)
     violations = plan_validation.validate_plan(plan, request, TODAY)
     assert any("semaines avant la course" in v for v in violations)
+
+
+# --- Lot 0 fixes ---
+
+
+def test_deload_without_load_reduction_flagged():
+    plan = _valid_plan()
+    # Week 4 is marked deload but keeps the full load of week 3.
+    plan.phases[0].weeks[3].target_load = 116.0
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("deload mais charge" in v for v in violations)
+
+
+def test_all_weeks_marked_deload_flagged():
+    plan = _valid_plan()
+    for week in plan.phases[0].weeks:
+        week.is_deload = True
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("aucune semaine" in v for v in violations)
+
+
+def test_long_run_returns_to_prior_level_after_deload_is_ok():
+    weeks = [
+        Week(
+            index=1,
+            is_deload=False,
+            target_load=100.0,
+            sessions=[_s(Weekday.SATURDAY, "long_run", 75)],
+        ),
+        Week(
+            index=2,
+            is_deload=False,
+            target_load=108.0,
+            sessions=[_s(Weekday.SATURDAY, "long_run", 88)],
+        ),
+        Week(
+            index=3,
+            is_deload=False,
+            target_load=116.0,
+            sessions=[_s(Weekday.SATURDAY, "long_run", 90)],
+        ),
+        Week(
+            index=4,
+            is_deload=True,
+            target_load=80.0,
+            sessions=[_s(Weekday.SATURDAY, "long_run", 60)],
+        ),
+        Week(
+            index=5,
+            is_deload=False,
+            target_load=118.0,
+            sessions=[_s(Weekday.SATURDAY, "long_run", 95)],
+        ),
+    ]
+    plan = Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[Phase(name="base", weeks=weeks)],
+    )
+    # Week 5's 95 min returns near the pre-deload 90 — legitimate, not a jump.
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert not any("min/sem" in v for v in violations)
+
+
+def test_quality_sunday_then_monday_flagged():
+    plan = _valid_plan()
+    plan.phases[0].weeks[0].sessions.append(_s(Weekday.SUNDAY, "threshold", 45))
+    plan.phases[0].weeks[1].sessions.append(_s(Weekday.MONDAY, "intervals", 45))
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("consécutives" in v for v in violations)
+
+
+def test_fixed_sport_two_days_both_accepted():
+    plan = _valid_plan()
+    for week in plan.phases[0].weeks:
+        week.sessions.append(_s(Weekday.WEDNESDAY, "cross_training", 60, sport=SportType.BIKE))
+        week.sessions.append(_s(Weekday.FRIDAY, "cross_training", 60, sport=SportType.BIKE))
+    request = _valid_request(
+        fixed_sports=[
+            FixedSport(sport=SportType.BIKE, day=Weekday.WEDNESDAY),
+            FixedSport(sport=SportType.BIKE, day=Weekday.FRIDAY),
+        ]
+    )
+    violations = plan_validation.validate_plan(plan, request, TODAY)
+    assert not any("contrainte fixe" in v for v in violations)
+
+
+def test_missing_fixed_sport_flagged():
+    plan = _valid_plan()  # contains no BIKE session
+    request = _valid_request(fixed_sports=[FixedSport(sport=SportType.BIKE, day=Weekday.WEDNESDAY)])
+    violations = plan_validation.validate_plan(plan, request, TODAY)
+    assert any("manquant" in v for v in violations)

@@ -137,10 +137,39 @@ async def test_generate_plan_retries_on_violation(db):
         result = await plan_service.generate_plan(db, user_id, _request())
 
     assert result.status == "ready"
-    # Two model calls: the second carried the violations as feedback.
+    # Two model calls: the second replays the first attempt as a real assistant
+    # turn, then the violations as user feedback (conversational history).
     assert stream_mock.call_count == 2
     second_messages = stream_mock.call_args_list[1].kwargs["messages"]
-    assert any("viole" in m["content"] for m in second_messages if m["role"] == "user")
+    assert len(second_messages) == 3
+    assert second_messages[0]["role"] == "user"
+    assert second_messages[1]["role"] == "assistant"
+    assert "130" in second_messages[1]["content"]  # the rejected plan JSON
+    assert second_messages[2]["role"] == "user"
+    assert "viole" in second_messages[2]["content"]
+
+
+async def test_generation_stops_when_deadline_exceeded(db):
+    user_id = await _seed_user(db)
+    stream_mock = _stream_mock(_mock_response(_bad_plan_json()))  # one violating attempt
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+
+    # First monotonic() call sets the deadline; every later call is far past it,
+    # so the second attempt is skipped before any model call.
+    ticks = {"n": 0}
+
+    def _clock() -> float:
+        ticks["n"] += 1
+        return 0.0 if ticks["n"] == 1 else 10_000.0
+
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
+        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    ), patch("app.services.plan_service.time.monotonic", _clock):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "failed"
+    assert stream_mock.call_count == 1  # never launched the doomed second attempt
+    assert "temps" in (result.error_message or "").lower()
 
 
 async def test_generate_plan_with_injury_passes_comeback_directive(db):

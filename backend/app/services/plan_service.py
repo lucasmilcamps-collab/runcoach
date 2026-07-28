@@ -7,6 +7,7 @@ never logged, nor is any health data (project security rules)."""
 
 import json
 import math
+import time
 from datetime import UTC, date, datetime, timedelta
 
 import anthropic
@@ -38,6 +39,11 @@ from app.services import (
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
 _ANTHROPIC_TIMEOUT_S = 120.0
+# Global wall-clock budget across all attempts. The hosting platform cuts a
+# synchronous request well before _ANTHROPIC_TIMEOUT_S × _MAX_ATTEMPTS (6 min):
+# stop before launching a doomed attempt rather than burn tokens for a plan the
+# client will never receive.
+_TOTAL_DEADLINE_S = 90.0
 # A full multi-week plan JSON (rationale + structure + paces per session) is
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
@@ -185,13 +191,20 @@ def _user_prompt(
     )
 
 
-async def _call_anthropic(system: str, user: str, feedback: str | None) -> str:
-    client = anthropic.AsyncAnthropic(
-        api_key=settings.anthropic_api_key, timeout=_ANTHROPIC_TIMEOUT_S
-    )
+async def _call_anthropic(
+    client: "anthropic.AsyncAnthropic",
+    system: str,
+    user: str,
+    history: list[tuple[str, str]],
+) -> str:
+    # Real conversational history: each past attempt is replayed as the model's
+    # own assistant turn followed by the validation feedback, so "fix only these
+    # points, keep the rest" is actually executable — the model sees the plan it
+    # must correct. The stable prefix also lets prompt caching kick in on retries.
     messages: list[dict] = [{"role": "user", "content": user}]
-    if feedback is not None:
-        messages.append({"role": "user", "content": feedback})
+    for prev_raw, prev_feedback in history:
+        messages.append({"role": "assistant", "content": prev_raw})
+        messages.append({"role": "user", "content": prev_feedback})
     try:
         # Streaming avoids HTTP read timeouts on a large JSON output (claude-api
         # skill). Thinking is disabled: the schema is explicit and validate_plan
@@ -248,11 +261,23 @@ async def _generate_valid_plan(
 
     system = _system_prompt()
     user = _user_prompt(request, context, today, injury)
-    feedback: str | None = None
 
+    # One client per generation (reused across attempts), not one per attempt.
+    client = anthropic.AsyncAnthropic(
+        api_key=settings.anthropic_api_key, timeout=_ANTHROPIC_TIMEOUT_S
+    )
+
+    history: list[tuple[str, str]] = []  # (raw_response, feedback) per failed attempt
     last_problem = "aucune réponse exploitable"
-    for _ in range(_MAX_ATTEMPTS):
-        raw = await _call_anthropic(system, user, feedback)
+    deadline = time.monotonic() + _TOTAL_DEADLINE_S
+
+    for attempt in range(_MAX_ATTEMPTS):
+        if attempt > 0 and time.monotonic() >= deadline:
+            raise PlanGenerationError(
+                f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
+                f"après {attempt} tentative(s). Dernier problème : {last_problem[:300]}"
+            )
+        raw = await _call_anthropic(client, system, user, history)
         try:
             plan = Plan.model_validate_json(_extract_json(raw))
         except ValidationError as exc:
@@ -261,6 +286,7 @@ async def _generate_valid_plan(
                 f"{'.'.join(str(p) for p in e['loc'])} → {e['msg']}" for e in errors
             )
             feedback = last_problem + ". Renvoie un JSON strictement conforme au schéma."
+            history.append((raw, feedback))
             continue
         violations = plan_validation.validate_plan(plan, request, today)
         if not violations:
@@ -271,6 +297,7 @@ async def _generate_valid_plan(
             + last_problem
             + ". Corrige uniquement ces points, garde le reste."
         )
+        history.append((raw, feedback))
 
     raise PlanGenerationError(
         f"Plan invalide après {_MAX_ATTEMPTS} tentatives. Dernier problème : {last_problem[:400]}"

@@ -24,7 +24,7 @@ Personal, single-user tool. One Expo codebase targets iOS, Android, and web/desk
 
 Usage scene: reviewing/consulting the generated plan, logging running and cross-training sessions, and checking a load/form dashboard (CTL/ATL/TSB) to understand current fatigue and readiness.
 
-Project is starting from zero (no backend/ or mobile/ code yet), planned in phases: (1) backend + auth + Garmin sync, (2) load engine (TSS/CTL/ATL) + plan v1 (test case: half-marathon with fixed weekly basketball), (3) Expo app UI (plan, tracking, dashboard), (4) dynamic plan adaptation (the differentiator).
+Built and deployed (GitHub → Render + MongoDB Atlas). The four planned phases are in place: (1) backend + auth + Garmin sync, (2) load engine (TRIMP/CTL/ATL/TSB) + AI plan generation with a programmatic validator, (3) Expo app UI installed as an iOS PWA (Accueil, Séances, Activités, Réglages), (4) dynamic daily adjustment + replan triggers. Ongoing work refines the plan-generation pipeline (see `docs/refonte-plan-generator.md`).
 
 ## Capabilities and Constraints
 
@@ -32,7 +32,7 @@ Project is starting from zero (no backend/ or mobile/ code yet), planned in phas
 - Weekly training load never increases more than 10% week over week, cross-training included.
 - A deload week is mandatory every 3–4 weeks in any generated plan.
 - Cross-training sessions always count toward ATL/CTL — never excluded from load calculations.
-- Any AI-generated plan must pass the programmatic validator (`plan_service.validate_plan`) before being persisted; on failure the plan is regenerated, never persisted invalid.
+- Any AI-generated plan must pass the programmatic validator (`plan_validation.validate_plan`) before being persisted; on failure the plan is regenerated, never persisted invalid.
 - No medical recommendations: if data suggests severe overtraining, the app can only recommend rest and consulting a professional.
 - Platform is adaptive: iOS and Android should follow their native conventions (HIG / Material) while web keeps a coherent, non-native-mimicking experience — one shared brand identity across all three.
 
@@ -42,7 +42,7 @@ Project is starting from zero (no backend/ or mobile/ code yet), planned in phas
 
 ## Evidence on Hand
 
-None yet — no backend or mobile code exists, no real user data, screenshots, or content to draw from. First real test case will be a half-marathon plan with a fixed weekly basketball commitment. Future design and content work must not fabricate testimonials, sample data, or metrics beyond this stated test case.
+The backend and mobile app both exist and are deployed; the sole real user is the developer. There is still no third-party user data, testimonials, or marketing content. First real test case remains a half-marathon plan with a fixed weekly basketball commitment. Future design and content work must not fabricate testimonials, sample data, or metrics beyond this stated test case.
 
 ## Product Principles
 

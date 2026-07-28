@@ -34,7 +34,7 @@ Contexte calculé ajouté au prompt : CTL/ATL actuels, volume course des 8 derni
 
 ## Appel API Anthropic
 
-- Modèle : `claude-sonnet-4-6` (bon rapport qualité/coût pour du JSON structuré). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client.
+- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model` ; bon rapport qualité/coût pour du JSON structuré). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client.
 - System prompt : rôle de coach, **règles du skill training-science injectées en résumé** (rampe 10 %, deload 3–4 sem, périodisation, contraintes cross-training), et consigne stricte : "Réponds uniquement avec le JSON, sans markdown".
 - Parsing : strip des éventuels ```json, puis `Plan.model_validate_json()`. Toute erreur de parsing = tentative échouée → retry avec l'erreur en feedback.
 

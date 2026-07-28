@@ -8,8 +8,10 @@ race, cross-training as a hard constraint, no back-to-back quality.
 """
 
 import math
+from collections import defaultdict
 from datetime import date
 
+from app.models.activity import SportType
 from app.models.plan import (
     IMPACT_SPORTS,
     QUALITY_SESSION_TYPES,
@@ -17,9 +19,11 @@ from app.models.plan import (
     Plan,
     PlanRequest,
     Week,
+    Weekday,
 )
 
 RAMP_MAX_RATIO = 1.10  # weekly load never grows more than 10%
+DELOAD_MAX_RATIO = 0.85  # a deload week is at most 85% of the last normal week
 MAX_CONSECUTIVE_NORMAL_WEEKS = 3  # ≥1 deload per 4-week block
 MAX_QUALITY_PER_WEEK = 2
 LONG_RUN_WEEKLY_STEP_MAX_MIN = 15
@@ -65,28 +69,70 @@ def _check_ramp(weeks: list[Week]) -> list[str]:
 def _check_deload(weeks: list[Week]) -> list[str]:
     if len(weeks) < 4:
         return []
+    # A plan that is entirely deload would slip through both this rule and the
+    # ramp rule (which skips deload weeks) — a full escape hatch.
+    if all(week.is_deload for week in weeks):
+        return [
+            "Toutes les semaines sont marquées deload : le plan n'a aucune semaine "
+            "d'entraînement normale."
+        ]
+
+    violations: list[str] = []
     consecutive = 0
+    last_normal_load: float | None = None
     for week in weeks:
-        consecutive = 0 if week.is_deload else consecutive + 1
+        if week.is_deload:
+            consecutive = 0
+            # A deload must actually reduce the load, else the marker just bypasses
+            # the ramp rule while keeping the load high.
+            if (
+                last_normal_load is not None
+                and week.target_load > last_normal_load * DELOAD_MAX_RATIO
+            ):
+                pct = week.target_load / last_normal_load * 100
+                violations.append(
+                    f"Semaine {week.index} : marquée deload mais charge à {pct:.0f}% "
+                    "de la dernière semaine normale (≤ 85% attendu)."
+                )
+            continue
+        consecutive += 1
+        last_normal_load = week.target_load
         if consecutive > MAX_CONSECUTIVE_NORMAL_WEEKS:
-            return [
+            violations.append(
                 f"Semaine {week.index} : plus de {MAX_CONSECUTIVE_NORMAL_WEEKS} semaines "
                 "sans deload (il en faut une par bloc de 4)."
-            ]
-    return []
+            )
+    return violations
 
 
 def _check_fixed_sports(weeks: list[Week], request: PlanRequest) -> list[str]:
     violations: list[str] = []
-    fixed_days = {fs.sport: fs.day for fs in request.fixed_sports}
+    # A sport can be fixed on several days (e.g. basket Wed AND Sat) — keyed by a
+    # set, not a single day, so the second declaration no longer overwrites the first.
+    fixed_days: dict[SportType, set[Weekday]] = defaultdict(set)
+    for fs in request.fixed_sports:
+        fixed_days[fs.sport].add(fs.day)
+
+    # 1. A fixed sport that appears must be on one of its declared days.
     for week in weeks:
         for session in week.sessions:
-            expected_day = fixed_days.get(session.sport)
-            if expected_day is not None and session.day != expected_day:
+            days = fixed_days.get(session.sport)
+            if days is not None and session.day not in days:
+                expected = ", ".join(sorted(d.value for d in days))
                 violations.append(
                     f"Semaine {week.index} : {session.sport} placé {session.day}, "
-                    f"attendu {expected_day} (contrainte fixe)."
+                    f"attendu {expected} (contrainte fixe)."
                 )
+
+    # 2. Each declared (sport, day) must be present in every week.
+    for week in weeks:
+        present = {(s.sport, s.day) for s in week.sessions}
+        for sport, days in fixed_days.items():
+            for day in days:
+                if (sport, day) not in present:
+                    violations.append(
+                        f"Semaine {week.index} : {sport} manquant le {day} (contrainte fixe)."
+                    )
     return violations
 
 
@@ -132,48 +178,64 @@ def _check_taper(weeks: list[Week], request: PlanRequest) -> list[str]:
 def _check_long_run(weeks: list[Week], request: PlanRequest) -> list[str]:
     violations: list[str] = []
     cap = _long_run_cap_min(request.distance_km)
-    prev_long: int | None = None
+    # Compare each normal week to the previous *normal* week only: returning to the
+    # pre-deload level after a (lower) deload week is legitimate, not a jump.
+    prev_long_normal: int | None = None
     for week in weeks:
         longest = max(
             (s.duration_min for s in week.sessions if s.type == "long_run"),
             default=0,
         )
-        if longest > cap:
+        if longest > cap:  # absolute cap applies to every week, deload included
             violations.append(
                 f"Semaine {week.index} : sortie longue {longest} min dépasse le plafond "
                 f"de {cap} min pour cette distance."
             )
         if (
-            prev_long is not None
+            prev_long_normal is not None
             and not week.is_deload
-            and longest - prev_long > LONG_RUN_WEEKLY_STEP_MAX_MIN
+            and longest - prev_long_normal > LONG_RUN_WEEKLY_STEP_MAX_MIN
         ):
             violations.append(
-                f"Semaine {week.index} : sortie longue +{longest - prev_long} min "
+                f"Semaine {week.index} : sortie longue +{longest - prev_long_normal} min "
                 f"(> {LONG_RUN_WEEKLY_STEP_MAX_MIN} min/sem)."
             )
-        if longest > 0:
-            prev_long = longest
+        if longest > 0 and not week.is_deload:
+            prev_long_normal = longest
     return violations
 
 
 def _check_quality_spacing(weeks: list[Week]) -> list[str]:
     violations: list[str] = []
+
+    # Per-week count cap.
     for week in weeks:
-        quality = sorted(
-            (s for s in week.sessions if s.type in QUALITY_SESSION_TYPES),
-            key=lambda s: _weekday_index(s.day),
-        )
-        if len(quality) > MAX_QUALITY_PER_WEEK:
+        count = sum(1 for s in week.sessions if s.type in QUALITY_SESSION_TYPES)
+        if count > MAX_QUALITY_PER_WEEK:
             violations.append(
-                f"Semaine {week.index} : {len(quality)} séances de qualité "
-                f"(max {MAX_QUALITY_PER_WEEK})."
+                f"Semaine {week.index} : {count} séances de qualité (max {MAX_QUALITY_PER_WEEK})."
             )
-        for a, b in zip(quality, quality[1:], strict=False):
-            if _weekday_index(b.day) - _weekday_index(a.day) == 1:
+
+    # No two quality sessions on consecutive days — including the Sunday→Monday
+    # boundary between weeks (same pattern as _check_no_quality_after_impact).
+    quality_days: set[tuple[int, int]] = set()
+    for pos, week in enumerate(weeks):
+        for session in week.sessions:
+            if session.type in QUALITY_SESSION_TYPES:
+                quality_days.add((pos, _weekday_index(session.day)))
+    for pos, week in enumerate(weeks):
+        for session in week.sessions:
+            if session.type not in QUALITY_SESSION_TYPES:
+                continue
+            di = _weekday_index(session.day)
+            prev_same_week = (pos, di - 1)
+            prev_cross_week = (pos - 1, 6)  # previous Sunday
+            if prev_same_week in quality_days or (
+                di == 0 and pos > 0 and prev_cross_week in quality_days
+            ):
                 violations.append(
                     f"Semaine {week.index} : deux séances de qualité consécutives "
-                    f"({a.day} puis {b.day})."
+                    f"(le {session.day} suit une séance de qualité la veille)."
                 )
     return violations
 

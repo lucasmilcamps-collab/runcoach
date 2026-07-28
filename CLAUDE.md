@@ -20,9 +20,10 @@ backend/          FastAPI + MongoDB (Motor, async)
     core/         Config, sécurité, dépendances
   tests/
 mobile/           Expo (React Native) — cible iOS, Android ET web/desktop
-  app/            Expo Router (file-based routing)
-  components/
-  lib/            Client API, hooks, stores (Zustand)
+  src/
+    app/          Expo Router (file-based routing)
+    components/
+    lib/          Client API, hooks, stores (Zustand)
 docs/             Specs fonctionnelles et décisions d'architecture
 ```
 
