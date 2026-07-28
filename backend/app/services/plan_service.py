@@ -349,10 +349,12 @@ def _user_prompt(
         f"{_detraining_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif, puis soumets-le via l'outil submit_plan. La sortie "
-        "longue progresse d'au plus 15 min d'une semaine à l'autre. Reste CONCIS : "
-        "`rationale` en une phrase courte, `structure` en 2 à 4 blocs maximum, pas "
-        "de texte superflu. Si des séances récentes ont été manquées (voir "
-        "progression_recente), repars du niveau actuel sans rattraper le retard."
+        "longue progresse d'au plus 15 min d'une semaine à l'autre. Reste TRÈS "
+        "CONCIS pour tenir dans la limite : `rationale` en une phrase courte, et "
+        "ne renseigne `structure` (blocs) QUE pour les fractionnés (intervals/"
+        "threshold/tempo) ; laisse `structure` vide ([]) pour les autres séances "
+        "(footing, sortie longue, récup, renfo, repos). Si des séances récentes "
+        "ont été manquées (voir progression_recente), repars du niveau actuel."
     )
 
 
@@ -375,20 +377,18 @@ async def _call_anthropic(
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_result_content})
     try:
-        # Streaming avoids HTTP read timeouts on a large tool input (claude-api
-        # skill). Thinking is disabled: the schema is enforced by the tool and
-        # validate_plan re-prompts on any rule miss, so deep reasoning isn't
-        # needed here — it keeps generation fast and cheap on a solo app.
-        async with client.messages.stream(
+        # Non-streaming: with a forced tool_choice, the streaming helper
+        # intermittently returned an empty tool input; create() reliably gives
+        # the fully-formed `.input`. The 160s client timeout still caps a slow
+        # generation.
+        response = await client.messages.create(
             model=settings.plan_model,
             max_tokens=_MAX_TOKENS,
             system=system,
             messages=messages,
             tools=[_PLAN_TOOL],
             tool_choice={"type": "tool", "name": _PLAN_TOOL["name"]},
-            thinking={"type": "disabled"},
-        ) as stream:
-            response = await stream.get_final_message()
+        )
     except anthropic.APITimeoutError as exc:
         raise PlanGenerationError(
             "Le modèle a mis trop de temps à répondre (timeout). Réessayez."
@@ -420,11 +420,25 @@ async def _call_anthropic(
     except anthropic.APIConnectionError as exc:
         raise PlanGenerationError("Impossible de joindre Anthropic (réseau). Réessayez.") from exc
 
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        # The tool JSON was cut mid-way: retrying regenerates the same too-long
+        # plan, so fail fast with an actionable message.
+        raise PlanGenerationError(
+            "Le plan est trop long pour être généré d'un seul bloc (réponse tronquée). "
+            "Réduis la durée du plan ou le nombre de séances, puis réessaie."
+        )
+
     tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
     if tool_block is None:
         raise PlanGenerationError(
             "Le modèle n'a pas renvoyé de plan structuré (aucun appel d'outil)."
         )
+    plan_input = tool_block.input
+    if isinstance(plan_input, str):  # defensive: some SDK paths return a JSON string
+        try:
+            plan_input = json.loads(plan_input)
+        except json.JSONDecodeError:
+            plan_input = {}
     assistant_content = [
         {
             "type": "tool_use",
@@ -433,7 +447,7 @@ async def _call_anthropic(
             "input": tool_block.input,
         }
     ]
-    return tool_block.input, tool_block.id, assistant_content
+    return plan_input, tool_block.id, assistant_content
 
 
 async def _generate_valid_plan(

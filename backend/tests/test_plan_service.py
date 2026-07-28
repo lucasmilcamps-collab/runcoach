@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app.models.activity import SportType
 from app.models.fitness import FitnessDay, FitnessResponse
@@ -68,28 +68,12 @@ def _bad_plan_dict() -> dict:
 def _mock_response(plan_dict: dict, tool_id: str = "toolu_1"):
     # The model returns the plan through the submit_plan tool (tool use).
     block = SimpleNamespace(type="tool_use", id=tool_id, name="submit_plan", input=plan_dict)
-    return SimpleNamespace(content=[block])
+    return SimpleNamespace(stop_reason="tool_use", content=[block])
 
 
-class _FakeStream:
-    """Mimics the async context manager returned by client.messages.stream()."""
-
-    def __init__(self, message):
-        self._message = message
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def get_final_message(self):
-        return self._message
-
-
-def _stream_mock(*messages) -> MagicMock:
-    # client.messages.stream(...) is a sync call returning an async CM.
-    return MagicMock(side_effect=[_FakeStream(m) for m in messages])
+def _create_mock(*messages) -> AsyncMock:
+    # client.messages.create(...) is an async call returning the message.
+    return AsyncMock(side_effect=list(messages))
 
 
 def _request() -> PlanRequest:
@@ -112,7 +96,7 @@ async def _seed_user(db) -> str:
 
 
 def _patched_client(*responses):
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=_stream_mock(*responses)))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create_mock(*responses)))
     return patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client)
 
 
@@ -133,11 +117,11 @@ async def test_generate_plan_success(db):
 
 async def test_generate_plan_retries_on_violation(db):
     user_id = await _seed_user(db)
-    stream_mock = _stream_mock(
+    create_mock = _create_mock(
         _mock_response(_bad_plan_dict()),  # first attempt violates ramp
         _mock_response(_valid_plan_dict()),  # second is valid
     )
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
@@ -147,8 +131,8 @@ async def test_generate_plan_retries_on_violation(db):
     assert result.status == "ready"
     # Two model calls: the second replays the first attempt as a real assistant
     # turn, then the violations as user feedback (conversational history).
-    assert stream_mock.call_count == 2
-    second_messages = stream_mock.call_args_list[1].kwargs["messages"]
+    assert create_mock.call_count == 2
+    second_messages = create_mock.call_args_list[1].kwargs["messages"]
     assert len(second_messages) == 3
     assert second_messages[0]["role"] == "user"
     # Assistant turn replays the rejected plan as a tool_use block…
@@ -165,8 +149,8 @@ async def test_generate_plan_retries_on_violation(db):
 
 async def test_generation_stops_when_deadline_exceeded(db):
     user_id = await _seed_user(db)
-    stream_mock = _stream_mock(_mock_response(_bad_plan_dict()))  # one violating attempt
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    create_mock = _create_mock(_mock_response(_bad_plan_dict()))  # one violating attempt
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
 
     # First monotonic() call sets the deadline; every later call is far past it,
     # so the second attempt is skipped before any model call.
@@ -184,15 +168,15 @@ async def test_generation_stops_when_deadline_exceeded(db):
         result = await plan_service.generate_plan(db, user_id, _request())
 
     assert result.status == "failed"
-    assert stream_mock.call_count == 1  # never launched the doomed second attempt
+    assert create_mock.call_count == 1  # never launched the doomed second attempt
     assert "temps" in (result.error_message or "").lower()
 
 
 async def test_generate_plan_with_injury_passes_comeback_directive(db):
     user_id = await _seed_user(db)
     injury = InjuryReport(area="mollet droit", severity="douleur", days_off=10)
-    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    create_mock = _create_mock(_mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
@@ -201,7 +185,7 @@ async def test_generate_plan_with_injury_passes_comeback_directive(db):
 
     assert result.status == "ready"
     # The comeback directive (zone + days off) reached the prompt.
-    prompt = stream_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
     assert "BLESSURE DÉCLARÉE" in prompt
     assert "mollet droit" in prompt
     assert "10 jour" in prompt
@@ -506,15 +490,15 @@ async def test_no_recent_run_triggers_detraining_directive(db):
     user_id = await _seed_user(db)
     await _seed_run(db, user_id, 30, 45)  # last run 30 days ago > 21
 
-    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    create_mock = _create_mock(_mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
         await plan_service.generate_plan(db, user_id, _request())
 
-    prompt = stream_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
     assert "REPRISE APRÈS INTERRUPTION" in prompt
     assert "30 jour" in prompt
 
@@ -530,8 +514,8 @@ async def test_compute_fitness_called_once_per_generation(db):
         calls["n"] += 1
         return await real(db_arg, uid)
 
-    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
-    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    create_mock = _create_mock(_mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
@@ -619,3 +603,22 @@ def test_counts_directive_has_concrete_numbers():
     assert "EXACTEMENT 3" in directive
     assert "CHAQUE semaine" in directive
     assert "BASKETBALL" in directive
+
+
+async def test_truncated_response_fails_fast(db):
+    user_id = await _seed_user(db)
+    truncated = SimpleNamespace(
+        stop_reason="max_tokens",
+        content=[SimpleNamespace(type="tool_use", id="t", name="submit_plan", input={})],
+    )
+    create_mock = _create_mock(truncated)
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "failed"
+    assert create_mock.call_count == 1  # no pointless retries on truncation
+    assert "tronqu" in (result.error_message or "").lower()
