@@ -8,6 +8,7 @@ import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import { ApiError } from '@/lib/api/client';
 import { InjuryReport, reportInjury } from '@/lib/api/plans';
 
@@ -27,7 +28,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={[styles.chip, selected && styles.chipSelected]}>
+      style={pressable([styles.chip, selected && styles.chipSelected])}>
       <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
         {label}
       </ThemedText>
@@ -100,7 +101,7 @@ export default function InjuryReportScreen() {
                   onPress={() => setSeverity(s.value)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: severity === s.value }}
-                  style={[styles.severityRow, severity === s.value && styles.severityRowSelected]}>
+                  style={pressable([styles.severityRow, severity === s.value && styles.severityRowSelected])}>
                   <ThemedText type="default" themeColor={severity === s.value ? 'blaze' : 'text'}>
                     {s.label}
                   </ThemedText>

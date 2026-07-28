@@ -10,6 +10,7 @@ import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { pushWorkoutToWatch, WorkoutPushPayload } from '@/lib/api/garmin';
 import type { PlanSession } from '@/lib/api/plans';
+import { pressable } from '@/lib/pressable';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
   SESSION_LABELS,
@@ -134,7 +135,12 @@ export default function SessionDetailScreen() {
         <View style={styles.header}>
           <ContourTexture />
           <View style={styles.topbar}>
-            <Pressable onPress={() => router.back()} accessibilityRole="button" style={styles.iconBtn}>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Retour"
+              hitSlop={8}
+              style={pressable(styles.iconBtn)}>
               <ThemedText type="default">←</ThemedText>
             </Pressable>
           </View>

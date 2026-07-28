@@ -11,6 +11,7 @@ import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { createManualActivity, ManualActivityCreate } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
+import { pressable } from '@/lib/pressable';
 
 const SPORT_OPTIONS: { sport: SportType; label: string }[] = [
   { sport: 'RUN', label: 'Course' },
@@ -35,7 +36,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={[styles.chip, selected && styles.chipSelected]}>
+      style={pressable([styles.chip, selected && styles.chipSelected])}>
       <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
         {label}
       </ThemedText>
@@ -223,6 +224,8 @@ const styles = StyleSheet.create({
   field: { gap: Spacing.two },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Rounded.sm,

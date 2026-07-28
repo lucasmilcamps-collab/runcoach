@@ -24,6 +24,7 @@ import {
   TodaySession,
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+import { pressable } from '@/lib/pressable';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
@@ -138,7 +139,9 @@ export default function PlanScreen() {
               <Pressable
                 onPress={() => router.push('/plan-history')}
                 accessibilityRole="button"
-                hitSlop={8}>
+                accessibilityLabel="Historique des versions du plan"
+                hitSlop={8}
+                style={pressable(undefined)}>
                 <ThemedText type="waypointLabel" themeColor="blaze">
                   Historique ›
                 </ThemedText>

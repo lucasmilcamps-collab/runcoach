@@ -5,6 +5,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded } from '@/constants/theme';
 import { getMe, initialsFromEmail } from '@/lib/api/auth';
+import { pressable } from '@/lib/pressable';
 
 /**
  * Round initials button (top-left of the main screens) that opens Settings —
@@ -20,7 +21,7 @@ export function AvatarButton() {
       accessibilityRole="button"
       accessibilityLabel="Réglages"
       hitSlop={8}
-      style={styles.avatar}>
+      style={pressable(styles.avatar)}>
       <ThemedText type="waypointLabel" themeColor="text" style={styles.initials}>
         {initials}
       </ThemedText>

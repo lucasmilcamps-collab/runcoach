@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
+import { pressable } from '@/lib/pressable';
 import { PrimaryMetric, usePreferencesStore } from '@/lib/stores/preferences-store';
 
 // Kept in sync with the backend bounds (FitnessProfileUpdate). Client-side
@@ -194,7 +195,7 @@ function Segmented({
             onPress={() => onChange(opt.value)}
             accessibilityRole="button"
             accessibilityState={{ selected }}
-            style={[styles.segment, selected && styles.segmentSelected]}>
+            style={pressable([styles.segment, selected && styles.segmentSelected])}>
             <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
               {opt.label}
             </ThemedText>

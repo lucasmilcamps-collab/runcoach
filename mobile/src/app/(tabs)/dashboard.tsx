@@ -18,6 +18,7 @@ import { ApiError } from '@/lib/api/client';
 import { getFitness } from '@/lib/api/fitness';
 import { syncGarmin } from '@/lib/api/garmin';
 import { getCurrentPlan, getPlanProgress } from '@/lib/api/plans';
+import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
@@ -284,7 +285,7 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
       disabled={!hasDetail}
       onPress={() => setOpen((v) => !v)}
       accessibilityRole={hasDetail ? 'button' : undefined}
-      style={[styles.activityRow, isLast && styles.activityRowLast]}>
+      style={pressable([styles.activityRow, isLast && styles.activityRowLast])}>
       <View style={styles.activityRowTop}>
         <View style={styles.activityRowMain}>
           <View style={styles.activityLabelRow}>

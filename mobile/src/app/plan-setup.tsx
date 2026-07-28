@@ -8,6 +8,7 @@ import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import { ApiError } from '@/lib/api/client';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
@@ -54,7 +55,7 @@ function Chip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={[styles.chip, selected && styles.chipSelected]}>
+      style={pressable([styles.chip, selected && styles.chipSelected])}>
       <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
         {label}
       </ThemedText>

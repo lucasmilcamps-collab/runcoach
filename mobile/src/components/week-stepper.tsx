@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 
 /** Horizontal week tracker (Campus "Programme en cours"): past weeks filled,
  * the current one highlighted, future ones faint. Tapping a node calls onPick. */
@@ -37,11 +38,12 @@ export function WeekStepper({
               onPress={() => onPick?.(w)}
               accessibilityRole="button"
               accessibilityLabel={`Semaine ${w}`}
-              style={[
+              hitSlop={8}
+              style={pressable([
                 styles.node,
                 state === 'done' && styles.nodeDone,
                 state === 'current' && styles.nodeCurrent,
-              ]}>
+              ])}>
               <ThemedText
                 type="waypointLabel"
                 themeColor={state === 'todo' ? 'textSecondary' : 'background'}

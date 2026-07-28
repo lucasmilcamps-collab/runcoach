@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
 
 function formatDate(iso: string): string {
@@ -62,7 +63,7 @@ function VersionRow({ version, isActive }: { version: PlanVersionSummary; isActi
 
   return (
     <Pressable
-      style={styles.card}
+      style={pressable(styles.card)}
       accessibilityRole="button"
       onPress={() =>
         router.push({

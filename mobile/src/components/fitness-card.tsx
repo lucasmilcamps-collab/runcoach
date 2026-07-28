@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import type { Fitness } from '@/lib/api/fitness';
 
 function openProfileEntry() {
@@ -98,7 +99,7 @@ export function FitnessCard({
         </ThemedText>
       ) : null}
 
-      <Pressable onPress={openProfileEntry} accessibilityRole="button" style={styles.cta}>
+      <Pressable onPress={openProfileEntry} accessibilityRole="button" style={pressable(styles.cta)}>
         <ThemedText type="waypointLabel" themeColor="textSecondary">
           {fitness.manual ? 'FC saisie manuellement · modifier' : 'Ajuster ma fréquence cardiaque'}
         </ThemedText>

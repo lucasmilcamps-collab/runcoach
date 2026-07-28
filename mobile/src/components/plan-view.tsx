@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { DifficultyBolts } from '@/components/difficulty-bolts';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import type { Plan, PlanPhase, PlanSession, PlanWeek } from '@/lib/api/plans';
 import {
   DAY_LABELS,
@@ -147,7 +148,7 @@ function NavArrow({
       accessibilityRole="button"
       accessibilityLabel={dir === 'prev' ? 'Semaine précédente' : 'Semaine suivante'}
       hitSlop={8}
-      style={[styles.navArrow, disabled && styles.navArrowDisabled]}>
+      style={pressable([styles.navArrow, disabled && styles.navArrowDisabled])}>
       <ThemedText type="subtitle" themeColor={disabled ? 'textSecondary' : 'text'}>
         {dir === 'prev' ? '‹' : '›'}
       </ThemedText>
@@ -217,7 +218,11 @@ function SessionCard({
   }
 
   return (
-    <Pressable style={styles.sessionCard} onPress={open} accessibilityRole="button">
+    <Pressable
+      style={pressable(styles.sessionCard)}
+      onPress={open}
+      accessibilityRole="button"
+      accessibilityLabel={`${SESSION_LABELS[session.type]}, séance ${position} sur ${total}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
           {isKey ? (

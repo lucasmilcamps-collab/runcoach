@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { pressable } from '@/lib/pressable';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 export default function SettingsScreen() {
@@ -27,7 +28,8 @@ export default function SettingsScreen() {
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/dashboard'))}
               accessibilityRole="button"
               accessibilityLabel="Retour"
-              style={styles.iconBtn}>
+              hitSlop={8}
+              style={pressable(styles.iconBtn)}>
               <ThemedText type="default">←</ThemedText>
             </Pressable>
           </View>
@@ -115,7 +117,8 @@ function SettingRow({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      style={[styles.row, last && styles.rowLast]}>
+      accessibilityLabel={label}
+      style={pressable([styles.row, last && styles.rowLast])}>
       <View style={styles.rowMain}>
         <ThemedText type="default" themeColor={danger ? 'flare' : 'text'}>
           {label}
