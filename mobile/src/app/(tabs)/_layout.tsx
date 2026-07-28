@@ -40,6 +40,7 @@ export default function TabsLayout() {
       }}>
       <Tabs.Screen name="dashboard" options={{ title: 'Accueil' }} />
       <Tabs.Screen name="plan" options={{ title: 'Séances' }} />
+      <Tabs.Screen name="activities" options={{ title: 'Activités' }} />
     </Tabs>
   );
 }
