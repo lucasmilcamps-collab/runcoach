@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,8 +8,11 @@ import { Button } from '@/components/button';
 import { Icon } from '@/components/icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { activityLabel } from '@/lib/activity-labels';
+import type { Activity } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { pushWorkoutToWatch, WorkoutPushPayload } from '@/lib/api/garmin';
+import { getSessionLink, setSessionLink } from '@/lib/api/plans';
 import type { PlanSession } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
@@ -44,6 +47,21 @@ function useSessionParam(): SessionDetailParam | null {
 
 function frDistance(km: number): string {
   return `${km.toFixed(1).replace('.', ',')} km`;
+}
+
+function frLinkedMeta(a: Activity): string {
+  const date = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(a.start_time));
+  const min = Math.round(a.duration_s / 60);
+  const dur = min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60}` : ''}`;
+  const dist =
+    a.distance_m && a.distance_m > 0
+      ? ` · ${(a.distance_m / 1000).toFixed(1).replace('.', ',')} km`
+      : '';
+  return `${date} · ${dur}${dist}`;
 }
 
 function Bolt({ active }: { active: boolean }) {
@@ -83,6 +101,21 @@ export default function SessionDetailScreen() {
   const paceFirst = usePreferencesStore((s) => s.primaryMetric) === 'pace';
   const pushMutation = useMutation({
     mutationFn: (payload: WorkoutPushPayload) => pushWorkoutToWatch(payload),
+  });
+
+  const queryClient = useQueryClient();
+  const linkQuery = useQuery({
+    queryKey: ['session-link', data?.weekNumber, data?.session.day],
+    queryFn: () => getSessionLink(data!.weekNumber, data!.session.day),
+    enabled: !!data,
+    retry: false,
+  });
+  const unlinkMutation = useMutation({
+    mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['session-link', data?.weekNumber, data?.session.day] });
+      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+    },
   });
 
   if (!data) {
@@ -128,6 +161,20 @@ export default function SessionDetailScreen() {
     if (pushMutation.isError) return 'Envoi impossible. Réessayez.';
     return undefined;
   })();
+
+  const linked = linkQuery.data?.linked ?? null;
+  const sessionDate = linkQuery.data?.session_date;
+
+  function openPicker() {
+    router.push({
+      pathname: '/link-activity',
+      params: {
+        week: String(weekNumber),
+        day: session.day,
+        ...(sessionDate ? { sessionDate } : {}),
+      },
+    });
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -175,6 +222,32 @@ export default function SessionDetailScreen() {
             </View>
           </Stat>
         </View>
+
+        {/* Linked activity (session validated) */}
+        {linked ? (
+          <View style={styles.linkedCard}>
+            <View style={styles.linkedHead}>
+              <ThemedText type="waypointLabel" themeColor="blaze">
+                ✓ Séance validée
+              </ThemedText>
+              <Pressable
+                onPress={() => unlinkMutation.mutate()}
+                disabled={unlinkMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel="Délier l’activité"
+                hitSlop={8}
+                style={pressable(undefined)}>
+                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                  {unlinkMutation.isPending ? 'Déliaison…' : 'Délier'}
+                </ThemedText>
+              </Pressable>
+            </View>
+            <ThemedText type="default">{activityLabel(linked)}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {frLinkedMeta(linked)}
+            </ThemedText>
+          </View>
+        ) : null}
 
         {/* Description */}
         {session.rationale ? (
@@ -258,13 +331,8 @@ export default function SessionDetailScreen() {
           </ThemedText>
         ) : null}
         <Button
-          label="J’ai fait cette séance"
-          onPress={() =>
-            router.push({
-              pathname: '/add-activity',
-              params: { sport: session.sport, duration: String(session.duration_min) },
-            })
-          }
+          label={linked ? 'Changer l’activité liée' : 'J’ai fait cette séance'}
+          onPress={openPicker}
         />
         {session.sport === 'RUN' ? (
           <Button
@@ -419,5 +487,20 @@ const styles = StyleSheet.create({
   },
   pushMessage: {
     paddingBottom: Spacing.one,
+  },
+  linkedCard: {
+    marginHorizontal: Spacing.four,
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.one,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.blaze,
+  },
+  linkedHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.one,
   },
 });

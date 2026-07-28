@@ -68,6 +68,19 @@ async def compute_progress(db: AsyncIOMotorDatabase, user_id: str) -> PlanProgre
             st_aware = st.replace(tzinfo=UTC) if st.tzinfo is None else st
             activity_dates.add(st_aware.astimezone(UTC).date())
 
+    # Sessions the user explicitly linked to an activity — counts as done even
+    # if the activity itself lands on a different day than planned.
+    linked_dates: set[date] = set()
+    async for comp in db.session_completions.find(
+        {"user_id": user_id, "activity_id": {"$ne": None}}
+    ):
+        stored = comp.get("session_date")
+        if isinstance(stored, str):
+            try:
+                linked_dates.add(date.fromisoformat(stored))
+            except ValueError:
+                pass
+
     planned = completed = 0
     for week_pos, week in enumerate(weeks):
         for session in week.sessions:
@@ -76,7 +89,7 @@ async def compute_progress(db: AsyncIOMotorDatabase, user_id: str) -> PlanProgre
             session_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
             if window_start <= session_date < today:  # only past days in the window
                 planned += 1
-                if session_date in activity_dates:
+                if session_date in activity_dates or session_date in linked_dates:
                     completed += 1
     missed = planned - completed
 

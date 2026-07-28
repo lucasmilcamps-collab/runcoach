@@ -9,11 +9,21 @@ from app.models.plan import (
     PlanRequest,
     PlanResponse,
     PlanVersionSummary,
+    SessionLinkInfo,
+    SessionLinkRequest,
     TodaySession,
+    Weekday,
 )
-from app.services import plan_progress, plan_service
+from app.services import plan_completion_service, plan_progress, plan_service
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
+
+
+def _no_plan_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "NO_PLAN", "message": "Aucun plan actif."},
+    )
 
 
 @router.post("", response_model=PlanResponse)
@@ -64,6 +74,44 @@ async def plan_progress_endpoint(
     """Recent adherence + whether a replan is warranted (missed key sessions or
     persistent fatigue)."""
     return await plan_progress.compute_progress(db, str(user["_id"]))
+
+
+@router.get("/session/link", response_model=SessionLinkInfo)
+async def get_session_link(
+    week_index: int,
+    day: Weekday,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """The activity linked to a planned session (by week + weekday), plus the
+    session's real calendar date so the picker can surface nearby activities."""
+    try:
+        return await plan_completion_service.get_session_link(
+            db, str(user["_id"]), week_index, day
+        )
+    except plan_completion_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+
+
+@router.post("/session/link", response_model=SessionLinkInfo)
+async def set_session_link(
+    body: SessionLinkRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Link (or unlink, when activity_id is null) a recorded activity to a
+    planned session."""
+    try:
+        return await plan_completion_service.set_session_link(
+            db, str(user["_id"]), body.week_index, body.day, body.activity_id
+        )
+    except plan_completion_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_completion_service.ActivityNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ACTIVITY_NOT_FOUND", "message": "Activité introuvable."},
+        ) from exc
 
 
 @router.get("/current", response_model=PlanResponse)

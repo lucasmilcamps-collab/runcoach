@@ -1,3 +1,4 @@
+import type { Activity } from '@/lib/api/activities';
 import { apiClient } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
 
@@ -175,4 +176,26 @@ export function getTodaySession() {
  */
 export function createPlan(request: PlanRequest) {
   return apiClient.post<PlanResponse>('/api/v1/plans', request);
+}
+
+/** The activity linked to a planned session, plus that session's calendar date
+ * (so the picker can surface activities recorded near it). */
+export type SessionLinkInfo = {
+  session_date: string; // ISO date
+  linked: Activity | null;
+};
+
+export function getSessionLink(weekIndex: number, day: Weekday) {
+  return apiClient.get<SessionLinkInfo>(
+    `/api/v1/plans/session/link?week_index=${weekIndex}&day=${day}`,
+  );
+}
+
+/** Link (activityId) or unlink (null) a recorded activity to a planned session. */
+export function setSessionLink(weekIndex: number, day: Weekday, activityId: string | null) {
+  return apiClient.post<SessionLinkInfo>('/api/v1/plans/session/link', {
+    week_index: weekIndex,
+    day,
+    activity_id: activityId,
+  });
 }

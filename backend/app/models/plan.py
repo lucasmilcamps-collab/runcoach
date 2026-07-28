@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.activity import SportType
+from app.models.activity import ActivityResponse, SportType
 
 
 class Weekday(StrEnum):
@@ -223,3 +223,17 @@ class PlanProgress(BaseModel):
     tsb: float = 0.0
     replan_suggested: bool = False
     replan_reason: str | None = None
+
+
+class SessionLinkRequest(BaseModel):
+    """Attach (or detach, when activity_id is null) a recorded activity to a
+    planned session, identified by its week index and weekday."""
+
+    week_index: int
+    day: Weekday
+    activity_id: str | None = None
+
+
+class SessionLinkInfo(BaseModel):
+    session_date: date
+    linked: ActivityResponse | None = None
