@@ -2,10 +2,18 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { DifficultyBolts } from '@/components/difficulty-bolts';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import type { Plan, PlanPhase, PlanSession, PlanWeek } from '@/lib/api/plans';
-import { DAY_LABELS, PHASE_LABELS, SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+import {
+  DAY_LABELS,
+  PHASE_LABELS,
+  SESSION_LABELS,
+  estimateDistanceKm,
+  formatDuration,
+  sessionDifficulty,
+} from '@/lib/plan-format';
 
 const KEY_TYPES = new Set<PlanSession['type']>(['tempo', 'threshold', 'intervals', 'long_run']);
 
@@ -33,7 +41,7 @@ export function PlanView({ plan }: { plan: Plan }) {
             {PHASE_LABELS[phase.name]}
           </ThemedText>
           {phase.weeks.map((week) => (
-            <View key={week.index} style={styles.card}>
+            <View key={week.index} style={styles.weekBlock}>
               <View style={styles.weekHeader}>
                 <ThemedText type="default">Semaine {week.index}</ThemedText>
                 <WeekLoad week={week} />
@@ -48,7 +56,7 @@ export function PlanView({ plan }: { plan: Plan }) {
 }
 
 /** One week at a time, opened on the real current week (from plan progress),
- * with ‹ › navigation across the whole plan. Used by the Plan tab. */
+ * with ‹ › navigation across the whole plan. Used by the Séances tab. */
 export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: number | null }) {
   const weeks = useMemo(() => flattenWeeks(plan), [plan]);
   const [selected, setSelected] = useState(0);
@@ -69,8 +77,6 @@ export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: 
 
   return (
     <View style={styles.planBody}>
-      <GoalCard plan={plan} />
-
       <View style={styles.pager}>
         <NavArrow dir="prev" disabled={atFirst} onPress={() => setSelected(clamped - 1)} />
         <View style={styles.pagerCenter}>
@@ -95,16 +101,14 @@ export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: 
         <NavArrow dir="next" disabled={atLast} onPress={() => setSelected(clamped + 1)} />
       </View>
 
-      <View style={styles.card}>
-        <WeekSessions week={week} />
-      </View>
+      <WeekSessions week={week} />
     </View>
   );
 }
 
 function GoalCard({ plan }: { plan: Plan }) {
   return (
-    <View style={styles.card}>
+    <View style={styles.goalCard}>
       <ThemedText type="subtitle">{plan.goal.description}</ThemedText>
       {plan.goal.race_date ? (
         <ThemedText type="small" themeColor="textSecondary">
@@ -155,11 +159,11 @@ function WeekSessions({ week }: { week: PlanWeek }) {
   const total = week.sessions.filter((s) => s.type !== 'rest').length;
   let counter = 0;
   return (
-    <>
+    <View style={styles.sessionList}>
       {week.sessions.map((session, si) => {
         const position = session.type !== 'rest' ? (counter += 1) : 0;
         return (
-          <SessionRow
+          <SessionCard
             key={si}
             session={session}
             weekNumber={week.index}
@@ -168,11 +172,15 @@ function WeekSessions({ week }: { week: PlanWeek }) {
           />
         );
       })}
-    </>
+    </View>
   );
 }
 
-function SessionRow({
+function frKm(km: number): string {
+  return km.toFixed(1).replace('.', ',');
+}
+
+function SessionCard({
   session,
   weekNumber,
   position,
@@ -183,11 +191,25 @@ function SessionRow({
   position: number;
   total: number;
 }) {
-  const navigable = session.type !== 'rest';
   const isKey = KEY_TYPES.has(session.type);
 
+  if (session.type === 'rest') {
+    return (
+      <View style={styles.restCard}>
+        <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.restDay}>
+          {DAY_LABELS[session.day]}
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary">
+          Repos
+        </ThemedText>
+      </View>
+    );
+  }
+
+  const distanceKm = estimateDistanceKm(session.duration_min, session.pace_range);
+  const difficulty = sessionDifficulty(session.type);
+
   function open() {
-    if (!navigable) return;
     router.push({
       pathname: '/session-detail',
       params: { s: JSON.stringify({ session, weekNumber, position, total, isKey }) },
@@ -195,55 +217,82 @@ function SessionRow({
   }
 
   return (
-    <Pressable
-      style={styles.sessionRow}
-      disabled={!navigable}
-      onPress={open}
-      accessibilityRole={navigable ? 'button' : undefined}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.sessionDay}>
-        {DAY_LABELS[session.day]}
-      </ThemedText>
-      <View style={styles.sessionMain}>
-        <View style={styles.sessionTitleRow}>
-          <View style={styles.sessionTitleLeft}>
-            <ThemedText type="default">
-              {SESSION_LABELS[session.type]}
-              {navigable ? '  ›' : ''}
-            </ThemedText>
-            {isKey ? (
+    <Pressable style={styles.sessionCard} onPress={open} accessibilityRole="button">
+      <View style={styles.sessionHead}>
+        <View style={styles.sessionHeadLeft}>
+          {isKey ? (
+            <View style={styles.keyPill}>
               <ThemedText type="waypointLabel" themeColor="blaze">
                 Clé
               </ThemedText>
-            ) : null}
-          </View>
-          {navigable ? (
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
-              {formatDuration(session.duration_min)}
-            </ThemedText>
+            </View>
           ) : null}
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            {DAY_LABELS[session.day]} · Séance {position}/{total}
+          </ThemedText>
         </View>
-        <ThemedText type="small" themeColor="textSecondary">
-          {session.rationale}
+        <ThemedText type="default" themeColor="textSecondary">
+          ›
         </ThemedText>
       </View>
+
+      <ThemedText type="subtitle">{SESSION_LABELS[session.type]}</ThemedText>
+
+      <View style={styles.sessionStats}>
+        <MiniStat label="Durée" value={formatDuration(session.duration_min)} />
+        {distanceKm != null ? (
+          <MiniStat label="Distance" value={`${frKm(distanceKm)} km`} bordered />
+        ) : null}
+        <MiniStat label="Difficulté" bordered={distanceKm != null}>
+          <DifficultyBolts level={difficulty} />
+        </MiniStat>
+      </View>
+
+      {session.rationale ? (
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+          {session.rationale}
+        </ThemedText>
+      ) : null}
     </Pressable>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  bordered,
+  children,
+}: {
+  label: string;
+  value?: string;
+  bordered?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View style={[styles.miniStat, bordered && styles.miniStatBordered]}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+      {value ? <ThemedText type="default">{value}</ThemedText> : <View style={styles.boltsRow}>{children}</View>}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   planBody: { gap: Spacing.four },
   phase: { gap: Spacing.two },
-  card: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
-    gap: Spacing.two,
-  },
+  weekBlock: { gap: Spacing.two },
   weekHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.one,
+  },
+
+  goalCard: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.two,
   },
 
   pager: {
@@ -272,23 +321,52 @@ const styles = StyleSheet.create({
   },
   navArrowDisabled: { borderColor: Colors.contourFaint, opacity: 0.5 },
 
-  sessionRow: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-    paddingTop: Spacing.two,
-    borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+  sessionList: { gap: Spacing.three },
+  sessionCard: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.two,
   },
-  sessionDay: { width: 32, paddingTop: Spacing.half },
-  sessionMain: { flex: 1, gap: Spacing.half },
-  sessionTitleRow: {
+  sessionHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  sessionTitleLeft: {
+  sessionHeadLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
   },
+  keyPill: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: '#E8792C66',
+    backgroundColor: '#E8792C1f',
+  },
+  sessionStats: {
+    flexDirection: 'row',
+    paddingTop: Spacing.two,
+  },
+  miniStat: { flex: 1, gap: Spacing.half },
+  miniStatBordered: {
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.contourFaint,
+    paddingLeft: Spacing.three,
+  },
+  boltsRow: { height: 22, justifyContent: 'center' },
+
+  restCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    borderRadius: Rounded.md,
+    borderWidth: 1,
+    borderColor: Colors.contourFaint,
+  },
+  restDay: { width: 32 },
 });

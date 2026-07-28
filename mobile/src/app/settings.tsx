@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 export default function SettingsScreen() {
@@ -22,6 +22,16 @@ export default function SettingsScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
+          <View style={styles.topbar}>
+            <Pressable
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/dashboard'))}
+              accessibilityRole="button"
+              accessibilityLabel="Retour"
+              style={styles.iconBtn}>
+              <ThemedText type="default">←</ThemedText>
+            </Pressable>
+          </View>
+
           <View style={styles.header}>
             <ThemedText type="title">Réglages</ThemedText>
             <ThemedText type="default" themeColor="textSecondary">
@@ -139,8 +149,20 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: Spacing.four,
-    paddingTop: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.six,
+  },
+  topbar: {
+    flexDirection: 'row',
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.contour,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     gap: Spacing.two,

@@ -2,10 +2,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
-from app.models.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenResponse
+from app.core.security import get_current_user
+from app.models.auth import (
+    LoginRequest,
+    MeResponse,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+)
 from app.services import auth_service
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(user: dict = Depends(get_current_user)):
+    """The signed-in user's identity (email) — used for the avatar initials."""
+    return MeResponse(email=user["email"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)

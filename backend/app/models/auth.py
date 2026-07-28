@@ -22,6 +22,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
 
 
+class MeResponse(BaseModel):
+    email: EmailStr
+
+
 class UserDocument(BaseModel):
     """Shape of a `users` collection document (not returned directly by any route)."""
 

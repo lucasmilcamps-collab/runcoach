@@ -38,9 +38,8 @@ export default function TabsLayout() {
           paddingBottom: insets.bottom,
         },
       }}>
-      <Tabs.Screen name="dashboard" options={{ title: 'Dashboard' }} />
-      <Tabs.Screen name="plan" options={{ title: 'Plan' }} />
-      <Tabs.Screen name="settings" options={{ title: 'Réglages' }} />
+      <Tabs.Screen name="dashboard" options={{ title: 'Accueil' }} />
+      <Tabs.Screen name="plan" options={{ title: 'Séances' }} />
     </Tabs>
   );
 }

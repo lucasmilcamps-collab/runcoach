@@ -7,7 +7,10 @@ import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { PlanWeekPager } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
+import { TopBar } from '@/components/top-bar';
+import { WeeklyOverview } from '@/components/weekly-overview';
 import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
   createPlan,
@@ -21,6 +24,8 @@ import {
   TodaySession,
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+import { useAuthStore } from '@/lib/stores/auth-store';
+import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
 function formatSleep(hours: number): string {
   const h = Math.floor(hours);
@@ -94,6 +99,12 @@ export default function PlanScreen() {
     queryFn: getPlanProgress,
     retry: false,
   });
+  const garminConnected = useAuthStore((s) => s.garminConnected);
+  const activitiesQuery = useQuery({
+    queryKey: ['activities'],
+    queryFn: listActivities,
+    enabled: garminConnected,
+  });
   const queryClient = useQueryClient();
 
   const replanMutation = useMutation({
@@ -107,24 +118,33 @@ export default function PlanScreen() {
 
   const noPlan = query.error instanceof ApiError && query.error.status === 404;
   const currentRequest = query.data?.request ?? null;
+  const ready = query.data?.status === 'ready';
+
+  const plan = query.data?.plan ?? null;
+  const weekCurrent = progressQuery.data?.week_current ?? null;
+  const weekProgress = computeWeekProgress(
+    activitiesQuery.data ?? [],
+    findWeek(plan, weekCurrent),
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.headerRow}>
-            <ThemedText type="title">Mon plan</ThemedText>
-            {query.data?.status === 'ready' ? (
+          <TopBar title="SÉANCES" subtitle={ready ? currentWeekRangeLabel() : undefined} />
+
+          {ready ? (
+            <View style={styles.historyRow}>
               <Pressable
                 onPress={() => router.push('/plan-history')}
                 accessibilityRole="button"
                 hitSlop={8}>
                 <ThemedText type="waypointLabel" themeColor="blaze">
-                  Historique
+                  Historique ›
                 </ThemedText>
               </Pressable>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
 
           {progressQuery.data?.replan_suggested && currentRequest ? (
             <ReplanBanner
@@ -135,6 +155,8 @@ export default function PlanScreen() {
           ) : null}
 
           {todayQuery.data?.has_plan ? <TodayCard today={todayQuery.data} /> : null}
+
+          {ready ? <WeeklyOverview progress={weekProgress} /> : null}
 
           {query.isLoading ? (
             <View style={styles.centered}>
@@ -305,6 +327,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
   },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   actions: {

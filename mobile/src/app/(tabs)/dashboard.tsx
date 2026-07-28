@@ -8,14 +8,19 @@ import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
+import { TopBar } from '@/components/top-bar';
+import { WeekProgressCard } from '@/components/week-progress-card';
+import { WeekStepper } from '@/components/week-stepper';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, deleteActivity, listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { getFitness } from '@/lib/api/fitness';
 import { syncGarmin } from '@/lib/api/garmin';
+import { getCurrentPlan, getPlanProgress } from '@/lib/api/plans';
 import { registerServiceWorker } from '@/lib/push';
 import { useAuthStore } from '@/lib/stores/auth-store';
+import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
 function formatDuration(durationS: number): string {
   const minutes = Math.round(durationS / 60);
@@ -56,6 +61,13 @@ export default function DashboardScreen() {
     queryKey: ['fitness'],
     queryFn: getFitness,
     enabled: garminConnected,
+  });
+
+  const planQuery = useQuery({ queryKey: ['plan'], queryFn: getCurrentPlan, retry: false });
+  const progressQuery = useQuery({
+    queryKey: ['plan-progress'],
+    queryFn: getPlanProgress,
+    retry: false,
   });
 
   const syncMutation = useMutation({
@@ -111,36 +123,25 @@ export default function DashboardScreen() {
     return undefined;
   })();
 
-  const headline = (() => {
-    if (!garminConnected) {
-      return 'Aucune donnée pour l’instant : connectez Garmin pour que votre charge d’entraînement et votre récupération apparaissent ici.';
-    }
-    if (isSyncing && !hasActivities) {
-      return 'Synchronisation Garmin en cours (jusqu’à 90 jours d’historique)…';
-    }
-    if (syncErrorMessage) {
-      return syncErrorMessage;
-    }
-    if (activities.length > 0) {
-      return `${activities.length} activité${activities.length > 1 ? 's' : ''} synchronisée${activities.length > 1 ? 's' : ''}.`;
-    }
-    return 'Garmin est connecté, aucune activité pour l’instant.';
-  })();
-
   const showConnectEmpty = !garminConnected;
   const showNoActivitiesEmpty = !isSyncing && garminConnected && !hasActivities;
-  const showEmpty = showConnectEmpty || showNoActivitiesEmpty;
   const showContent = garminConnected && hasActivities;
+
+  const plan = planQuery.data?.status === 'ready' ? (planQuery.data.plan ?? null) : null;
+  const weekCurrent = progressQuery.data?.week_current ?? null;
+  const weeksTotal = progressQuery.data?.weeks_total ?? null;
+  const hasPlan = plan != null;
+  const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <ThemedText type="title">Votre tableau de bord</ThemedText>
-            {!showEmpty || syncErrorMessage ? (
-              <ThemedText type="default" themeColor={syncErrorMessage ? 'flare' : 'textSecondary'}>
-                {headline}
+            <TopBar title="RUNCOACH" subtitle={currentWeekRangeLabel()} />
+            {syncErrorMessage ? (
+              <ThemedText type="small" themeColor="flare" style={styles.centerText}>
+                {syncErrorMessage}
               </ThemedText>
             ) : null}
             {backgroundSyncing ? (
@@ -152,6 +153,27 @@ export default function DashboardScreen() {
               </View>
             ) : null}
           </View>
+
+          {hasPlan ? (
+            <WeekProgressCard
+              progress={weekProgress}
+              weekCurrent={weekCurrent}
+              weeksTotal={weeksTotal}
+            />
+          ) : null}
+
+          {hasPlan && weeksTotal ? (
+            <View style={styles.program}>
+              <ThemedText type="waypointLabel" themeColor="textSecondary">
+                Programme en cours
+              </ThemedText>
+              <WeekStepper
+                weeksTotal={weeksTotal}
+                weekCurrent={weekCurrent}
+                onPick={() => router.push('/plan')}
+              />
+            </View>
+          ) : null}
 
           {isSyncing && !hasActivities ? <SyncingCard /> : null}
 
@@ -362,11 +384,18 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.two,
   },
+  centerText: {
+    textAlign: 'center',
+  },
+  program: {
+    gap: Spacing.two,
+  },
   syncChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
     marginTop: Spacing.one,
+    justifyContent: 'center',
   },
   contourCard: {
     backgroundColor: Colors.backgroundElement,
