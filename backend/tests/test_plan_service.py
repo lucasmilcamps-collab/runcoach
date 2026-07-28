@@ -601,3 +601,21 @@ async def test_cross_training_counts_in_fitness(db):
     )
     fitness = await plan_service.fitness_service.compute_fitness(db, user_id)
     assert fitness.atl > 0  # today's padel session created fatigue
+
+
+def test_counts_directive_has_concrete_numbers():
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        min_run_sessions_per_week=3,
+        max_run_sessions_per_week=3,
+        fixed_sports=[FixedSport(sport=SportType.BASKETBALL, day=Weekday.WEDNESDAY)],
+    )
+    directive = plan_service._counts_directive(req)
+    assert "NE DÉPASSE JAMAIS 3" in directive
+    assert "EXACTEMENT 3" in directive
+    assert "CHAQUE semaine" in directive
+    assert "BASKETBALL" in directive

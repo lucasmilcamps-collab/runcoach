@@ -39,12 +39,11 @@ from app.services import (
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
-_ANTHROPIC_TIMEOUT_S = 120.0
-# Global wall-clock budget across all attempts. The hosting platform cuts a
-# synchronous request well before _ANTHROPIC_TIMEOUT_S × _MAX_ATTEMPTS (6 min):
-# stop before launching a doomed attempt rather than burn tokens for a plan the
-# client will never receive.
-_TOTAL_DEADLINE_S = 90.0
+_ANTHROPIC_TIMEOUT_S = 160.0
+# Global wall-clock budget across all attempts. A full multi-week plan is a big
+# tool call (~40-60 sessions), so a single attempt can take ~45-60s: leave room
+# for a couple of correction rounds while still stopping before a doomed one.
+_TOTAL_DEADLINE_S = 160.0
 # A full multi-week plan JSON (rationale + structure + paces per session) is
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
@@ -237,8 +236,9 @@ def _system_prompt(request: PlanRequest) -> str:
         "`slot`='primary' par défaut ; 'addon' uniquement pour un renforcement court "
         "qui partage la journée d'une séance principale. S'il y a une date de course, "
         "la séance du jour J est type='race'.\n"
-        "- Les sports fixes de l'utilisateur apparaissent le bon jour ; aucune "
-        "séance de qualité le lendemain d'un sport à impacts (padel, basket).\n"
+        "- Les sports fixes de l'utilisateur apparaissent sur l'un de leurs jours "
+        "déclarés à CHAQUE semaine, sans exception (deload et taper compris) ; "
+        "aucune séance de qualité le lendemain d'un sport à impacts (padel, basket).\n"
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
         "- Zones cardiaques via la FC max/repos fournies (Karvonen), jamais "
         "220−âge. Aucune recommandation médicale.\n"
@@ -309,6 +309,29 @@ def _detraining_directive(context: dict) -> str:
     )
 
 
+def _counts_directive(request: PlanRequest) -> str:
+    lo, hi = request.min_run_sessions_per_week, request.max_run_sessions_per_week
+    lines = [
+        "CONTRAINTES DURES (à respecter à la lettre, chaque semaine) :",
+        f"- Séances de COURSE : entre {lo} et {hi} par semaine. NE DÉPASSE JAMAIS {hi}. "
+        f"Marque EXACTEMENT {lo} en priority='key', le reste en 'optional'.",
+    ]
+    if request.fixed_sports:
+        by_sport: dict[str, list[str]] = {}
+        for fs in request.fixed_sports:
+            by_sport.setdefault(fs.sport.value, []).append(fs.day.value)
+        parts = []
+        for sport, days in by_sport.items():
+            flex = any(f.flexible for f in request.fixed_sports if f.sport.value == sport)
+            when = ("l'un de " if flex else "") + ", ".join(days)
+            parts.append(f"{sport} ({when})")
+        lines.append(
+            "- Sports fixes présents CHAQUE semaine, SANS EXCEPTION (y compris deload "
+            "et taper) : " + " ; ".join(parts) + "."
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _user_prompt(
     request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
 ) -> str:
@@ -317,14 +340,15 @@ def _user_prompt(
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
         f"{_weeks_directive(request, today)}\n"
+        f"{_counts_directive(request)}"
         f"{_injury_directive(injury)}"
         f"{_detraining_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif, puis soumets-le via l'outil submit_plan. La sortie "
-        "longue progresse d'au plus 15 min d'une semaine à l'autre. Le "
-        "cross-training compte comme charge. Si des séances récentes ont été "
-        "manquées (voir progression_recente), repars du niveau actuel sans "
-        "chercher à rattraper le retard."
+        "longue progresse d'au plus 15 min d'une semaine à l'autre. Reste CONCIS : "
+        "`rationale` en une phrase courte, `structure` en 2 à 4 blocs maximum, pas "
+        "de texte superflu. Si des séances récentes ont été manquées (voir "
+        "progression_recente), repars du niveau actuel sans rattraper le retard."
     )
 
 
