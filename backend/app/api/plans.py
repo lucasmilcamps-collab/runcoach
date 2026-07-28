@@ -11,10 +11,16 @@ from app.models.plan import (
     PlanVersionSummary,
     SessionLinkInfo,
     SessionLinkRequest,
+    SessionMoveRequest,
     TodaySession,
     Weekday,
 )
-from app.services import plan_completion_service, plan_progress, plan_service
+from app.services import (
+    plan_completion_service,
+    plan_moves_service,
+    plan_progress,
+    plan_service,
+)
 
 router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
 
@@ -112,6 +118,32 @@ async def set_session_link(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "ACTIVITY_NOT_FOUND", "message": "Activité introuvable."},
         ) from exc
+
+
+@router.post("/session/move", response_model=PlanResponse)
+async def move_session(
+    body: SessionMoveRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Move a session to another weekday for one week only (per-week override).
+    Returns the updated current plan."""
+    user_id = str(user["_id"])
+    try:
+        await plan_moves_service.move_session(
+            db, user_id, body.week_index, body.from_day, body.to_day
+        )
+    except plan_moves_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_moves_service.SessionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SESSION_NOT_FOUND", "message": "Séance introuvable pour ce jour."},
+        ) from exc
+    plan = await plan_service.get_current_plan(db, user_id)
+    if plan is None:
+        raise _no_plan_error()
+    return plan
 
 
 @router.get("/current", response_model=PlanResponse)

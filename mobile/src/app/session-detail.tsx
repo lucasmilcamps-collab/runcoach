@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { G, Path } from 'react-native-svg';
@@ -12,11 +13,12 @@ import { activityLabel } from '@/lib/activity-labels';
 import type { Activity } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { pushWorkoutToWatch, WorkoutPushPayload } from '@/lib/api/garmin';
-import { getSessionLink, setSessionLink } from '@/lib/api/plans';
-import type { PlanSession } from '@/lib/api/plans';
+import { getSessionLink, moveSession, setSessionLink } from '@/lib/api/plans';
+import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
+  DAY_LABELS,
   SESSION_LABELS,
   blockZone,
   estimateDistanceKm,
@@ -26,6 +28,16 @@ import {
   zoneColor,
   zoneHeightPct,
 } from '@/lib/plan-format';
+
+const WEEKDAYS: Weekday[] = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+];
 
 type SessionDetailParam = {
   session: PlanSession;
@@ -115,6 +127,16 @@ export default function SessionDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['session-link', data?.weekNumber, data?.session.day] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+    },
+  });
+  const [moving, setMoving] = useState(false);
+  const moveMutation = useMutation({
+    mutationFn: (toDay: Weekday) => moveSession(data!.weekNumber, data!.session.day, toDay),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plan'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      router.back(); // the session now lives on another day — the detail param is stale
     },
   });
 
@@ -353,6 +375,31 @@ export default function SessionDetailScreen() {
             }
           />
         ) : null}
+        {moving ? (
+          <View style={styles.moveRow}>
+            {WEEKDAYS.map((d) => {
+              const current = d === session.day;
+              return (
+                <Pressable
+                  key={d}
+                  disabled={moveMutation.isPending || current}
+                  onPress={() => moveMutation.mutate(d)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Déplacer à ${DAY_LABELS[d]}`}
+                  style={pressable([styles.dayChip, current && styles.dayChipCurrent])}>
+                  <ThemedText type="small" themeColor={current ? 'background' : 'text'}>
+                    {DAY_LABELS[d]}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        <Button
+          label={moving ? 'Annuler le déplacement' : 'Déplacer la séance'}
+          variant="ghost"
+          onPress={() => setMoving((v) => !v)}
+        />
         <Button label="Voir la semaine" variant="ghost" onPress={() => router.back()} />
       </View>
     </SafeAreaView>
@@ -487,6 +534,28 @@ const styles = StyleSheet.create({
   },
   pushMessage: {
     paddingBottom: Spacing.one,
+  },
+  moveRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    justifyContent: 'center',
+    paddingBottom: Spacing.one,
+  },
+  dayChip: {
+    minWidth: 44,
+    minHeight: 40,
+    paddingHorizontal: Spacing.two,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: Colors.contour,
+    backgroundColor: Colors.backgroundElement,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayChipCurrent: {
+    backgroundColor: Colors.blaze,
+    borderColor: Colors.blaze,
   },
   linkedCard: {
     marginHorizontal: Spacing.four,

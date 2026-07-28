@@ -267,3 +267,12 @@ class SessionLinkRequest(BaseModel):
 class SessionLinkInfo(BaseModel):
     session_date: date
     linked: ActivityResponse | None = None
+
+
+class SessionMoveRequest(BaseModel):
+    """Move a session to another weekday for one week only (a per-week override
+    on the current plan; the stored plan version is never mutated)."""
+
+    week_index: int
+    from_day: Weekday  # the session's currently-shown day
+    to_day: Weekday

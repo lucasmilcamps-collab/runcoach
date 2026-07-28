@@ -20,16 +20,14 @@ from app.models.plan import (
     PlanProgress,
     Session,
 )
-from app.services import fitness_service
+from app.services import fitness_service, plan_moves_service
 
 
 def _is_key_run(session: Session) -> bool:
     """A key run session — the ones that drive adherence and the replan trigger.
     Read straight from the model's `priority` now that it exists (was inferred)."""
     return (
-        session.priority == "key"
-        and session.slot == "primary"
-        and session.sport == SportType.RUN
+        session.priority == "key" and session.slot == "primary" and session.sport == SportType.RUN
     )
 
 
@@ -58,25 +56,22 @@ async def compute_progress(
         fitness = await fitness_service.compute_fitness(db, user_id)
     tsb = fitness.tsb
 
-    doc = await db.plans.find_one(
-        {"user_id": user_id, "status": "ready"}, sort=[("version", -1)]
-    )
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
     if doc is None or not doc.get("plan"):
         return PlanProgress(has_plan=False, tsb=tsb)
 
     plan = Plan.model_validate(doc["plan"])
+    plan_moves_service.apply_moves(
+        plan, await plan_moves_service.get_moves(db, user_id, doc["version"])
+    )
     weeks = [week for phase in plan.phases for week in phase.weeks]
     start = _plan_start_date(doc, today)
     window_start = today - timedelta(days=_WINDOW_DAYS)
 
     # Dates with at least one recorded activity (any sport counts as "did it").
     activity_dates: set[date] = set()
-    window_start_dt = datetime(
-        window_start.year, window_start.month, window_start.day, tzinfo=UTC
-    )
-    cursor = db.activities.find(
-        {"user_id": user_id, "start_time": {"$gte": window_start_dt}}
-    )
+    window_start_dt = datetime(window_start.year, window_start.month, window_start.day, tzinfo=UTC)
+    cursor = db.activities.find({"user_id": user_id, "start_time": {"$gte": window_start_dt}})
     async for act in cursor:
         st = act.get("start_time")
         if st is not None:

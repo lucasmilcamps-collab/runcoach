@@ -32,6 +32,7 @@ from app.models.plan import (
 from app.services import (
     fitness_service,
     plan_adaptation,
+    plan_moves_service,
     plan_progress,
     plan_validation,
     wellness_service,
@@ -608,11 +609,15 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
     doc = await db.plans.find_one({"user_id": user_id}, sort=[("version", -1)])
     if doc is None:
         return None
+    plan = Plan.model_validate(doc["plan"]) if doc.get("plan") else None
+    if plan is not None and doc.get("status") == "ready":
+        moves = await plan_moves_service.get_moves(db, user_id, doc["version"])
+        plan_moves_service.apply_moves(plan, moves)
     return PlanResponse(
         id=str(doc["_id"]),
         status=doc["status"],
         request=PlanRequest.model_validate(doc["request"]) if doc.get("request") else None,
-        plan=Plan.model_validate(doc["plan"]) if doc.get("plan") else None,
+        plan=plan,
         error_message=doc.get("error_message"),
     )
 
@@ -710,6 +715,8 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
         )
 
     plan = Plan.model_validate(doc["plan"])
+    moves = await plan_moves_service.get_moves(db, user_id, doc["version"])
+    plan_moves_service.apply_moves(plan, moves)
     weeks = _flatten_weeks(plan)
     start = _plan_start_date(doc, today)
     week_pos = (today - start).days // 7  # 0-based position

@@ -213,3 +213,15 @@ export function setSessionLink(weekIndex: number, day: Weekday, activityId: stri
     activity_id: activityId,
   });
 }
+
+/**
+ * Move a session to another weekday for one week only (a per-week override —
+ * the stored plan is untouched). Returns the updated current plan.
+ */
+export function moveSession(weekIndex: number, fromDay: Weekday, toDay: Weekday) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/session/move', {
+    week_index: weekIndex,
+    from_day: fromDay,
+    to_day: toDay,
+  });
+}
