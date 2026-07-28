@@ -16,6 +16,7 @@ def _no_rate_limit_sleep():
     with patch("app.services.garmin_sync_service.time.sleep"):
         yield
 
+
 RUNNING_ACTIVITY = {
     "activityId": 111,
     "activityType": {"typeKey": "running"},
@@ -329,9 +330,7 @@ HRV_PAYLOAD = {"hrvSummary": {"lastNightAvg": 45}}
 SLEEP_PAYLOAD = {
     "dailySleepDTO": {"sleepTimeSeconds": 25200, "sleepScores": {"overall": {"value": 80}}}
 }
-RHR_PAYLOAD = {
-    "allMetrics": {"metricsMap": {"WELLNESS_RESTING_HEART_RATE": [{"value": 52.0}]}}
-}
+RHR_PAYLOAD = {"allMetrics": {"metricsMap": {"WELLNESS_RESTING_HEART_RATE": [{"value": 52.0}]}}}
 
 
 def test_extract_hrv():
@@ -390,11 +389,13 @@ async def test_sync_wellness_is_incremental(db):
     user_id = await _seed_user_and_credentials(db)
     today = datetime.now(UTC).date()
     for i in range(31):
-        await db.wellness_daily.insert_one({
-            "user_id": user_id,
-            "day": (today - timedelta(days=i)).isoformat(),
-            "hrv": 40,
-        })
+        await db.wellness_daily.insert_one(
+            {
+                "user_id": user_id,
+                "day": (today - timedelta(days=i)).isoformat(),
+                "hrv": 40,
+            }
+        )
 
     mock = MagicMock()
     mock.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 50}}

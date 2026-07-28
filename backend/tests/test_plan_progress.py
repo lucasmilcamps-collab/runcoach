@@ -123,3 +123,60 @@ async def test_progress_endpoint(client, db):
     )
     assert response.status_code == 200
     assert response.json()["has_plan"] is False
+
+
+async def test_optional_run_not_counted_as_key(db):
+    """Adherence reads Session.priority now: an 'optional' run that's skipped is
+    not a missed key session and doesn't push toward a replan."""
+    user_id = await _seed_user(db)
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=today.weekday()) - timedelta(days=7)  # last Monday
+
+    key = Session(
+        day=Weekday.MONDAY,
+        sport=SportType.RUN,
+        type="long_run",
+        duration_min=60,
+        priority="key",
+        rationale="x",
+    )
+    optional = Session(
+        day=Weekday.WEDNESDAY,
+        sport=SportType.RUN,
+        type="easy",
+        duration_min=40,
+        priority="optional",
+        rationale="x",
+    )
+    week1 = Week(index=1, is_deload=False, target_load=100.0, sessions=[key, optional])
+    week2 = Week(
+        index=2,
+        is_deload=False,
+        target_load=105.0,
+        sessions=[
+            Session(
+                day=Weekday.TUESDAY,
+                sport=SportType.RUN,
+                type="easy",
+                duration_min=40,
+                priority="key",
+                rationale="x",
+            )
+        ],
+    )
+    plan = Plan(goal=PlanGoal(description="T"), phases=[Phase(name="base", weeks=[week1, week2])])
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+    progress = await plan_progress.compute_progress(db, user_id)
+    assert progress.recent_key_planned == 1  # only the key long_run, not the optional easy
+    assert progress.recent_key_missed == 1
+    assert progress.replan_suggested is False  # 1 miss < 2-miss trigger

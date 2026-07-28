@@ -306,3 +306,61 @@ def test_too_many_run_sessions_flagged():
     request = _valid_request(max_run_sessions_per_week=2)
     violations = plan_validation.validate_plan(plan, request, TODAY)
     assert any("séances de course" in v for v in violations)
+
+
+# --- Lot 3: session counts, strength placement, flexible fixed sports ---
+
+
+def _strength(day: Weekday) -> Session:
+    return Session(
+        day=day,
+        sport=SportType.STRENGTH,
+        type="strength",
+        duration_min=20,
+        slot="addon",
+        priority="optional",
+        rationale="x",
+    )
+
+
+def test_not_enough_key_runs_flagged():
+    plan = _valid_plan()  # 3 key runs/week, min defaults to 3
+    plan.phases[0].weeks[0].sessions[0].priority = "optional"  # now only 2 key
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("'key'" in v for v in violations)
+
+
+def test_strength_day_before_long_run_flagged():
+    plan = _valid_plan()  # long_run is Saturday
+    plan.phases[0].weeks[0].sessions.append(_strength(Weekday.FRIDAY))
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("renforcement la veille" in v for v in violations)
+
+
+def test_strength_same_day_as_quality_ok():
+    plan = _valid_plan()  # tempo is Thursday
+    plan.phases[0].weeks[0].sessions.append(_strength(Weekday.THURSDAY))
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert not any("renforcement" in v for v in violations)
+
+
+def test_two_strength_within_48h_flagged():
+    plan = _valid_plan()
+    plan.phases[0].weeks[0].sessions.append(_strength(Weekday.MONDAY))
+    plan.phases[0].weeks[0].sessions.append(_strength(Weekday.TUESDAY))
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    assert any("48" in v for v in violations)
+
+
+def test_flexible_fixed_sport_one_day_ok():
+    plan = _valid_plan()
+    for week in plan.phases[0].weeks:
+        week.sessions.append(_s(Weekday.SATURDAY, "cross_training", 60, sport=SportType.BIKE))
+    request = _valid_request(
+        fixed_sports=[
+            FixedSport(sport=SportType.BIKE, day=Weekday.SATURDAY, flexible=True),
+            FixedSport(sport=SportType.BIKE, day=Weekday.SUNDAY, flexible=True),
+        ]
+    )
+    violations = plan_validation.validate_plan(plan, request, TODAY)
+    assert not any("contrainte fixe" in v for v in violations)

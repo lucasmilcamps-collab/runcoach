@@ -48,8 +48,14 @@ async def test_delete_only_manual_activities(db):
     user_id = await _seed_user(db)
     # A Garmin-synced activity must not be deletable through this path.
     garmin = await db.activities.insert_one(
-        {"user_id": user_id, "garmin_activity_id": 5, "sport": "RUN",
-         "start_time": datetime.now(UTC), "duration_s": 1800, "manual": False}
+        {
+            "user_id": user_id,
+            "garmin_activity_id": 5,
+            "sport": "RUN",
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+            "manual": False,
+        }
     )
     manual = await activity_service.create_manual_activity(
         db,

@@ -44,10 +44,24 @@ IMPACT_SPORTS: frozenset[SportType] = frozenset({SportType.PADEL, SportType.BASK
 
 class FixedSport(BaseModel):
     """A recurring commitment the plan must honour (e.g. padel every Wednesday).
-    A hard constraint: it appears on its day and blocks a hard run the next day."""
+    A hard constraint: it appears on its day and blocks a hard run the next day.
+
+    Declare the same sport on several days for a multi-day commitment. When
+    `flexible` is true the sport only needs to land on ONE of its declared days
+    (e.g. a weekend match whose day varies), not on every one."""
 
     sport: SportType
     day: Weekday
+    flexible: bool = False
+
+
+class StrengthPref(BaseModel):
+    """Strength-training preference. The plan prescribes a slot + intention only
+    (RPE, focus), never exercises — the athlete runs those from Freeletics."""
+
+    enabled: bool = False
+    sessions_per_week: int = Field(default=1, ge=1, le=2)
+    duration_min: int = Field(default=20, ge=10, le=45)
 
 
 class PlanRequest(BaseModel):
@@ -58,8 +72,15 @@ class PlanRequest(BaseModel):
     race_date: date | None = None
     target_time_min: int | None = None  # optional — "finishing" is a valid goal
     available_days: list[Weekday]
-    max_run_sessions_per_week: int
+    # The athlete commits to `min` key run sessions per week and can do up to `max`.
+    min_run_sessions_per_week: int = 3
+    max_run_sessions_per_week: int = 3
     fixed_sports: list[FixedSport] = Field(default_factory=list)
+    # Whether the plan PRESCRIBES cross-training sessions. This only steers the
+    # prompt — it NEVER touches load/fitness: the athlete's real other sports
+    # (padel, basket…) always count toward CTL/ATL via fitness_service.
+    include_cross_training: bool = False
+    strength: StrengthPref = Field(default_factory=StrengthPref)
 
 
 class InjuryReport(BaseModel):
@@ -99,12 +120,20 @@ class Session(BaseModel):
         "intervals",
         "recovery",
         "cross_training",
+        "strength",  # short muscular reinforcement (Freeletics) — an addon slot
+        "test",  # a level-assessment effort (feeds performance estimation)
+        "race",  # race day — makes "race on D-day" representable/verifiable
         "rest",
     ]
     duration_min: int
     structure: list[Block] = Field(default_factory=list)
     pace_range: PaceRange | None = None
     hr_zone: int | None = None
+    # "key" = the athlete should not skip it; "optional" = droppable on a busy week.
+    priority: Literal["key", "optional"] = "key"
+    # "addon" sessions (e.g. a 15-min strength block) share a day with a primary
+    # session and don't count as a run day; "primary" own the day.
+    slot: Literal["primary", "addon"] = "primary"
     rationale: str  # one sentence — feeds UI transparency
 
     @field_validator("sport", mode="before")
@@ -198,14 +227,15 @@ class RecoverySummary(BaseModel):
 
 
 class TodaySession(BaseModel):
-    """The plan's session for today, adjusted for current form."""
+    """The plan's sessions for today, adjusted for current form. A day can hold
+    more than one (e.g. a run + a short strength addon)."""
 
     date: date
     has_plan: bool
     has_session: bool  # false on rest days / off-plan days
     week_index: int | None = None
-    session: Session | None = None
-    adjustment: DailyAdjustment | None = None
+    sessions: list[Session] = Field(default_factory=list)
+    adjustment: DailyAdjustment | None = None  # applies to the primary session
     tsb: float
     recovery: RecoverySummary | None = None
     message: str | None = None  # e.g. "Plan terminé", "Aucun plan actif"

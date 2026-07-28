@@ -43,12 +43,14 @@ async def _seed_user(db) -> str:
 
 
 async def _seed_subscription(db, user_id: str, endpoint: str = "https://push.example/abc") -> None:
-    await db.push_subscriptions.insert_one({
-        "user_id": user_id,
-        "endpoint": endpoint,
-        "keys": {"p256dh": "p", "auth": "a"},
-        "updated_at": datetime.now(UTC),
-    })
+    await db.push_subscriptions.insert_one(
+        {
+            "user_id": user_id,
+            "endpoint": endpoint,
+            "keys": {"p256dh": "p", "auth": "a"},
+            "updated_at": datetime.now(UTC),
+        }
+    )
 
 
 async def test_send_to_user_counts_delivered(db):
@@ -83,17 +85,23 @@ async def _seed_today_plan(db, user_id: str) -> None:
     )
     week = Week(index=1, is_deload=False, target_load=100.0, sessions=[session])
     plan = Plan(goal=PlanGoal(description="Semi"), phases=[Phase(name="base", weeks=[week])])
-    await db.plans.insert_one({
-        "user_id": user_id,
-        "version": 1,
-        "status": "ready",
-        "request": {"goal_type": "distance", "distance_km": 21.1,
-                    "available_days": list(Weekday), "max_run_sessions_per_week": 3,
-                    "fixed_sports": []},
-        "plan": plan.model_dump(mode="json"),
-        "start_date": start.isoformat(),
-        "created_at": datetime.now(UTC),
-    })
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "request": {
+                "goal_type": "distance",
+                "distance_km": 21.1,
+                "available_days": list(Weekday),
+                "max_run_sessions_per_week": 3,
+                "fixed_sports": [],
+            },
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
 
 
 async def test_send_due_notifications_pushes_todays_session(db):

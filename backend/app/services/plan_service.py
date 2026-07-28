@@ -51,6 +51,16 @@ _TOTAL_DEADLINE_S = 90.0
 _MAX_TOKENS = 32000
 
 
+_PLAN_TOOL = {
+    "name": "submit_plan",
+    "description": (
+        "Soumets le plan d'entraînement complet et conforme au schéma. "
+        "Appelle cet outil une seule fois avec le plan entier."
+    ),
+    "input_schema": Plan.model_json_schema(),
+}
+
+
 class PlanGenerationError(Exception):
     """Raised when generation can't produce a valid plan (bad key, upstream
     failure, or 3 failed validation attempts). Carries a user-safe message."""
@@ -173,7 +183,34 @@ async def build_context(
     }
 
 
-def _system_prompt() -> str:
+def _strength_directive(request: PlanRequest) -> str:
+    s = request.strength
+    if not s.enabled:
+        return "- Renforcement : NON demandé. N'ajoute aucune séance type='strength'.\n"
+    return (
+        f"- Renforcement : ajoute {s.sessions_per_week} séance(s) type='strength', "
+        f"slot='addon', ~{s.duration_min} min, le MÊME jour qu'une séance de qualité "
+        "(après la course) ou un jour facile, JAMAIS la veille d'une sortie longue "
+        "ou d'une séance de qualité ; si deux/semaine, au moins 48 h d'écart. Ne "
+        "prescris PAS d'exercices : indique seulement le créneau et l'intention "
+        "(ex. bas du corps + gainage, RPE 6-7). Une séance addon ne compte pas dans "
+        "le nombre de séances de course.\n"
+    )
+
+
+def _cross_training_directive(request: PlanRequest) -> str:
+    if request.include_cross_training:
+        return (
+            "- Cross-training prescrit : autorisé (type='cross_training') pour "
+            "ajouter du volume sans impact.\n"
+        )
+    return (
+        "- Cross-training : NON demandé. N'ajoute aucune séance type='cross_training'. "
+        "(Les sports fixes déclarés par l'athlète restent des contraintes dures.)\n"
+    )
+
+
+def _system_prompt(request: PlanRequest) -> str:
     return (
         "Tu es un coach de course à pied expert. Tu construis un plan "
         "d'entraînement personnalisé et SÛR. Règles de science de l'entraînement "
@@ -187,11 +224,19 @@ def _system_prompt() -> str:
         "- Maximum 2 séances de qualité (tempo/threshold/intervals) par semaine, "
         "jamais deux jours de qualité consécutifs.\n"
         "- La sortie longue progresse d'au plus 15 min par semaine.\n"
-        "- Respecte `max_run_sessions_per_week` : jamais plus de ce nombre de "
-        "séances de COURSE par semaine (les autres sports et le repos ne comptent pas).\n"
+        "- Séances de course : entre `min_run_sessions_per_week` et "
+        "`max_run_sessions_per_week` par semaine. Marque EXACTEMENT "
+        "`min_run_sessions_per_week` séances de course en priority='key' (les "
+        "incontournables) chaque semaine normale ; les autres en priority='optional'. "
+        "Le `rationale` des séances 'key' explique pourquoi elles priment.\n"
         "- La charge de la semaine 1 (target_load) reste proche de la charge réelle "
         "récente `avg_weekly_load_4w` (au plus +10%) : on démarre là où en est "
         "l'athlète, pas à l'objectif.\n"
+        "- Types de séance disponibles : easy, long_run, tempo, threshold, "
+        "intervals, recovery, cross_training, strength, test, race, rest. Utilise "
+        "`slot`='primary' par défaut ; 'addon' uniquement pour un renforcement court "
+        "qui partage la journée d'une séance principale. S'il y a une date de course, "
+        "la séance du jour J est type='race'.\n"
         "- Les sports fixes de l'utilisateur apparaissent le bon jour ; aucune "
         "séance de qualité le lendemain d'un sport à impacts (padel, basket).\n"
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
@@ -203,15 +248,16 @@ def _system_prompt() -> str:
         "- Chaque séance a un `rationale` d'une phrase expliquant sa place.\n"
         "- Détaille `structure` en blocs (échauffement, corps, récupération). Pour "
         "chaque bloc de course, renseigne `hr_zone` (1 à 5) et `pace_range` "
-        "(allure min–max en min/km, ex. \"4:15\"–\"4:30\") cohérents avec le type "
+        '(allure min–max en min/km, ex. "4:15"–"4:30") cohérents avec le type '
         "de bloc ; échauffement/retour au calme en zone basse. Pour un bloc de "
         "cross-training ou de repos, laisse `hr_zone` et `pace_range` à null.\n"
         "- Le champ `sport` vaut EXACTEMENT l'une de ces valeurs : RUN, PADEL, "
-        "BASKETBALL, BIKE, STRENGTH, OTHER. Pour la natation, le yoga, la "
-        "mobilité, un jour de repos ou tout autre cas, mets sport=OTHER (le "
-        "type de séance précise déjà la nature).\n\n"
-        "Réponds UNIQUEMENT avec un objet JSON conforme au schéma, sans texte "
-        "autour, sans balises markdown."
+        "BASKETBALL, BIKE, STRENGTH, OTHER. Une séance strength a sport=STRENGTH. "
+        "Pour la natation, le yoga, la mobilité, un jour de repos ou tout autre "
+        "cas, mets sport=OTHER (le type de séance précise déjà la nature).\n"
+        + _strength_directive(request)
+        + _cross_training_directive(request)
+        + "\nSoumets le plan complet en appelant l'outil submit_plan (un seul appel)."
     )
 
 
@@ -266,7 +312,6 @@ def _detraining_directive(context: dict) -> str:
 def _user_prompt(
     request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
 ) -> str:
-    schema = json.dumps(Plan.model_json_schema(), ensure_ascii=False)
     req = request.model_dump(mode="json")
     return (
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
@@ -275,11 +320,11 @@ def _user_prompt(
         f"{_injury_directive(injury)}"
         f"{_detraining_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
-        "jusqu'à l'objectif. La sortie longue progresse d'au plus 15 min d'une "
-        "semaine à l'autre. Le cross-training compte comme charge. Si des séances "
-        "récentes ont été manquées (voir progression_recente), repars du niveau "
-        "actuel sans chercher à rattraper le retard.\n\n"
-        f"Schéma JSON attendu (respecte-le exactement) :\n{schema}"
+        "jusqu'à l'objectif, puis soumets-le via l'outil submit_plan. La sortie "
+        "longue progresse d'au plus 15 min d'une semaine à l'autre. Le "
+        "cross-training compte comme charge. Si des séances récentes ont été "
+        "manquées (voir progression_recente), repars du niveau actuel sans "
+        "chercher à rattraper le retard."
     )
 
 
@@ -287,26 +332,32 @@ async def _call_anthropic(
     client: "anthropic.AsyncAnthropic",
     system: str,
     user: str,
-    history: list[tuple[str, str]],
-) -> str:
-    # Real conversational history: each past attempt is replayed as the model's
-    # own assistant turn followed by the validation feedback, so "fix only these
-    # points, keep the rest" is actually executable — the model sees the plan it
-    # must correct. The stable prefix also lets prompt caching kick in on retries.
+    history: list[tuple[list, list]],
+) -> tuple[dict, str, list]:
+    """Call the model, forcing it to emit the plan through the `submit_plan`
+    tool (input_schema = the Plan schema), which removes the whole "JSON not
+    conforming to the schema" error class. Returns (plan_input, tool_use_id,
+    assistant_content) — the last two feed the conversational retry history.
+
+    History replays each failed attempt as the model's own tool_use turn plus a
+    tool_result carrying the violations, so "fix only these points" is executable
+    and the stable prefix lets prompt caching kick in on retries."""
     messages: list[dict] = [{"role": "user", "content": user}]
-    for prev_raw, prev_feedback in history:
-        messages.append({"role": "assistant", "content": prev_raw})
-        messages.append({"role": "user", "content": prev_feedback})
+    for assistant_content, tool_result_content in history:
+        messages.append({"role": "assistant", "content": assistant_content})
+        messages.append({"role": "user", "content": tool_result_content})
     try:
-        # Streaming avoids HTTP read timeouts on a large JSON output (claude-api
-        # skill). Thinking is disabled: the schema is explicit and validate_plan
-        # re-prompts on any rule miss, so deep reasoning isn't needed here — and
-        # it keeps generation fast and cheap on a solo app.
+        # Streaming avoids HTTP read timeouts on a large tool input (claude-api
+        # skill). Thinking is disabled: the schema is enforced by the tool and
+        # validate_plan re-prompts on any rule miss, so deep reasoning isn't
+        # needed here — it keeps generation fast and cheap on a solo app.
         async with client.messages.stream(
             model=settings.plan_model,
             max_tokens=_MAX_TOKENS,
             system=system,
             messages=messages,
+            tools=[_PLAN_TOOL],
+            tool_choice={"type": "tool", "name": _PLAN_TOOL["name"]},
             thinking={"type": "disabled"},
         ) as stream:
             response = await stream.get_final_message()
@@ -339,10 +390,22 @@ async def _call_anthropic(
             f"Erreur Anthropic (HTTP {exc.status_code} · {exc.type}) : {detail}"
         ) from exc
     except anthropic.APIConnectionError as exc:
+        raise PlanGenerationError("Impossible de joindre Anthropic (réseau). Réessayez.") from exc
+
+    tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+    if tool_block is None:
         raise PlanGenerationError(
-            "Impossible de joindre Anthropic (réseau). Réessayez."
-        ) from exc
-    return "".join(block.text for block in response.content if block.type == "text")
+            "Le modèle n'a pas renvoyé de plan structuré (aucun appel d'outil)."
+        )
+    assistant_content = [
+        {
+            "type": "tool_use",
+            "id": tool_block.id,
+            "name": tool_block.name,
+            "input": tool_block.input,
+        }
+    ]
+    return tool_block.input, tool_block.id, assistant_content
 
 
 async def _generate_valid_plan(
@@ -351,7 +414,7 @@ async def _generate_valid_plan(
     if not settings.anthropic_api_key:
         raise PlanGenerationError("Génération IA non configurée (clé API absente).")
 
-    system = _system_prompt()
+    system = _system_prompt(request)
     user = _user_prompt(request, context, today, injury)
 
     # One client per generation (reused across attempts), not one per attempt.
@@ -359,9 +422,25 @@ async def _generate_valid_plan(
         api_key=settings.anthropic_api_key, timeout=_ANTHROPIC_TIMEOUT_S
     )
 
-    history: list[tuple[str, str]] = []  # (raw_response, feedback) per failed attempt
+    # Each entry: (assistant tool_use content, user tool_result content).
+    history: list[tuple[list, list]] = []
     last_problem = "aucune réponse exploitable"
     deadline = time.monotonic() + _TOTAL_DEADLINE_S
+
+    def _record(assistant_content: list, tool_use_id: str, feedback: str) -> None:
+        history.append(
+            (
+                assistant_content,
+                [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": feedback,
+                        "is_error": True,
+                    }
+                ],
+            )
+        )
 
     for attempt in range(_MAX_ATTEMPTS):
         if attempt > 0 and time.monotonic() >= deadline:
@@ -369,27 +448,33 @@ async def _generate_valid_plan(
                 f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
                 f"après {attempt} tentative(s). Dernier problème : {last_problem[:300]}"
             )
-        raw = await _call_anthropic(client, system, user, history)
+        plan_input, tool_use_id, assistant_content = await _call_anthropic(
+            client, system, user, history
+        )
         try:
-            plan = Plan.model_validate_json(_extract_json(raw))
+            plan = Plan.model_validate(plan_input)
         except ValidationError as exc:
             errors = exc.errors()[:3]
-            last_problem = "JSON non conforme au schéma : " + "; ".join(
+            last_problem = "Schéma non respecté : " + "; ".join(
                 f"{'.'.join(str(p) for p in e['loc'])} → {e['msg']}" for e in errors
             )
-            feedback = last_problem + ". Renvoie un JSON strictement conforme au schéma."
-            history.append((raw, feedback))
+            _record(
+                assistant_content,
+                tool_use_id,
+                last_problem + ". Corrige et renvoie un plan conforme.",
+            )
             continue
         violations = plan_validation.validate_plan(plan, request, today, context)
         if not violations:
             return plan
         last_problem = " ; ".join(violations)
-        feedback = (
+        _record(
+            assistant_content,
+            tool_use_id,
             "Le plan viole ces règles : "
             + last_problem
-            + ". Corrige uniquement ces points, garde le reste."
+            + ". Corrige uniquement ces points, garde le reste.",
         )
-        history.append((raw, feedback))
 
     raise PlanGenerationError(
         f"Plan invalide après {_MAX_ATTEMPTS} tentatives. Dernier problème : {last_problem[:400]}"
@@ -474,9 +559,7 @@ async def generate_plan(
         "created_at": datetime.now(UTC),
     }
     result = await db.plans.insert_one(doc)
-    return PlanResponse(
-        id=str(result.inserted_id), status="ready", request=request, plan=plan
-    )
+    return PlanResponse(id=str(result.inserted_id), status="ready", request=request, plan=plan)
 
 
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
@@ -505,9 +588,7 @@ def _version_reason(doc: dict, prev_request: dict | None) -> str:
     return "Replanification"
 
 
-async def list_plan_versions(
-    db: AsyncIOMotorDatabase, user_id: str
-) -> list[PlanVersionSummary]:
+async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[PlanVersionSummary]:
     """Read-only history of successful plan versions, newest first."""
     cursor = db.plans.find({"user_id": user_id, "status": "ready"}).sort("version", 1)
     docs = [doc async for doc in cursor]
@@ -540,9 +621,7 @@ async def get_plan_version(
     db: AsyncIOMotorDatabase, user_id: str, version: int
 ) -> PlanResponse | None:
     """A single stored version, read-only (versions are never mutated)."""
-    doc = await db.plans.find_one(
-        {"user_id": user_id, "version": version, "status": "ready"}
-    )
+    doc = await db.plans.find_one({"user_id": user_id, "version": version, "status": "ready"})
     if doc is None:
         return None
     return PlanResponse(
@@ -578,12 +657,13 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
     fitness = await fitness_service.compute_fitness(db, user_id)
     tsb = fitness.tsb
 
-    doc = await db.plans.find_one(
-        {"user_id": user_id, "status": "ready"}, sort=[("version", -1)]
-    )
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
     if doc is None or not doc.get("plan"):
         return TodaySession(
-            date=today, has_plan=False, has_session=False, tsb=tsb,
+            date=today,
+            has_plan=False,
+            has_session=False,
+            tsb=tsb,
             message="Aucun plan actif. Créez-en un dans l'onglet Plan.",
         )
 
@@ -594,21 +674,33 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
 
     if week_pos < 0 or week_pos >= len(weeks):
         return TodaySession(
-            date=today, has_plan=True, has_session=False, tsb=tsb,
+            date=today,
+            has_plan=True,
+            has_session=False,
+            tsb=tsb,
             message="Plan terminé — générez-en un nouveau pour continuer.",
         )
 
     week = weeks[week_pos]
     weekday = WEEKDAY_ORDER[today.weekday()]
-    session = next((s for s in week.sessions if s.day == weekday), None)
-    if session is None:
+    day_sessions = [s for s in week.sessions if s.day == weekday and s.type != "rest"]
+    if not day_sessions:
         return TodaySession(
-            date=today, has_plan=True, has_session=False, week_index=week_pos + 1, tsb=tsb,
+            date=today,
+            has_plan=True,
+            has_session=False,
+            week_index=week_pos + 1,
+            tsb=tsb,
             message="Pas de séance prévue aujourd'hui — repos.",
         )
 
+    # The primary session drives today's adjustment; addons (e.g. a short strength
+    # block) ride along — and are dropped if the primary is eased off.
+    primary = next((s for s in day_sessions if s.slot == "primary"), day_sessions[0])
+    addons = [s for s in day_sessions if s is not primary and s.slot == "addon"]
+
     signals = await wellness_service.get_recovery_signals(db, user_id, today)
-    result = plan_adaptation.adjust_session(session.type, tsb, signals)
+    result = plan_adaptation.adjust_session(primary.type, tsb, signals)
     recovery = RecoverySummary(
         hrv=signals.hrv,
         hrv_baseline=signals.hrv_baseline,
@@ -618,17 +710,25 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
         body_battery=signals.body_battery,
         date=signals.data_date,
     )
+
+    sessions = [primary]
+    reason = result.reason
+    if result.adjusted and addons:
+        reason = f"{result.reason} Le renforcement du jour est retiré."
+    else:
+        sessions.extend(addons)
+
     return TodaySession(
         date=today,
         has_plan=True,
         has_session=True,
         week_index=week_pos + 1,
-        session=session,
+        sessions=sessions,
         adjustment=DailyAdjustment(
             adjusted=result.adjusted,
             original_type=result.original_type,
             suggested_type=result.suggested_type,
-            reason=result.reason,
+            reason=reason,
         ),
         tsb=tsb,
         recovery=recovery if recovery.has_any else None,

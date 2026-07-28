@@ -12,16 +12,27 @@ from datetime import UTC, date, datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.models.activity import SportType
 from app.models.fitness import FitnessResponse
 from app.models.plan import (
-    QUALITY_SESSION_TYPES,
     WEEKDAY_ORDER,
     Plan,
     PlanProgress,
+    Session,
 )
 from app.services import fitness_service
 
-_KEY_TYPES: frozenset[str] = QUALITY_SESSION_TYPES | {"long_run"}
+
+def _is_key_run(session: Session) -> bool:
+    """A key run session — the ones that drive adherence and the replan trigger.
+    Read straight from the model's `priority` now that it exists (was inferred)."""
+    return (
+        session.priority == "key"
+        and session.slot == "primary"
+        and session.sport == SportType.RUN
+    )
+
+
 _WINDOW_DAYS = 14
 _MISSED_KEY_TRIGGER = 2
 _CHRONIC_FATIGUE_TSB = -25.0
@@ -88,7 +99,7 @@ async def compute_progress(
     planned = completed = 0
     for week_pos, week in enumerate(weeks):
         for session in week.sessions:
-            if session.type not in _KEY_TYPES:
+            if not _is_key_run(session):
                 continue
             session_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
             if window_start <= session_date < today:  # only past days in the window

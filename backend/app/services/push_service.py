@@ -126,11 +126,12 @@ async def _notifications_for_user(
     out: list[Notification] = []
 
     today = await plan_service.get_today_session(db, user_id)
-    if today.has_session and today.session is not None:
+    if today.has_session and today.sessions:
+        primary = today.sessions[0]  # the day's primary session drives the notif
         adj = today.adjustment
-        shown = adj.suggested_type if adj and adj.adjusted else today.session.type
+        shown = adj.suggested_type if adj and adj.adjusted else primary.type
         label = _SESSION_LABELS.get(shown, "Séance")
-        body = f"{label} · {today.session.duration_min} min"
+        body = f"{label} · {primary.duration_min} min"
         if adj and adj.adjusted:
             body += " — ajustée selon ta forme"
         out.append(Notification(title="Séance du jour", body=body, url="/plan"))

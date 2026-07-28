@@ -125,15 +125,31 @@ def _check_fixed_sports(weeks: list[Week], request: PlanRequest) -> list[str]:
                     f"attendu {expected} (contrainte fixe)."
                 )
 
-    # 2. Each declared (sport, day) must be present in every week.
+    # A sport is treated as flexible if any of its declarations is flexible: it
+    # only needs one of its declared days per week, not all of them.
+    flexible_sports = {fs.sport for fs in request.fixed_sports if fs.flexible}
+
+    # 2. Presence: each declared (sport, day) must appear in every week — unless
+    #    the sport is flexible, where one of its declared days per week suffices.
     for week in weeks:
-        present = {(s.sport, s.day) for s in week.sessions}
+        present: dict[SportType, set[Weekday]] = defaultdict(set)
+        for session in week.sessions:
+            present[session.sport].add(session.day)
         for sport, days in fixed_days.items():
-            for day in days:
-                if (sport, day) not in present:
+            if sport in flexible_sports:
+                if not (present[sport] & days):
+                    expected = ", ".join(sorted(d.value for d in days))
                     violations.append(
-                        f"Semaine {week.index} : {sport} manquant le {day} (contrainte fixe)."
+                        f"Semaine {week.index} : {sport} absent (attendu l'un de "
+                        f"{expected}, contrainte fixe)."
                     )
+            else:
+                for day in days:
+                    if day not in present[sport]:
+                        violations.append(
+                            f"Semaine {week.index} : {sport} manquant le {day} "
+                            "(contrainte fixe)."
+                        )
     return violations
 
 
@@ -261,14 +277,68 @@ def _check_initial_load(weeks: list[Week], context: dict | None) -> list[str]:
     return []
 
 
-def _check_run_sessions_max(weeks: list[Week], request: PlanRequest) -> list[str]:
+def _run_sessions(week: Week) -> list:
+    """Primary run sessions (addons like a strength block don't count as a run day)."""
+    return [
+        s
+        for s in week.sessions
+        if s.sport == SportType.RUN and s.type != "rest" and s.slot == "primary"
+    ]
+
+
+def _check_session_counts(weeks: list[Week], request: PlanRequest) -> list[str]:
+    """At most `max` run sessions per week, and — on normal weeks — exactly `min`
+    marked `key` so the athlete knows which ones not to skip. Deload weeks are
+    lighter and exempt from the min-key floor."""
     violations: list[str] = []
-    limit = request.max_run_sessions_per_week
     for week in weeks:
-        runs = sum(1 for s in week.sessions if s.sport == SportType.RUN and s.type != "rest")
-        if runs > limit:
+        runs = _run_sessions(week)
+        total = len(runs)
+        key = sum(1 for s in runs if s.priority == "key")
+        if total > request.max_run_sessions_per_week:
             violations.append(
-                f"Semaine {week.index} : {runs} séances de course (max {limit} demandé)."
+                f"Semaine {week.index} : {total} séances de course "
+                f"(max {request.max_run_sessions_per_week} demandé)."
+            )
+        if not week.is_deload and key != request.min_run_sessions_per_week:
+            violations.append(
+                f"Semaine {week.index} : {key} séance(s) de course marquée(s) 'key' "
+                f"(exactement {request.min_run_sessions_per_week} attendues)."
+            )
+    return violations
+
+
+def _check_strength_placement(weeks: list[Week]) -> list[str]:
+    """Hard days hard, easy days easy: no strength the day before a long run or a
+    quality session, and ≥48h between two strength sessions in a week."""
+    violations: list[str] = []
+    hard_types = QUALITY_SESSION_TYPES | {"long_run"}
+    strength_days: set[tuple[int, int]] = set()
+    hard_days: set[tuple[int, int]] = set()
+    for pos, week in enumerate(weeks):
+        for session in week.sessions:
+            if session.type == "strength":
+                strength_days.add((pos, _weekday_index(session.day)))
+            if session.type in hard_types:
+                hard_days.add((pos, _weekday_index(session.day)))
+
+    for pos, di in strength_days:
+        next_same = (pos, di + 1)
+        next_cross = (pos + 1, 0)
+        if next_same in hard_days or (di == 6 and next_cross in hard_days):
+            violations.append(
+                f"Semaine {weeks[pos].index} : renforcement la veille d'une séance "
+                "clé (sortie longue ou qualité)."
+            )
+
+    by_week: dict[int, list[int]] = defaultdict(list)
+    for pos, di in strength_days:
+        by_week[pos].append(di)
+    for pos, days in by_week.items():
+        days.sort()
+        if any(b - a < 2 for a, b in zip(days, days[1:], strict=False)):
+            violations.append(
+                f"Semaine {weeks[pos].index} : deux renforcements à moins de 48 h."
             )
     return violations
 
@@ -311,7 +381,8 @@ def validate_plan(
     violations += _check_initial_load(weeks, context)
     violations += _check_deload(weeks)
     violations += _check_fixed_sports(weeks, request)
-    violations += _check_run_sessions_max(weeks, request)
+    violations += _check_session_counts(weeks, request)
+    violations += _check_strength_placement(weeks)
     violations += _check_no_quality_after_impact(weeks)
     violations += _check_taper(weeks, request)
     violations += _check_long_run(weeks, request)

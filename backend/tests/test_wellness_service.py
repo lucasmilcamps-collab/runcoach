@@ -31,21 +31,25 @@ async def test_get_recovery_signals_computes_baselines(db):
     user_id = "u1"
     today = datetime.now(UTC).date()
     for i in range(1, 11):  # 10 prior days establish the baseline
-        await db.wellness_daily.insert_one({
+        await db.wellness_daily.insert_one(
+            {
+                "user_id": user_id,
+                "day": (today - timedelta(days=i)).isoformat(),
+                "hrv": 50,
+                "resting_hr": 50,
+                "sleep_seconds": 8 * 3600,
+            }
+        )
+    await db.wellness_daily.insert_one(
+        {
             "user_id": user_id,
-            "day": (today - timedelta(days=i)).isoformat(),
-            "hrv": 50,
-            "resting_hr": 50,
-            "sleep_seconds": 8 * 3600,
-        })
-    await db.wellness_daily.insert_one({
-        "user_id": user_id,
-        "day": today.isoformat(),
-        "hrv": 40,
-        "resting_hr": 58,
-        "sleep_seconds": 5 * 3600,
-        "body_battery": 72,
-    })
+            "day": today.isoformat(),
+            "hrv": 40,
+            "resting_hr": 58,
+            "sleep_seconds": 5 * 3600,
+            "body_battery": 72,
+        }
+    )
 
     signals = await wellness_service.get_recovery_signals(db, user_id, today)
 
@@ -60,9 +64,7 @@ async def test_get_recovery_signals_computes_baselines(db):
 
 
 async def test_get_recovery_signals_empty_when_no_data(db):
-    signals = await wellness_service.get_recovery_signals(
-        db, "nobody", datetime.now(UTC).date()
-    )
+    signals = await wellness_service.get_recovery_signals(db, "nobody", datetime.now(UTC).date())
     assert signals.hrv is None
     assert signals.hrv_baseline is None
     assert signals.short_nights_streak == 0

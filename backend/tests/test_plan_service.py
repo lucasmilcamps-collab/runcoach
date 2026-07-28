@@ -21,7 +21,7 @@ def _s(day: Weekday, stype: str, duration: int) -> Session:
     return Session(day=day, sport=SportType.RUN, type=stype, duration_min=duration, rationale="x")
 
 
-def _valid_plan_json() -> str:
+def _valid_plan() -> Plan:
     weeks = [
         Week(
             index=1,
@@ -48,22 +48,27 @@ def _valid_plan_json() -> str:
             sessions=[_s(Weekday.SATURDAY, "long_run", 60)],
         ),
     ]
-    plan = Plan(
+    return Plan(
         goal=PlanGoal(description="Semi", distance_km=21.1),
         phases=[Phase(name="base", weeks=weeks)],
     )
-    return plan.model_dump_json()
 
 
-def _bad_plan_json() -> str:
+def _valid_plan_dict() -> dict:
+    return _valid_plan().model_dump(mode="json")
+
+
+def _bad_plan_dict() -> dict:
     # Same shape but week 2 ramps +30% — validate_plan will reject it.
-    plan = Plan.model_validate_json(_valid_plan_json())
+    plan = _valid_plan()
     plan.phases[0].weeks[1].target_load = 130.0
-    return plan.model_dump_json()
+    return plan.model_dump(mode="json")
 
 
-def _mock_response(text: str):
-    return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
+def _mock_response(plan_dict: dict, tool_id: str = "toolu_1"):
+    # The model returns the plan through the submit_plan tool (tool use).
+    block = SimpleNamespace(type="tool_use", id=tool_id, name="submit_plan", input=plan_dict)
+    return SimpleNamespace(content=[block])
 
 
 class _FakeStream:
@@ -92,6 +97,7 @@ def _request() -> PlanRequest:
         goal_type="distance",
         distance_km=21.1,
         available_days=list(Weekday),
+        min_run_sessions_per_week=2,  # fixtures have 2 key runs per normal week
         max_run_sessions_per_week=3,
     )
 
@@ -107,15 +113,14 @@ async def _seed_user(db) -> str:
 
 def _patched_client(*responses):
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=_stream_mock(*responses)))
-    return patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
-    )
+    return patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client)
 
 
 async def test_generate_plan_success(db):
     user_id = await _seed_user(db)
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
     ):
         result = await plan_service.generate_plan(db, user_id, _request())
 
@@ -129,12 +134,13 @@ async def test_generate_plan_success(db):
 async def test_generate_plan_retries_on_violation(db):
     user_id = await _seed_user(db)
     stream_mock = _stream_mock(
-        _mock_response(_bad_plan_json()),  # first attempt violates ramp
-        _mock_response(_valid_plan_json()),  # second is valid
+        _mock_response(_bad_plan_dict()),  # first attempt violates ramp
+        _mock_response(_valid_plan_dict()),  # second is valid
     )
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
         result = await plan_service.generate_plan(db, user_id, _request())
 
@@ -145,15 +151,21 @@ async def test_generate_plan_retries_on_violation(db):
     second_messages = stream_mock.call_args_list[1].kwargs["messages"]
     assert len(second_messages) == 3
     assert second_messages[0]["role"] == "user"
+    # Assistant turn replays the rejected plan as a tool_use block…
     assert second_messages[1]["role"] == "assistant"
-    assert "130" in second_messages[1]["content"]  # the rejected plan JSON
+    tool_use = second_messages[1]["content"][0]
+    assert tool_use["type"] == "tool_use"
+    assert tool_use["input"]["phases"][0]["weeks"][1]["target_load"] == 130.0
+    # …and the violations come back as a tool_result.
     assert second_messages[2]["role"] == "user"
-    assert "viole" in second_messages[2]["content"]
+    tool_result = second_messages[2]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert "viole" in tool_result["content"]
 
 
 async def test_generation_stops_when_deadline_exceeded(db):
     user_id = await _seed_user(db)
-    stream_mock = _stream_mock(_mock_response(_bad_plan_json()))  # one violating attempt
+    stream_mock = _stream_mock(_mock_response(_bad_plan_dict()))  # one violating attempt
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
 
     # First monotonic() call sets the deadline; every later call is far past it,
@@ -164,9 +176,11 @@ async def test_generation_stops_when_deadline_exceeded(db):
         ticks["n"] += 1
         return 0.0 if ticks["n"] == 1 else 10_000.0
 
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
-    ), patch("app.services.plan_service.time.monotonic", _clock):
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.time.monotonic", _clock),
+    ):
         result = await plan_service.generate_plan(db, user_id, _request())
 
     assert result.status == "failed"
@@ -177,10 +191,11 @@ async def test_generation_stops_when_deadline_exceeded(db):
 async def test_generate_plan_with_injury_passes_comeback_directive(db):
     user_id = await _seed_user(db)
     injury = InjuryReport(area="mollet droit", severity="douleur", days_off=10)
-    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
         result = await plan_service.generate_plan(db, user_id, _request(), injury=injury)
 
@@ -202,9 +217,12 @@ async def test_replan_injury_endpoint(client, db):
     )
     token = register.json()["access_token"]
 
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json()),  # initial plan
-        _mock_response(_valid_plan_json()),  # injury comeback
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(
+            _mock_response(_valid_plan_dict()),  # initial plan
+            _mock_response(_valid_plan_dict()),  # injury comeback
+        ),
     ):
         await client.post(
             "/api/v1/plans",
@@ -246,8 +264,9 @@ async def test_generate_plan_without_key_fails_gracefully(db):
 
 async def test_get_current_plan_returns_latest_version(db):
     user_id = await _seed_user(db)
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json()), _mock_response(_valid_plan_json())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict()), _mock_response(_valid_plan_dict())),
     ):
         await plan_service.generate_plan(db, user_id, _request())
         await plan_service.generate_plan(db, user_id, _request())
@@ -262,9 +281,12 @@ async def test_get_current_plan_returns_latest_version(db):
 async def test_list_plan_versions_infers_reason(db):
     user_id = await _seed_user(db)
     injury = InjuryReport(area="mollet", severity="douleur", days_off=7)
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json()),  # v1: initial
-        _mock_response(_valid_plan_json()),  # v2: injury comeback
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(
+            _mock_response(_valid_plan_dict()),  # v1: initial
+            _mock_response(_valid_plan_dict()),  # v2: injury comeback
+        ),
     ):
         await plan_service.generate_plan(db, user_id, _request())
         await plan_service.generate_plan(db, user_id, _request(), injury=injury)
@@ -280,8 +302,9 @@ async def test_list_plan_versions_infers_reason(db):
 
 async def test_get_plan_version_returns_that_version(db):
     user_id = await _seed_user(db)
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json()), _mock_response(_valid_plan_json())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict()), _mock_response(_valid_plan_dict())),
     ):
         await plan_service.generate_plan(db, user_id, _request())
         await plan_service.generate_plan(db, user_id, _request())
@@ -298,8 +321,9 @@ async def test_versions_endpoint(client, db):
     )
     token = register.json()["access_token"]
 
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
     ):
         await client.post(
             "/api/v1/plans",
@@ -331,8 +355,9 @@ async def test_plans_endpoint_generates(client, db):
     )
     token = register.json()["access_token"]
 
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), _patched_client(
-        _mock_response(_valid_plan_json())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
     ):
         response = await client.post(
             "/api/v1/plans",
@@ -381,8 +406,8 @@ async def test_today_session_returns_todays_session(db):
     assert result.has_plan is True
     assert result.has_session is True
     assert result.week_index == 1
-    assert result.session is not None
-    assert result.session.type == "easy"
+    assert len(result.sessions) == 1
+    assert result.sessions[0].type == "easy"
     # No HR profile → tsb 0 → session kept.
     assert result.adjustment is not None
     assert result.adjustment.adjusted is False
@@ -481,10 +506,11 @@ async def test_no_recent_run_triggers_detraining_directive(db):
     user_id = await _seed_user(db)
     await _seed_run(db, user_id, 30, 45)  # last run 30 days ago > 21
 
-    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
         await plan_service.generate_plan(db, user_id, _request())
 
@@ -504,11 +530,74 @@ async def test_compute_fitness_called_once_per_generation(db):
         calls["n"] += 1
         return await real(db_arg, uid)
 
-    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    stream_mock = _stream_mock(_mock_response(_valid_plan_dict()))
     mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
-    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
-        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
-    ), patch("app.services.fitness_service.compute_fitness", _spy):
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.fitness_service.compute_fitness", _spy),
+    ):
         await plan_service.generate_plan(db, user_id, _request())
 
     assert calls["n"] == 1
+
+
+# --- Lot 3: multiple today sessions + cross-training load ---
+
+
+async def test_today_returns_primary_and_addon(db):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.plan import WEEKDAY_ORDER
+
+    user_id = await _seed_user(db)
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=today.weekday())
+    wd = WEEKDAY_ORDER[today.weekday()]
+    run = Session(day=wd, sport=SportType.RUN, type="easy", duration_min=40, rationale="x")
+    strength = Session(
+        day=wd,
+        sport=SportType.STRENGTH,
+        type="strength",
+        duration_min=20,
+        slot="addon",
+        priority="optional",
+        rationale="x",
+    )
+    week = Week(index=1, is_deload=False, target_load=100.0, sessions=[run, strength])
+    plan = Plan(goal=PlanGoal(description="Test"), phases=[Phase(name="base", weeks=[week])])
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "request": _request().model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+    result = await plan_service.get_today_session(db, user_id)
+    assert result.has_session is True
+    assert len(result.sessions) == 2
+    assert result.sessions[0].slot == "primary"
+    assert any(s.type == "strength" for s in result.sessions)
+
+
+async def test_cross_training_counts_in_fitness(db):
+    """include_cross_training is a prompt flag only — other sports always feed
+    CTL/ATL. A padel-only history still produces load."""
+    user_id = await _seed_user(db)
+    await db.fitness_profiles.insert_one({"user_id": user_id, "hr_max": 190, "hr_rest": 50})
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.PADEL,
+            "start_time": datetime.now(UTC),
+            "duration_s": 3600,
+            "avg_hr": 150,
+        }
+    )
+    fitness = await plan_service.fitness_service.compute_fitness(db, user_id)
+    assert fitness.atl > 0  # today's padel session created fatigue
