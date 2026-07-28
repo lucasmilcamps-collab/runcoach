@@ -31,6 +31,8 @@ from app.models.plan import (
 )
 from app.services import (
     fitness_service,
+    load_service,
+    performance_service,
     plan_adaptation,
     plan_moves_service,
     plan_progress,
@@ -127,6 +129,8 @@ async def build_context(
     weekly_minutes = [0] * 8  # index 0 = oldest week, index 7 = most recent
     latest_dt: datetime | None = None
     latest: dict | None = None  # most recent run overall, ignoring the 8-week window
+    best_pace_s: float | None = None  # fastest ≥3km run in the window (for Riegel)
+    best_effort: dict | None = None
 
     cursor = db.activities.find({"user_id": user_id, "sport": SportType.RUN})
     async for doc in cursor:
@@ -151,6 +155,16 @@ async def build_context(
         weeks_ago = (today - act_date).days // 7
         if 0 <= weeks_ago <= 7:
             weekly_minutes[7 - weeks_ago] += minutes
+
+        if distance_m and distance_m >= 3000 and duration_s > 0:
+            pace = duration_s / (distance_m / 1000)  # s/km — faster is better
+            if best_pace_s is None or pace < best_pace_s:
+                best_pace_s = pace
+                best_effort = {
+                    "distance_km": round(distance_m / 1000, 2),
+                    "time_s": duration_s,
+                    "days_ago": (today - act_date).days,
+                }
 
     days_since_last_run = (today - latest["date"]).days if latest else None
     last_run = None
@@ -179,6 +193,7 @@ async def build_context(
         "weekly_run_minutes_8w": weekly_minutes,
         "last_run": last_run,
         "longest_run_8w_min": longest_run_8w_min,
+        "best_recent_effort": best_effort,  # fastest ≥3km run in the window
         "avg_weekly_load_4w": _avg_weekly_load_4w(fitness, today),
     }
 
@@ -232,6 +247,10 @@ def _system_prompt(request: PlanRequest) -> str:
         "- La charge de la semaine 1 (target_load) reste proche de la charge réelle "
         "récente `avg_weekly_load_4w` (au plus +10%) : on démarre là où en est "
         "l'athlète, pas à l'objectif.\n"
+        "- Les allures d'entraînement s'appuient sur le chrono ACTUEL estimé "
+        "(`chrono_actuel_estime` s'il est fourni), pas sur l'objectif : des allures "
+        "adossées à l'objectif sont inatteignables en début de plan. On progresse "
+        "vers l'allure objectif au fil des phases.\n"
         "- Types de séance disponibles : easy, long_run, tempo, threshold, "
         "intervals, recovery, cross_training, strength, test, race, rest. Utilise "
         "`slot`='primary' par défaut ; 'addon' uniquement pour un renforcement court "
@@ -529,6 +548,37 @@ async def _next_version(db: AsyncIOMotorDatabase, user_id: str) -> int:
     return (latest["version"] + 1) if latest else 1
 
 
+def _recent_source(context: dict) -> dict | None:
+    """Effort to base the Riegel estimate on: the best ≥3km run, else the last run."""
+    best = context.get("best_recent_effort")
+    if best and best.get("distance_km"):
+        return best
+    last = context.get("last_run")
+    if last and last.get("distance_km"):
+        return {
+            "distance_km": last["distance_km"],
+            "time_s": last["duration_min"] * 60,
+            "days_ago": context.get("days_since_last_run") or 0,
+        }
+    return None
+
+
+def _project_ctl(ctl_now: float, weekly_loads: list[float]) -> float:
+    """Roll CTL forward through the plan's weekly loads (daily EMA, 42-day tau)."""
+    ctl = ctl_now
+    for weekly in weekly_loads:
+        daily = weekly / 7
+        for _ in range(7):
+            ctl += (daily - ctl) / load_service.CTL_TIME_CONSTANT
+    return ctl
+
+
+def _weeks_until(request: PlanRequest, today: date) -> int:
+    if request.race_date is not None:
+        return max(1, math.ceil((request.race_date - today).days / 7))
+    return 10  # midpoint of the default 8-12 week range
+
+
 async def generate_plan(
     db: AsyncIOMotorDatabase,
     user_id: str,
@@ -565,6 +615,25 @@ async def generate_plan(
             "jours_sans_course": injury.days_off,
         }
 
+    # Estimated current race time (Riegel), injected so the model anchors paces
+    # on real form, not just the goal. Feasibility is a notice, never a blocker.
+    current_estimate = None
+    feasibility = None
+    source = _recent_source(context)
+    if request.distance_km and source:
+        current_estimate = performance_service.estimate_current_time(
+            source["distance_km"], source["time_s"], source["days_ago"], request.distance_km
+        )
+        context["chrono_actuel_estime"] = {
+            "distance_km": request.distance_km,
+            "temps_estime_min": round(current_estimate.seconds / 60),
+            "confiance": current_estimate.confidence,
+        }
+        if request.target_time_min:
+            feasibility = performance_service.feasibility_warning(
+                request.target_time_min * 60, current_estimate.seconds, _weeks_until(request, today)
+            )
+
     version = await _next_version(db, user_id)
 
     try:
@@ -587,6 +656,17 @@ async def generate_plan(
             error_message=str(exc),
         )
 
+    # Projected time at the plan's end (current estimate scaled by projected CTL).
+    estimated_min = projected_min = None
+    if current_estimate is not None:
+        estimated_min = round(current_estimate.seconds / 60)
+        weekly_loads = [w.target_load for ph in plan.phases for w in ph.weeks]
+        ctl_projected = _project_ctl(fitness.ctl, weekly_loads)
+        projected_s = performance_service.project_time_at_target(
+            current_estimate.seconds, fitness.ctl, ctl_projected
+        )
+        projected_min = round(projected_s / 60)
+
     # Anchor the plan to the Monday of the generation week so "today's session"
     # maps cleanly onto weekday-labelled sessions.
     start_date = today - timedelta(days=today.weekday())
@@ -598,11 +678,22 @@ async def generate_plan(
         "plan": plan.model_dump(mode="json"),
         "start_date": start_date.isoformat(),
         "injury": injury.model_dump(mode="json") if injury else None,
+        "estimated_time_min": estimated_min,
+        "projected_time_min": projected_min,
+        "feasibility_warning": feasibility,
         "error_message": None,
         "created_at": datetime.now(UTC),
     }
     result = await db.plans.insert_one(doc)
-    return PlanResponse(id=str(result.inserted_id), status="ready", request=request, plan=plan)
+    return PlanResponse(
+        id=str(result.inserted_id),
+        status="ready",
+        request=request,
+        plan=plan,
+        estimated_time_min=estimated_min,
+        projected_time_min=projected_min,
+        feasibility_warning=feasibility,
+    )
 
 
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
@@ -618,6 +709,9 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
         status=doc["status"],
         request=PlanRequest.model_validate(doc["request"]) if doc.get("request") else None,
         plan=plan,
+        estimated_time_min=doc.get("estimated_time_min"),
+        projected_time_min=doc.get("projected_time_min"),
+        feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
     )
 
@@ -656,6 +750,8 @@ async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[Pla
                 weeks_total=weeks or None,
                 reason=_version_reason(doc, prev_request),
                 injury_area=(injury or {}).get("area"),
+                estimated_time_min=doc.get("estimated_time_min"),
+                projected_time_min=doc.get("projected_time_min"),
             )
         )
         prev_request = doc.get("request")
@@ -676,6 +772,9 @@ async def get_plan_version(
         status=doc["status"],
         request=PlanRequest.model_validate(doc["request"]) if doc.get("request") else None,
         plan=Plan.model_validate(doc["plan"]) if doc.get("plan") else None,
+        estimated_time_min=doc.get("estimated_time_min"),
+        projected_time_min=doc.get("projected_time_min"),
+        feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
     )
 

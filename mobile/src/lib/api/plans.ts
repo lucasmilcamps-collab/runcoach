@@ -89,6 +89,9 @@ export type PlanResponse = {
   status: 'generating' | 'ready' | 'failed';
   request: PlanRequest | null;
   plan: Plan | null;
+  estimated_time_min: number | null; // estimated current time at the target
+  projected_time_min: number | null; // projected time at the plan's end
+  feasibility_warning: string | null;
   error_message: string | null;
 };
 
@@ -166,6 +169,8 @@ export type PlanVersionSummary = {
   weeks_total: number | null;
   reason: string;
   injury_area: string | null;
+  estimated_time_min: number | null;
+  projected_time_min: number | null;
 };
 
 export function getPlanVersions() {

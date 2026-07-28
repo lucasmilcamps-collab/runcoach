@@ -163,6 +163,24 @@ export default function PlanScreen() {
 
           {ready ? <WeeklyOverview progress={weekProgress} /> : null}
 
+          {ready && query.data?.estimated_time_min != null ? (
+            <ForecastCard
+              estimated={query.data.estimated_time_min}
+              projected={query.data.projected_time_min}
+            />
+          ) : null}
+
+          {ready && query.data?.feasibility_warning ? (
+            <View style={styles.warnBanner}>
+              <ThemedText type="waypointLabel" themeColor="flare">
+                Objectif ambitieux
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {query.data.feasibility_warning}
+              </ThemedText>
+            </View>
+          ) : null}
+
           {query.isLoading ? (
             <View style={styles.centered}>
               <ActivityIndicator color={Colors.contour} />
@@ -227,6 +245,40 @@ function ReplanBanner({
         loading={isReplanning}
         onPress={onReplan}
       />
+    </View>
+  );
+}
+
+function fmtTime(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m} min`;
+}
+
+function ForecastCard({ estimated, projected }: { estimated: number; projected: number | null }) {
+  const improves = projected != null && projected < estimated;
+  return (
+    <View style={styles.forecastCard}>
+      <ThemedText type="waypointLabel" themeColor="textSecondary">
+        Prévision de chrono
+      </ThemedText>
+      <View style={styles.forecastRow}>
+        <View style={styles.forecastCol}>
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            Actuel estimé
+          </ThemedText>
+          <ThemedText type="subtitle">{fmtTime(estimated)}</ThemedText>
+        </View>
+        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+        <View style={styles.forecastCol}>
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            Fin de plan
+          </ThemedText>
+          <ThemedText type="subtitle" themeColor={improves ? 'blaze' : 'text'}>
+            {projected != null ? fmtTime(projected) : '—'}
+          </ThemedText>
+        </View>
+      </View>
     </View>
   );
 }
@@ -374,6 +426,26 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: Colors.flare,
   },
+  warnBanner: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.one,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.flare,
+  },
+  forecastCard: {
+    backgroundColor: Colors.backgroundElement,
+    borderRadius: Rounded.md,
+    padding: Spacing.four,
+    gap: Spacing.three,
+  },
+  forecastRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  forecastCol: { gap: Spacing.half, alignItems: 'center', flex: 1 },
   todayTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

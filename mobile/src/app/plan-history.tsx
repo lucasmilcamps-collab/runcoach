@@ -7,6 +7,12 @@ import { ThemedText } from '@/components/themed-text';
 import { Icon } from '@/components/icon';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
+
+function fmtTime(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m} min`;
+}
 import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
 
 function formatDate(iso: string): string {
@@ -91,6 +97,12 @@ function VersionRow({ version, isActive }: { version: PlanVersionSummary; isActi
         {version.reason}
         {version.weeks_total ? ` · ${version.weeks_total} semaines` : ''}
       </ThemedText>
+      {version.estimated_time_min != null ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          Chrono {fmtTime(version.estimated_time_min)}
+          {version.projected_time_min != null ? ` → ${fmtTime(version.projected_time_min)}` : ''}
+        </ThemedText>
+      ) : null}
       {subtitle ? (
         <ThemedText type="small" themeColor="textSecondary">
           {subtitle}

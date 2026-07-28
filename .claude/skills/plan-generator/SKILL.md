@@ -43,6 +43,8 @@ Contexte calculé ajouté au prompt (`build_context`) : CTL/ATL/TSB actuels, zon
 
 La forme (`compute_fitness`) est calculée une seule fois par génération et injectée dans `build_context` et `plan_progress.compute_progress` (pas de double scan des activités).
 
+**Estimation de chrono (`performance_service`, module pur)** : à partir de `best_recent_effort` (meilleure course ≥ 3 km de la fenêtre) et de la distance objectif, on estime le **chrono actuel** (Riegel `T2 = T1·(D2/D1)^1.06`) — injecté au prompt sous `chrono_actuel_estime` pour que les allures soient adossées à la forme réelle, pas à l'objectif. Le **chrono projeté** en fin de plan applique la même estimation au CTL projeté (`_project_ctl`). Les deux sont persistés (`estimated_time_min`/`projected_time_min`, exposés par `GET /plans/versions`). Si `target_time_min` implique une progression irréaliste, `feasibility_warning` (avertissement UI, **jamais** un blocage). VDOT de Daniels dispo (`daniels_vdot`) mais pas de recoupement VO2max (donnée Garmin non stockée).
+
 ## Appel API Anthropic
 
 - Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 90 s.

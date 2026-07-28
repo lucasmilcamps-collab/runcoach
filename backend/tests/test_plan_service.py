@@ -622,3 +622,43 @@ async def test_truncated_response_fails_fast(db):
     assert result.status == "failed"
     assert create_mock.call_count == 1  # no pointless retries on truncation
     assert "tronqu" in (result.error_message or "").lower()
+
+
+async def test_generate_plan_computes_time_estimates(db):
+    user_id = await _seed_user(db)
+    # A fast 10k 10 days ago is the estimate basis. No HR profile → no initial-load
+    # check (baseline 0) so the fixture plan validates cleanly.
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=10),
+            "duration_s": 2400,  # 40:00
+            "distance_m": 10000,
+        }
+    )
+    from datetime import date
+
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=21.1,
+        race_date=date.today() + timedelta(weeks=4),
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+        target_time_min=70,  # ~1h10 half vs ~88 estimated → unrealistic
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        result = await plan_service.generate_plan(db, user_id, req)
+
+    assert result.status == "ready", result.error_message
+    assert result.estimated_time_min is not None
+    assert 84 <= result.estimated_time_min <= 92  # Riegel 10k 40:00 → ~88 for a half
+    assert result.projected_time_min is not None
+    assert result.feasibility_warning is not None  # 70 min is unrealistically fast
+
+    stored = await plan_service.get_current_plan(db, user_id)
+    assert stored.estimated_time_min == result.estimated_time_min

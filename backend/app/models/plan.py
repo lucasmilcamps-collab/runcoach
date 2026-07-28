@@ -181,6 +181,9 @@ class PlanResponse(BaseModel):
     status: Literal["generating", "ready", "failed"]
     request: PlanRequest | None = None
     plan: Plan | None = None
+    estimated_time_min: int | None = None  # estimated current time at the target
+    projected_time_min: int | None = None  # projected time at the plan's end
+    feasibility_warning: str | None = None  # a notice, never a blocker
     error_message: str | None = None
 
 
@@ -195,6 +198,8 @@ class PlanVersionSummary(BaseModel):
     weeks_total: int | None = None
     reason: str  # "Plan initial" / "Objectif ajusté" / "Reprise après blessure" / "Replanification"
     injury_area: str | None = None
+    estimated_time_min: int | None = None
+    projected_time_min: int | None = None
 
 
 class DailyAdjustment(BaseModel):
