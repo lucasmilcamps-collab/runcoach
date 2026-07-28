@@ -17,8 +17,6 @@ import {
   sessionDifficulty,
 } from '@/lib/plan-format';
 
-const KEY_TYPES = new Set<PlanSession['type']>(['tempo', 'threshold', 'intervals', 'long_run']);
-
 type FlatWeek = { week: PlanWeek; phase: PlanPhase['name'] };
 
 /** All weeks across phases, in calendar order, each tagged with its phase. */
@@ -160,12 +158,14 @@ function NavArrow({
 }
 
 function WeekSessions({ week }: { week: PlanWeek }) {
-  const total = week.sessions.filter((s) => s.type !== 'rest').length;
+  // Addons (e.g. a strength block) share a day and aren't numbered as sessions.
+  const total = week.sessions.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
   let counter = 0;
   return (
     <View style={styles.sessionList}>
       {week.sessions.map((session, si) => {
-        const position = session.type !== 'rest' ? (counter += 1) : 0;
+        const isPrimary = session.type !== 'rest' && session.slot === 'primary';
+        const position = isPrimary ? (counter += 1) : 0;
         return (
           <SessionCard
             key={si}
@@ -195,7 +195,8 @@ function SessionCard({
   position: number;
   total: number;
 }) {
-  const isKey = KEY_TYPES.has(session.type);
+  const isKey = session.priority === 'key';
+  const isAddon = session.slot === 'addon';
 
   if (session.type === 'rest') {
     return (
@@ -228,7 +229,7 @@ function SessionCard({
       accessibilityLabel={`${SESSION_LABELS[session.type]}, séance ${position} sur ${total}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
-          {isKey ? (
+          {isKey && !isAddon ? (
             <View style={styles.keyPill}>
               <ThemedText type="waypointLabel" themeColor="blaze">
                 Clé
@@ -236,7 +237,8 @@ function SessionCard({
             </View>
           ) : null}
           <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {DAY_LABELS[session.day]} · Séance {position}/{total}
+            {DAY_LABELS[session.day]}
+            {isAddon ? ' · Complément' : ` · Séance ${position}/${total}`}
           </ThemedText>
         </View>
         <Icon name="chevron-right" size={20} color={Colors.textSecondary} />

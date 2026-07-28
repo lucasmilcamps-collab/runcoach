@@ -21,13 +21,16 @@ Pipeline en 3 étapes, côté backend uniquement (`plan_service`) :
 
 ```python
 class PlanRequest(BaseModel):
-    goal_type: Literal["race", "distance"]
+    goal_type: Literal["race", "distance", "fitness"]
     race_date: date | None
-    distance_km: float                 # 10, 21.1, 42.2…
-    target_time: timedelta | None      # optionnel : "finir" est un objectif valide
-    weekly_availability: dict[Weekday, list[TimeSlot]]
-    fixed_sports: list[FixedSport]     # ex. basket mercredi soir — contrainte dure
-    max_run_sessions_per_week: int
+    distance_km: float | None
+    target_time_min: int | None        # optionnel : "finir" est un objectif valide
+    available_days: list[Weekday]
+    min_run_sessions_per_week: int      # séances "key" garanties
+    max_run_sessions_per_week: int      # plafond
+    fixed_sports: list[FixedSport]      # {sport, day, flexible} — flexible = un des jours suffit
+    include_cross_training: bool        # PRESCRIT du cross-training (n'affecte JAMAIS la charge)
+    strength: StrengthPref              # {enabled, sessions_per_week 1-2, duration_min}
 ```
 
 Contexte calculé ajouté au prompt (`build_context`) : CTL/ATL/TSB actuels, zones FC personnelles, flag `low_confidence` si historique < 90 j, et un profil de récence course :
@@ -42,9 +45,10 @@ La forme (`compute_fitness`) est calculée une seule fois par génération et in
 
 ## Appel API Anthropic
 
-- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model` ; bon rapport qualité/coût pour du JSON structuré). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client.
-- System prompt : rôle de coach, **règles du skill training-science injectées en résumé** (rampe 10 %, deload 3–4 sem, périodisation, contraintes cross-training), et consigne stricte : "Réponds uniquement avec le JSON, sans markdown".
-- Parsing : strip des éventuels ```json, puis `Plan.model_validate_json()`. Toute erreur de parsing = tentative échouée → retry avec l'erreur en feedback.
+- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 90 s.
+- **Tool use** : le plan est émis via l'outil `submit_plan` dont l'`input_schema` = `Plan.model_json_schema()` + `tool_choice` forcé. Ça supprime la classe d'erreurs « JSON non conforme » ; `tool_block.input` est déjà un dict → `Plan.model_validate(...)`.
+- System prompt : rôle de coach, règles training-science, priority/min-max, renfo et cross-training **conditionnels** au `PlanRequest`, streaming, thinking off.
+- Retry conversationnel : chaque échec est rejoué en `assistant`=tool_use + `user`=tool_result(violations). Max 3 tentatives.
 
 ## Schéma JSON du plan (contrat de sortie)
 
@@ -65,15 +69,19 @@ class Week(BaseModel):
 
 class Session(BaseModel):
     day: Weekday
-    sport: SportType                   # RUN ou sport fixe de l'utilisateur
+    sport: SportType                   # RUN ; STRENGTH pour un renfo ; sport fixe sinon
     type: Literal["easy", "long_run", "tempo", "threshold", "intervals",
-                  "recovery", "cross_training", "rest"]
+                  "recovery", "cross_training", "strength", "test", "race", "rest"]
     duration_min: int
     structure: list[Block]             # ex. échauffement / 6×800m / retour au calme
-    pace_range: PaceRange | None       # pour la course
+    pace_range: PaceRange | None
     hr_zone: int | None
-    rationale: str                     # 1 phrase : pourquoi cette séance ici
+    priority: Literal["key", "optional"]   # "key" = à ne pas sauter (exactement min/sem)
+    slot: Literal["primary", "addon"]      # "addon" = renfo court partageant la journée
+    rationale: str                     # 1 phrase ; obligatoire pour les 'key'
 ```
+
+Types spéciaux : `strength` (renfo addon, sport=STRENGTH, on prescrit le créneau + l'intention, jamais les exercices), `test` (évaluation, alimente l'estimation de chrono — lot 4/5), `race` (le jour J, rend vérifiable « course le jour J »).
 
 Le champ `rationale` est obligatoire : il alimente la transparence côté UI.
 
@@ -84,8 +92,9 @@ Retourne la liste des violations (vide = valide) :
 1. Rampe : `target_load` hebdo n'augmente jamais de > 10 % (deload exclu de la comparaison ; après deload, on compare à la dernière semaine **normale**).
 2. Charge initiale (si `context.avg_weekly_load_4w` dispo et non nul) : `weeks[0].target_load` ≤ charge réelle récente × 1,10 — plafond seulement, jamais plancher (une reprise démarre plus bas, c'est conforme).
 3. Deload : ≥ 1 `is_deload` par bloc de 4 semaines ; une semaine deload doit réellement réduire la charge (≤ 85 % de la dernière normale) ; un plan tout-deload est refusé.
-4. Contraintes dures : chaque `FixedSport` apparaît **chaque semaine** sur l'un de ses jours déclarés (multi-jours géré) ; aucune séance course qualitative (tempo/threshold/intervals) le lendemain d'un sport à impacts (frontière dimanche→lundi incluse).
-5. Nombre de séances course : ≤ `max_run_sessions_per_week` par semaine (min/max complet au lot 3).
+4. Contraintes dures : chaque `FixedSport` apparaît **chaque semaine** sur l'un de ses jours déclarés (multi-jours géré ; si `flexible`, un seul des jours suffit) ; aucune séance course qualitative le lendemain d'un sport à impacts (frontière dimanche→lundi incluse).
+5. Nombre de séances course : ≤ `max_run_sessions_per_week` au total, et **exactement** `min_run_sessions_per_week` marquées `priority="key"` chaque semaine normale (deload exempté). Renfo (`slot="addon"`) ne compte pas.
+5b. Placement du renfo : jamais la veille d'une sortie longue ou d'une séance de qualité ; deux renfos/semaine espacés d'au moins 48 h.
 6. Taper : dernière(s) semaine(s) avec charge décroissante, course le jour J.
 7. Sortie longue : progression ≤ 15 min/sem vs la dernière semaine **normale**, plafond absolu selon la distance objectif (appliqué à toutes les semaines).
 8. Max 2 séances de qualité course/semaine ; jamais 2 jours de qualité consécutifs (frontière dimanche→lundi incluse).

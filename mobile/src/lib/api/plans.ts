@@ -11,7 +11,13 @@ export type Weekday =
   | 'SATURDAY'
   | 'SUNDAY';
 
-export type FixedSport = { sport: SportType; day: Weekday };
+export type FixedSport = { sport: SportType; day: Weekday; flexible: boolean };
+
+export type StrengthPref = {
+  enabled: boolean;
+  sessions_per_week: number; // 1–2
+  duration_min: number; // 10–45
+};
 
 export type PlanRequest = {
   goal_type: 'race' | 'distance' | 'fitness';
@@ -19,8 +25,11 @@ export type PlanRequest = {
   race_date: string | null; // ISO date
   target_time_min: number | null;
   available_days: Weekday[];
+  min_run_sessions_per_week: number;
   max_run_sessions_per_week: number;
   fixed_sports: FixedSport[];
+  include_cross_training: boolean;
+  strength: StrengthPref;
 };
 
 export type SessionType =
@@ -31,6 +40,9 @@ export type SessionType =
   | 'intervals'
   | 'recovery'
   | 'cross_training'
+  | 'strength'
+  | 'test'
+  | 'race'
   | 'rest';
 
 export type PaceRange = { min_per_km_low: string; min_per_km_high: string };
@@ -50,6 +62,8 @@ export type PlanSession = {
   structure: PlanBlock[];
   pace_range: PaceRange | null;
   hr_zone: number | null;
+  priority: 'key' | 'optional';
+  slot: 'primary' | 'addon';
   rationale: string;
 };
 
@@ -101,7 +115,7 @@ export type TodaySession = {
   has_plan: boolean;
   has_session: boolean;
   week_index: number | null;
-  session: PlanSession | null;
+  sessions: PlanSession[];
   adjustment: DailyAdjustment | null;
   tsb: number;
   recovery: RecoverySummary | null;

@@ -247,7 +247,9 @@ function TodayCard({ today }: { today: TodaySession }) {
   }
 
   const adj = today.adjustment;
-  const shownType = adj?.adjusted ? adj.suggested_type : (today.session?.type ?? 'easy');
+  const primary = today.sessions[0] ?? null;
+  const addons = today.sessions.slice(1);
+  const shownType = adj?.adjusted ? adj.suggested_type : (primary?.type ?? 'easy');
 
   return (
     <View style={styles.todayCard}>
@@ -256,12 +258,17 @@ function TodayCard({ today }: { today: TodaySession }) {
       </ThemedText>
       <View style={styles.todayTitleRow}>
         <ThemedText type="subtitle">{SESSION_LABELS[shownType]}</ThemedText>
-        {today.session ? (
+        {primary ? (
           <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {formatDuration(today.session.duration_min)}
+            {formatDuration(primary.duration_min)}
           </ThemedText>
         ) : null}
       </View>
+      {addons.map((s, i) => (
+        <ThemedText key={i} type="small" themeColor="textSecondary">
+          + {SESSION_LABELS[s.type]} · {formatDuration(s.duration_min)}
+        </ThemedText>
+      ))}
       {adj?.adjusted ? (
         <ThemedText type="small" themeColor="textSecondary">
           Prévu : {SESSION_LABELS[adj.original_type]}

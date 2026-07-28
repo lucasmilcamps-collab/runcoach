@@ -8,18 +8,18 @@ import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
-import { pressable } from '@/lib/pressable';
 import { ApiError } from '@/lib/api/client';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
+import { pressable } from '@/lib/pressable';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
+type FixedEntry = { days: Set<Weekday>; flexible: boolean };
 
 const FIXED_SPORT_OPTIONS: { sport: SportType; label: string }[] = [
   { sport: 'PADEL', label: 'Padel' },
-  { sport: 'STRENGTH', label: 'Renforcement' },
-  { sport: 'BIKE', label: 'Vélo' },
   { sport: 'BASKETBALL', label: 'Basket' },
+  { sport: 'BIKE', label: 'Vélo' },
 ];
 
 const OBJECTIVES: Objective[] = [
@@ -40,16 +40,10 @@ const DAYS: { label: string; value: Weekday }[] = [
 ];
 
 const RUN_COUNTS = [2, 3, 4, 5];
+const STRENGTH_COUNTS = [1, 2];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function Chip({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
+function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
@@ -63,19 +57,26 @@ function Chip({
   );
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 function objectiveIndexFor(request: PlanRequest | null): number {
-  if (!request) return 1; // Semi by default
+  if (!request) return 1;
   if (request.goal_type === 'fitness') return OBJECTIVES.findIndex((o) => o.goal === 'fitness');
   const match = OBJECTIVES.findIndex((o) => o.distanceKm === request.distance_km);
   return match >= 0 ? match : 1;
 }
 
+function groupFixed(request: PlanRequest | null): Map<SportType, FixedEntry> {
+  const map = new Map<SportType, FixedEntry>();
+  for (const f of request?.fixed_sports ?? []) {
+    const entry = map.get(f.sport) ?? { days: new Set<Weekday>(), flexible: false };
+    entry.days.add(f.day);
+    if (f.flexible) entry.flexible = true;
+    map.set(f.sport, entry);
+  }
+  return map;
+}
+
 export default function PlanSetupScreen() {
   const queryClient = useQueryClient();
-  // Prefill from the current plan (already cached by the Plan tab) so "change my
-  // objective" is a quick edit rather than re-entering everything.
   const prefill = queryClient.getQueryData<PlanResponse>(['plan'])?.request ?? null;
 
   const [objectiveIndex, setObjectiveIndex] = useState(objectiveIndexFor(prefill));
@@ -83,19 +84,42 @@ export default function PlanSetupScreen() {
   const [days, setDays] = useState<Set<Weekday>>(
     new Set<Weekday>(prefill?.available_days ?? ['TUESDAY', 'THURSDAY', 'SATURDAY']),
   );
-  const [runCount, setRunCount] = useState(prefill?.max_run_sessions_per_week ?? 3);
-  const [fixedSports, setFixedSports] = useState<Map<SportType, Weekday>>(
-    new Map((prefill?.fixed_sports ?? []).map((f) => [f.sport, f.day])),
-  );
+  const [minRuns, setMinRuns] = useState(prefill?.min_run_sessions_per_week ?? 3);
+  const [maxRuns, setMaxRuns] = useState(prefill?.max_run_sessions_per_week ?? 3);
+  const [crossTraining, setCrossTraining] = useState(prefill?.include_cross_training ?? false);
+  const [strengthOn, setStrengthOn] = useState(prefill?.strength?.enabled ?? false);
+  const [strengthPerWeek, setStrengthPerWeek] = useState(prefill?.strength?.sessions_per_week ?? 1);
+  const [fixedSports, setFixedSports] = useState<Map<SportType, FixedEntry>>(groupFixed(prefill));
   const [dateError, setDateError] = useState<string | undefined>();
 
   const objective = OBJECTIVES[objectiveIndex];
 
-  function toggleFixedSport(sport: SportType, day: Weekday) {
+  function pickMin(n: number) {
+    setMinRuns(n);
+    if (n > maxRuns) setMaxRuns(n);
+  }
+  function pickMax(n: number) {
+    setMaxRuns(n);
+    if (n < minRuns) setMinRuns(n);
+  }
+
+  function toggleFixedDay(sport: SportType, day: Weekday) {
     setFixedSports((prev) => {
       const next = new Map(prev);
-      if (next.get(sport) === day) next.delete(sport);
-      else next.set(sport, day);
+      const entry = { ...(next.get(sport) ?? { days: new Set<Weekday>(), flexible: false }) };
+      entry.days = new Set(entry.days);
+      if (entry.days.has(day)) entry.days.delete(day);
+      else entry.days.add(day);
+      if (entry.days.size === 0) next.delete(sport);
+      else next.set(sport, entry);
+      return next;
+    });
+  }
+  function toggleFlexible(sport: SportType) {
+    setFixedSports((prev) => {
+      const next = new Map(prev);
+      const entry = next.get(sport);
+      if (entry) next.set(sport, { ...entry, flexible: !entry.flexible });
       return next;
     });
   }
@@ -127,15 +151,21 @@ export default function PlanSetupScreen() {
     setDateError(undefined);
 
     const hasDate = trimmedDate.length > 0 && objective.goal !== 'fitness';
-    const fixed: FixedSport[] = Array.from(fixedSports, ([sport, day]) => ({ sport, day }));
+    const fixed: FixedSport[] = [];
+    for (const [sport, entry] of fixedSports) {
+      for (const day of entry.days) fixed.push({ sport, day, flexible: entry.flexible });
+    }
     const request: PlanRequest = {
       goal_type: hasDate ? 'race' : objective.goal,
       distance_km: objective.distanceKm,
       race_date: hasDate ? trimmedDate : null,
       target_time_min: null,
       available_days: DAYS.map((d) => d.value).filter((v) => days.has(v)),
-      max_run_sessions_per_week: runCount,
+      min_run_sessions_per_week: minRuns,
+      max_run_sessions_per_week: maxRuns,
       fixed_sports: fixed,
+      include_cross_training: crossTraining,
+      strength: { enabled: strengthOn, sessions_per_week: strengthPerWeek, duration_min: 20 },
     };
     mutation.mutate(request);
   }
@@ -150,9 +180,7 @@ export default function PlanSetupScreen() {
   const canSubmit = days.size >= 2 && !mutation.isPending;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.header}>
@@ -169,12 +197,7 @@ export default function PlanSetupScreen() {
           <Field label="Objectif">
             <View style={styles.chipRow}>
               {OBJECTIVES.map((o, i) => (
-                <Chip
-                  key={o.label}
-                  label={o.label}
-                  selected={i === objectiveIndex}
-                  onPress={() => setObjectiveIndex(i)}
-                />
+                <Chip key={o.label} label={o.label} selected={i === objectiveIndex} onPress={() => setObjectiveIndex(i)} />
               ))}
             </View>
           </Field>
@@ -198,51 +221,115 @@ export default function PlanSetupScreen() {
           <Field label="Jours disponibles">
             <View style={styles.chipRow}>
               {DAYS.map((d) => (
-                <Chip
-                  key={d.value}
-                  label={d.label}
-                  selected={days.has(d.value)}
-                  onPress={() => toggleDay(d.value)}
-                />
+                <Chip key={d.value} label={d.label} selected={days.has(d.value)} onPress={() => toggleDay(d.value)} />
               ))}
             </View>
           </Field>
 
-          <Field label="Séances de course par semaine">
+          <Field label="Séances de course par semaine (min → max)">
+            <ThemedText type="small" themeColor="textSecondary">
+              Minimum : les séances « clés » que tu t’engages à faire. Maximum : le plafond si la
+              semaine le permet.
+            </ThemedText>
+            <View style={styles.dualRow}>
+              <View style={styles.dualCol}>
+                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                  Min
+                </ThemedText>
+                <View style={styles.chipRow}>
+                  {RUN_COUNTS.map((n) => (
+                    <Chip key={n} label={String(n)} selected={n === minRuns} onPress={() => pickMin(n)} />
+                  ))}
+                </View>
+              </View>
+              <View style={styles.dualCol}>
+                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                  Max
+                </ThemedText>
+                <View style={styles.chipRow}>
+                  {RUN_COUNTS.map((n) => (
+                    <Chip key={n} label={String(n)} selected={n === maxRuns} onPress={() => pickMax(n)} />
+                  ))}
+                </View>
+              </View>
+            </View>
+          </Field>
+
+          <Field label="Renforcement (Freeletics)">
             <View style={styles.chipRow}>
-              {RUN_COUNTS.map((n) => (
-                <Chip
-                  key={n}
-                  label={String(n)}
-                  selected={n === runCount}
-                  onPress={() => setRunCount(n)}
-                />
-              ))}
+              <Chip
+                label={strengthOn ? 'Activé' : 'Désactivé'}
+                selected={strengthOn}
+                onPress={() => setStrengthOn((v) => !v)}
+              />
+            </View>
+            {strengthOn ? (
+              <>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Le plan réserve le créneau et l’intention (~20 min) ; tu fais la séance dans
+                  Freeletics.
+                </ThemedText>
+                <View style={styles.chipRow}>
+                  {STRENGTH_COUNTS.map((n) => (
+                    <Chip
+                      key={n}
+                      label={`${n}/sem`}
+                      selected={n === strengthPerWeek}
+                      onPress={() => setStrengthPerWeek(n)}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </Field>
+
+          <Field label="Cross-training prescrit">
+            <ThemedText type="small" themeColor="textSecondary">
+              Ajoute des séances de cross-training au plan. (Tes sports pratiqués comptent déjà dans
+              ta charge, quoi qu’il arrive.)
+            </ThemedText>
+            <View style={styles.chipRow}>
+              <Chip
+                label={crossTraining ? 'Activé' : 'Désactivé'}
+                selected={crossTraining}
+                onPress={() => setCrossTraining((v) => !v)}
+              />
             </View>
           </Field>
 
           <Field label="Sports fixes (optionnel)">
             <ThemedText type="small" themeColor="textSecondary">
-              Choisis un jour pour un sport récurrent : le plan sera construit autour (pas de
-              séance intense le lendemain), il ne le déplacera jamais.
+              Un sport récurrent : le plan est construit autour (pas de séance intense le lendemain).
+              Choisis un ou plusieurs jours ; « jour variable » si le créneau change (ex. match du
+              week-end).
             </ThemedText>
-            {FIXED_SPORT_OPTIONS.map((option) => (
-              <View key={option.sport} style={styles.fixedRow}>
-                <ThemedText type="default" style={styles.fixedLabel}>
-                  {option.label}
-                </ThemedText>
-                <View style={styles.chipRow}>
-                  {DAYS.map((d) => (
-                    <Chip
-                      key={d.value}
-                      label={d.label}
-                      selected={fixedSports.get(option.sport) === d.value}
-                      onPress={() => toggleFixedSport(option.sport, d.value)}
-                    />
-                  ))}
+            {FIXED_SPORT_OPTIONS.map((option) => {
+              const entry = fixedSports.get(option.sport);
+              return (
+                <View key={option.sport} style={styles.fixedRow}>
+                  <View style={styles.fixedHead}>
+                    <ThemedText type="default">{option.label}</ThemedText>
+                    {entry ? (
+                      <Chip
+                        label="Jour variable"
+                        selected={entry.flexible}
+                        onPress={() => toggleFlexible(option.sport)}
+                      />
+                    ) : null}
+                  </View>
+                  <View style={styles.chipRow}>
+                    {DAYS.map((d) => (
+                      <Chip
+                        key={d.value}
+                        label={d.label}
+                        selected={entry?.days.has(d.value) ?? false}
+                        onPress={() => toggleFixedDay(option.sport, d.value)}
+                      />
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </Field>
 
           {mutation.isPending ? (
@@ -259,18 +346,8 @@ export default function PlanSetupScreen() {
         </ScrollView>
 
         <View style={styles.actions}>
-          <Button
-            label="Générer mon plan"
-            onPress={handleGenerate}
-            loading={mutation.isPending}
-            disabled={!canSubmit}
-          />
-          <Button
-            label="Annuler"
-            variant="ghost"
-            disabled={mutation.isPending}
-            onPress={() => router.back()}
-          />
+          <Button label="Générer mon plan" onPress={handleGenerate} loading={mutation.isPending} disabled={!canSubmit} />
+          <Button label="Annuler" variant="ghost" disabled={mutation.isPending} onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -306,10 +383,19 @@ const styles = StyleSheet.create({
   },
   header: { gap: Spacing.two },
   field: { gap: Spacing.two },
+  dualRow: { flexDirection: 'row', gap: Spacing.four, flexWrap: 'wrap' },
+  dualCol: { gap: Spacing.two },
   fixedRow: { gap: Spacing.one, paddingTop: Spacing.two },
-  fixedLabel: { marginBottom: Spacing.half },
+  fixedHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.half,
+  },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: Rounded.sm,

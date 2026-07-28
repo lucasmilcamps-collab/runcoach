@@ -15,6 +15,9 @@ export const SESSION_LABELS: Record<PlanSession['type'], string> = {
   intervals: 'Fractionné',
   recovery: 'Récupération',
   cross_training: 'Cross-training',
+  strength: 'Renforcement',
+  test: 'Test',
+  race: 'Course',
   rest: 'Repos',
 };
 
@@ -63,6 +66,9 @@ const TYPE_ZONE: Record<PlanSession['type'], number> = {
   threshold: 4,
   intervals: 5,
   cross_training: 2,
+  strength: 2,
+  test: 5,
+  race: 4,
   rest: 1,
 };
 
@@ -70,10 +76,13 @@ const TYPE_DIFFICULTY: Record<PlanSession['type'], number> = {
   recovery: 1,
   easy: 1,
   cross_training: 2,
+  strength: 2,
   long_run: 3,
   tempo: 3,
   threshold: 4,
   intervals: 4,
+  test: 4,
+  race: 4,
   rest: 0,
 };
 
