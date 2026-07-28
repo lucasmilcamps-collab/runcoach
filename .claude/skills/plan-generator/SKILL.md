@@ -30,7 +30,15 @@ class PlanRequest(BaseModel):
     max_run_sessions_per_week: int
 ```
 
-Contexte calculé ajouté au prompt : CTL/ATL actuels, volume course des 8 dernières semaines, meilleur chrono récent (extrait des activités Garmin), zones FC personnelles, flag `low_confidence` si historique < 90 j.
+Contexte calculé ajouté au prompt (`build_context`) : CTL/ATL/TSB actuels, zones FC personnelles, flag `low_confidence` si historique < 90 j, et un profil de récence course :
+
+- `days_since_last_run` (None si aucune course) — déclenche une directive de reprise si > 21 j.
+- `weekly_run_minutes_8w` — 8 entiers (semaine la plus ancienne → la plus récente), pour voir la tendance et non une moyenne qui écrase l'info.
+- `last_run` : `{date, duration_min, distance_km, avg_pace_min_per_km}`.
+- `longest_run_8w_min`.
+- `avg_weekly_load_4w` : **charge hebdo réelle en TRIMP** sur 4 semaines — la même unité que `Week.target_load`, pour caler la semaine 1 sur la réalité (utilisée par `_check_initial_load` au lot 2).
+
+La forme (`compute_fitness`) est calculée une seule fois par génération et injectée dans `build_context` et `plan_progress.compute_progress` (pas de double scan des activités).
 
 ## Appel API Anthropic
 

@@ -1,7 +1,9 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.models.activity import SportType
+from app.models.fitness import FitnessDay, FitnessResponse
 from app.models.plan import (
     InjuryReport,
     Phase,
@@ -418,3 +420,95 @@ async def test_current_plan_endpoint_404_when_none(client, db):
         "/api/v1/plans/current", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 404
+
+
+# --- Lot 1: richer context ---
+
+
+async def _seed_run(db, user_id: str, days_ago: int, duration_min: int, distance_km: float = 10.0):
+    start = datetime.now(UTC) - timedelta(days=days_ago)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": start,
+            "duration_s": duration_min * 60,
+            "distance_m": distance_km * 1000,
+            "avg_hr": 150,
+        }
+    )
+
+
+def _stub_fitness(load_per_day: float = 10.0, days: int = 28) -> FitnessResponse:
+    today = datetime.now(UTC).date()
+    series = [
+        FitnessDay(day=today - timedelta(days=i), load=load_per_day, ctl=1.0, atl=1.0, tsb=0.0)
+        for i in range(days)
+    ]
+    return FitnessResponse(
+        has_profile=True,
+        hr_max=190,
+        hr_rest=50,
+        manual=False,
+        low_confidence=False,
+        ctl=1.0,
+        atl=1.0,
+        tsb=0.0,
+        series=series,
+    )
+
+
+async def test_build_context_run_metrics(db):
+    user_id = await _seed_user(db)
+    await _seed_run(db, user_id, 2, 40)  # this week
+    await _seed_run(db, user_id, 9, 50)  # last week
+    await _seed_run(db, user_id, 30, 60)  # 4 weeks ago
+
+    ctx = await plan_service.build_context(db, user_id, fitness=_stub_fitness())
+
+    assert ctx["days_since_last_run"] == 2
+    assert ctx["longest_run_8w_min"] == 60
+    assert len(ctx["weekly_run_minutes_8w"]) == 8
+    assert ctx["weekly_run_minutes_8w"][7] == 40  # most recent week
+    assert ctx["weekly_run_minutes_8w"][6] == 50
+    assert sum(ctx["weekly_run_minutes_8w"]) == 150
+    assert ctx["last_run"]["duration_min"] == 40
+    # 28 days × 10 load / 4 weeks = 70
+    assert ctx["avg_weekly_load_4w"] == 70.0
+
+
+async def test_no_recent_run_triggers_detraining_directive(db):
+    user_id = await _seed_user(db)
+    await _seed_run(db, user_id, 30, 45)  # last run 30 days ago > 21
+
+    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
+        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    prompt = stream_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "REPRISE APRÈS INTERRUPTION" in prompt
+    assert "30 jour" in prompt
+
+
+async def test_compute_fitness_called_once_per_generation(db):
+    user_id = await _seed_user(db)
+    await _seed_run(db, user_id, 3, 40)
+
+    real = plan_service.fitness_service.compute_fitness
+    calls = {"n": 0}
+
+    async def _spy(db_arg, uid):
+        calls["n"] += 1
+        return await real(db_arg, uid)
+
+    stream_mock = _stream_mock(_mock_response(_valid_plan_json()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(stream=stream_mock))
+    with patch.object(plan_service.settings, "anthropic_api_key", "sk-test"), patch(
+        "app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client
+    ), patch("app.services.fitness_service.compute_fitness", _spy):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    assert calls["n"] == 1

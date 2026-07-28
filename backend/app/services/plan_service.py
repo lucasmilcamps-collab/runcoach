@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.models.activity import SportType
+from app.models.fitness import FitnessResponse
 from app.models.plan import (
     WEEKDAY_ORDER,
     DailyAdjustment,
@@ -73,25 +74,85 @@ def _extract_json(text: str) -> str:
     return stripped.strip()
 
 
-async def build_context(db: AsyncIOMotorDatabase, user_id: str) -> dict:
+def _avg_pace_min_per_km(duration_s: int, distance_m: float | None) -> str | None:
+    if not distance_m or distance_m <= 0 or duration_s <= 0:
+        return None
+    sec_per_km = duration_s / (distance_m / 1000)
+    minutes = int(sec_per_km // 60)
+    seconds = int(round(sec_per_km % 60))
+    if seconds == 60:
+        minutes += 1
+        seconds = 0
+    return f"{minutes}:{seconds:02d}"
+
+
+def _avg_weekly_load_4w(fitness: FitnessResponse, today: date) -> float:
+    """Real weekly TRIMP over the last 4 weeks — the unit `Week.target_load` is
+    in, so the model can calibrate week 1 against the athlete's actual load."""
+    if not fitness.series:
+        return 0.0
+    cutoff = today - timedelta(days=28)
+    total = sum(day.load for day in fitness.series if day.day >= cutoff)
+    return round(total / 4, 1)
+
+
+async def build_context(
+    db: AsyncIOMotorDatabase, user_id: str, fitness: FitnessResponse | None = None
+) -> dict:
     """Real athlete state fed to the prompt: current fitness/fatigue/form and
     recent run volume. Cross-training counts toward load elsewhere, but the plan
-    prompt needs the running baseline specifically to set volumes."""
-    fitness = await fitness_service.compute_fitness(db, user_id)
+    prompt needs the running baseline specifically to set volumes.
 
-    cutoff = datetime.now(UTC) - timedelta(days=_RUN_VOLUME_DAYS)
+    `fitness` may be passed in to avoid recomputing the CTL/ATL curve (a full
+    activity scan) when the caller already has it."""
+    if fitness is None:
+        fitness = await fitness_service.compute_fitness(db, user_id)
+
+    today = datetime.now(UTC).date()
+    cutoff_date = today - timedelta(days=_RUN_VOLUME_DAYS)
+
     run_sessions = 0
     run_minutes = 0
+    longest_run_8w_min = 0
+    weekly_minutes = [0] * 8  # index 0 = oldest week, index 7 = most recent
+    latest_dt: datetime | None = None
+    latest: dict | None = None  # most recent run overall, ignoring the 8-week window
+
     cursor = db.activities.find({"user_id": user_id, "sport": SportType.RUN})
     async for doc in cursor:
         start = doc.get("start_time")
         if start is None:
             continue
         start_aware = start.replace(tzinfo=UTC) if start.tzinfo is None else start
-        if start_aware < cutoff:
+        act_date = start_aware.astimezone(UTC).date()
+        duration_s = int(doc.get("duration_s") or 0)
+        distance_m = doc.get("distance_m")
+
+        if latest_dt is None or start_aware > latest_dt:
+            latest_dt = start_aware
+            latest = {"date": act_date, "duration_s": duration_s, "distance_m": distance_m}
+
+        if act_date < cutoff_date:
             continue
         run_sessions += 1
-        run_minutes += int(doc.get("duration_s") or 0) // 60
+        minutes = duration_s // 60
+        run_minutes += minutes
+        longest_run_8w_min = max(longest_run_8w_min, minutes)
+        weeks_ago = (today - act_date).days // 7
+        if 0 <= weeks_ago <= 7:
+            weekly_minutes[7 - weeks_ago] += minutes
+
+    days_since_last_run = (today - latest["date"]).days if latest else None
+    last_run = None
+    if latest is not None:
+        last_run = {
+            "date": latest["date"].isoformat(),
+            "duration_min": latest["duration_s"] // 60,
+            "distance_km": (
+                round(latest["distance_m"] / 1000, 2) if latest["distance_m"] else None
+            ),
+            "avg_pace_min_per_km": _avg_pace_min_per_km(latest["duration_s"], latest["distance_m"]),
+        }
 
     weeks = _RUN_VOLUME_DAYS / 7
     return {
@@ -103,7 +164,12 @@ async def build_context(db: AsyncIOMotorDatabase, user_id: str) -> dict:
         "hr_rest": fitness.hr_rest,
         "low_confidence": fitness.low_confidence,
         "recent_run_sessions_8w": run_sessions,
-        "avg_weekly_run_minutes": round(run_minutes / weeks, 1),
+        "avg_weekly_run_minutes": round(run_minutes / weeks, 1),  # kept for compat
+        "days_since_last_run": days_since_last_run,
+        "weekly_run_minutes_8w": weekly_minutes,
+        "last_run": last_run,
+        "longest_run_8w_min": longest_run_8w_min,
+        "avg_weekly_load_4w": _avg_weekly_load_4w(fitness, today),
     }
 
 
@@ -126,6 +192,9 @@ def _system_prompt() -> str:
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
         "- Zones cardiaques via la FC max/repos fournies (Karvonen), jamais "
         "220−âge. Aucune recommandation médicale.\n"
+        "- Si `low_confidence` est vrai dans l'état actuel (historique trop court "
+        "pour être fiable), démarre délibérément bas et consacre les premières "
+        "semaines à l'observation plutôt qu'à une progression agressive.\n"
         "- Chaque séance a un `rationale` d'une phrase expliquant sa place.\n"
         "- Détaille `structure` en blocs (échauffement, corps, récupération). Pour "
         "chaque bloc de course, renseigne `hr_zone` (1 à 5) et `pace_range` "
@@ -172,6 +241,23 @@ def _injury_directive(injury: InjuryReport | None) -> str:
     )
 
 
+_DETRAINING_DAYS_THRESHOLD = 21
+
+
+def _detraining_directive(context: dict) -> str:
+    """A gentle comeback when the athlete hasn't run in a while — same shape as
+    the injury directive, driven by days_since_last_run rather than a report."""
+    days = context.get("days_since_last_run")
+    if days is None or days <= _DETRAINING_DAYS_THRESHOLD:
+        return ""
+    return (
+        f"\nREPRISE APRÈS INTERRUPTION — l'athlète n'a pas couru depuis {days} jours. "
+        "Démarre avec un volume nettement réduit par rapport à l'objectif, sans "
+        "aucune séance de qualité les deux premières semaines, et remonte la charge "
+        "très prudemment.\n"
+    )
+
+
 def _user_prompt(
     request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
 ) -> str:
@@ -182,6 +268,7 @@ def _user_prompt(
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
         f"{_weeks_directive(request, today)}\n"
         f"{_injury_directive(injury)}"
+        f"{_detraining_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif. La sortie longue progresse d'au plus 15 min d'une "
         "semaine à l'autre. Le cross-training compte comme charge. Si des séances "
@@ -322,12 +409,15 @@ async def generate_plan(
     `injury`, when set, makes it a comeback replan: the prompt steers the early
     weeks toward recovery and a gradual ramp (plan-generator skill)."""
     today = datetime.now(UTC).date()
-    context = await build_context(db, user_id)
+    # Compute the CTL/ATL curve once and share it: both build_context and
+    # compute_progress need it, and it scans every activity.
+    fitness = await fitness_service.compute_fitness(db, user_id)
+    context = await build_context(db, user_id, fitness=fitness)
 
     # Replan awareness: if a prior plan exists, tell the model what was actually
     # done recently so the regenerated plan restarts from reality, not the paper
     # plan (plan-generator skill: pass the real completed history).
-    progress = await plan_progress.compute_progress(db, user_id)
+    progress = await plan_progress.compute_progress(db, user_id, fitness=fitness)
     if progress.has_plan:
         context["progression_recente"] = {
             "seances_cles_prevues_14j": progress.recent_key_planned,

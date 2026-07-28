@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.models.fitness import FitnessResponse
 from app.models.plan import (
     QUALITY_SESSION_TYPES,
     WEEKDAY_ORDER,
@@ -38,9 +39,12 @@ def _plan_start_date(doc: dict, today: date) -> date:
     return base - timedelta(days=base.weekday())
 
 
-async def compute_progress(db: AsyncIOMotorDatabase, user_id: str) -> PlanProgress:
+async def compute_progress(
+    db: AsyncIOMotorDatabase, user_id: str, fitness: FitnessResponse | None = None
+) -> PlanProgress:
     today = datetime.now(UTC).date()
-    fitness = await fitness_service.compute_fitness(db, user_id)
+    if fitness is None:
+        fitness = await fitness_service.compute_fitness(db, user_id)
     tsb = fitness.tsb
 
     doc = await db.plans.find_one(
