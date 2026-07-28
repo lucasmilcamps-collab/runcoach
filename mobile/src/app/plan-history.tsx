@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { Icon } from '@/components/icon';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
 import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
@@ -72,7 +73,10 @@ function VersionRow({ version, isActive }: { version: PlanVersionSummary; isActi
         })
       }>
       <View style={styles.rowTop}>
-        <ThemedText type="default">Version {version.version}  ▸</ThemedText>
+        <View style={styles.versionLabel}>
+          <ThemedText type="default">Version {version.version}</ThemedText>
+          <Icon name="chevron-right" size={16} color={Colors.textSecondary} />
+        </View>
         {isActive ? (
           <ThemedText type="waypointLabel" themeColor="blaze">
             Actif
@@ -122,5 +126,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  versionLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
   },
 });

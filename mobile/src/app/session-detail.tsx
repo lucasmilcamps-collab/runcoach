@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
+import { Icon } from '@/components/icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
@@ -141,7 +142,7 @@ export default function SessionDetailScreen() {
               accessibilityLabel="Retour"
               hitSlop={8}
               style={pressable(styles.iconBtn)}>
-              <ThemedText type="default">←</ThemedText>
+              <Icon name="arrow-left" size={22} />
             </Pressable>
           </View>
           <ThemedText type="waypointLabel" themeColor="textSecondary">

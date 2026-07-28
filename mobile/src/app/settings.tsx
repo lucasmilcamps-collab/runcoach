@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Icon } from '@/components/icon';
 import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
@@ -30,7 +31,7 @@ export default function SettingsScreen() {
               accessibilityLabel="Retour"
               hitSlop={8}
               style={pressable(styles.iconBtn)}>
-              <ThemedText type="default">←</ThemedText>
+              <Icon name="arrow-left" size={22} />
             </Pressable>
           </View>
 
@@ -129,11 +130,7 @@ function SettingRow({
           </ThemedText>
         ) : null}
       </View>
-      {!danger ? (
-        <ThemedText type="default" themeColor="textSecondary">
-          ›
-        </ThemedText>
-      ) : null}
+      {!danger ? <Icon name="chevron-right" size={20} color={Colors.textSecondary} /> : null}
     </Pressable>
   );
 }

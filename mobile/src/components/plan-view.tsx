@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DifficultyBolts } from '@/components/difficulty-bolts';
+import { Icon } from '@/components/icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
@@ -149,9 +150,11 @@ function NavArrow({
       accessibilityLabel={dir === 'prev' ? 'Semaine précédente' : 'Semaine suivante'}
       hitSlop={8}
       style={pressable([styles.navArrow, disabled && styles.navArrowDisabled])}>
-      <ThemedText type="subtitle" themeColor={disabled ? 'textSecondary' : 'text'}>
-        {dir === 'prev' ? '‹' : '›'}
-      </ThemedText>
+      <Icon
+        name={dir === 'prev' ? 'chevron-left' : 'chevron-right'}
+        size={24}
+        color={disabled ? Colors.textSecondary : Colors.text}
+      />
     </Pressable>
   );
 }
@@ -236,9 +239,7 @@ function SessionCard({
             {DAY_LABELS[session.day]} · Séance {position}/{total}
           </ThemedText>
         </View>
-        <ThemedText type="default" themeColor="textSecondary">
-          ›
-        </ThemedText>
+        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
       </View>
 
       <ThemedText type="subtitle">{SESSION_LABELS[session.type]}</ThemedText>

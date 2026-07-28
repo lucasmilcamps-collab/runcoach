@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
+import { Icon } from '@/components/icon';
 import { PlanWeekPager } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
@@ -141,10 +142,11 @@ export default function PlanScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Historique des versions du plan"
                 hitSlop={8}
-                style={pressable(undefined)}>
+                style={pressable(styles.historyLink)}>
                 <ThemedText type="waypointLabel" themeColor="blaze">
-                  Historique ›
+                  Historique
                 </ThemedText>
+                <Icon name="chevron-right" size={16} color={Colors.blaze} />
               </Pressable>
             </View>
           ) : null}
@@ -334,6 +336,11 @@ const styles = StyleSheet.create({
   historyRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+  },
+  historyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
   },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   actions: {

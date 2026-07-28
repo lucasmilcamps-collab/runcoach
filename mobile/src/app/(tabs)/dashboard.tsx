@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
+import { Icon } from '@/components/icon';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
@@ -289,10 +290,14 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
       <View style={styles.activityRowTop}>
         <View style={styles.activityRowMain}>
           <View style={styles.activityLabelRow}>
-            <ThemedText type="default">
-              {activityLabel(activity)}
-              {hasDetail ? (open ? '  ▾' : '  ▸') : ''}
-            </ThemedText>
+            <ThemedText type="default">{activityLabel(activity)}</ThemedText>
+            {hasDetail ? (
+              <Icon
+                name={open ? 'chevron-down' : 'chevron-right'}
+                size={16}
+                color={Colors.textSecondary}
+              />
+            ) : null}
             {activity.manual ? (
               <ThemedText type="waypointLabel" themeColor="hydro">
                 Manuel
