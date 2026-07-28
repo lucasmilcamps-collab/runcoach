@@ -317,17 +317,21 @@ def _counts_directive(request: PlanRequest) -> str:
         f"Marque EXACTEMENT {lo} en priority='key', le reste en 'optional'.",
     ]
     if request.fixed_sports:
-        by_sport: dict[str, list[str]] = {}
+        fixed: dict[str, list[str]] = {}
+        flexible: dict[str, list[str]] = {}
         for fs in request.fixed_sports:
-            by_sport.setdefault(fs.sport.value, []).append(fs.day.value)
+            (flexible if fs.flexible else fixed).setdefault(fs.sport.value, []).append(fs.day.value)
         parts = []
-        for sport, days in by_sport.items():
-            flex = any(f.flexible for f in request.fixed_sports if f.sport.value == sport)
-            when = ("l'un de " if flex else "") + ", ".join(days)
-            parts.append(f"{sport} ({when})")
+        for sport in {*fixed, *flexible}:
+            segs = []
+            if fixed.get(sport):
+                segs.append(", ".join(fixed[sport]) + " (jour(s) fixe(s))")
+            if flexible.get(sport):
+                segs.append("un de " + "/".join(flexible[sport]))
+            parts.append(f"{sport} : " + " + ".join(segs))
         lines.append(
-            "- Sports fixes présents CHAQUE semaine, SANS EXCEPTION (y compris deload "
-            "et taper) : " + " ; ".join(parts) + "."
+            "- Sports fixes présents CHAQUE semaine, SANS EXCEPTION (deload et taper "
+            "compris) : " + " ; ".join(parts) + "."
         )
     return "\n".join(lines) + "\n"
 

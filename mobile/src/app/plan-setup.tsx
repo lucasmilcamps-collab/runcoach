@@ -14,7 +14,9 @@ import type { SportType } from '@/lib/api/types';
 import { pressable } from '@/lib/pressable';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
-type FixedEntry = { days: Set<Weekday>; flexible: boolean };
+// Per sport: day → isFlexible. Flexibility is per DAY (e.g. basket Wed fixed +
+// a match one of Fri/Sat/Sun), matching the backend's fixed/flexible split.
+type FixedDays = Map<Weekday, boolean>;
 
 const FIXED_SPORT_OPTIONS: { sport: SportType; label: string }[] = [
   { sport: 'PADEL', label: 'Padel' },
@@ -57,6 +59,34 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   );
 }
 
+function DayChip({
+  label,
+  state,
+  onPress,
+}: {
+  label: string;
+  state: 'off' | 'fixed' | 'flexible';
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: state !== 'off' }}
+      style={pressable([
+        styles.chip,
+        state === 'fixed' && styles.chipSelected,
+        state === 'flexible' && styles.chipFlexible,
+      ])}>
+      <ThemedText
+        type="default"
+        themeColor={state === 'fixed' ? 'background' : state === 'flexible' ? 'hydro' : 'text'}>
+        {state === 'flexible' ? `≈ ${label}` : label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function objectiveIndexFor(request: PlanRequest | null): number {
   if (!request) return 1;
   if (request.goal_type === 'fitness') return OBJECTIVES.findIndex((o) => o.goal === 'fitness');
@@ -64,13 +94,12 @@ function objectiveIndexFor(request: PlanRequest | null): number {
   return match >= 0 ? match : 1;
 }
 
-function groupFixed(request: PlanRequest | null): Map<SportType, FixedEntry> {
-  const map = new Map<SportType, FixedEntry>();
+function groupFixed(request: PlanRequest | null): Map<SportType, FixedDays> {
+  const map = new Map<SportType, FixedDays>();
   for (const f of request?.fixed_sports ?? []) {
-    const entry = map.get(f.sport) ?? { days: new Set<Weekday>(), flexible: false };
-    entry.days.add(f.day);
-    if (f.flexible) entry.flexible = true;
-    map.set(f.sport, entry);
+    const days = map.get(f.sport) ?? new Map<Weekday, boolean>();
+    days.set(f.day, f.flexible);
+    map.set(f.sport, days);
   }
   return map;
 }
@@ -89,7 +118,7 @@ export default function PlanSetupScreen() {
   const [crossTraining, setCrossTraining] = useState(prefill?.include_cross_training ?? false);
   const [strengthOn, setStrengthOn] = useState(prefill?.strength?.enabled ?? false);
   const [strengthPerWeek, setStrengthPerWeek] = useState(prefill?.strength?.sessions_per_week ?? 1);
-  const [fixedSports, setFixedSports] = useState<Map<SportType, FixedEntry>>(groupFixed(prefill));
+  const [fixedSports, setFixedSports] = useState<Map<SportType, FixedDays>>(groupFixed(prefill));
   const [dateError, setDateError] = useState<string | undefined>();
 
   const objective = OBJECTIVES[objectiveIndex];
@@ -103,23 +132,17 @@ export default function PlanSetupScreen() {
     if (n < minRuns) setMinRuns(n);
   }
 
-  function toggleFixedDay(sport: SportType, day: Weekday) {
+  // Cycle a day through: unset → fixed → flexible → unset.
+  function cycleFixedDay(sport: SportType, day: Weekday) {
     setFixedSports((prev) => {
       const next = new Map(prev);
-      const entry = { ...(next.get(sport) ?? { days: new Set<Weekday>(), flexible: false }) };
-      entry.days = new Set(entry.days);
-      if (entry.days.has(day)) entry.days.delete(day);
-      else entry.days.add(day);
-      if (entry.days.size === 0) next.delete(sport);
-      else next.set(sport, entry);
-      return next;
-    });
-  }
-  function toggleFlexible(sport: SportType) {
-    setFixedSports((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(sport);
-      if (entry) next.set(sport, { ...entry, flexible: !entry.flexible });
+      const days = new Map(next.get(sport) ?? new Map<Weekday, boolean>());
+      const state = days.get(day);
+      if (state === undefined) days.set(day, false); // fixed
+      else if (state === false) days.set(day, true); // flexible
+      else days.delete(day); // off
+      if (days.size === 0) next.delete(sport);
+      else next.set(sport, days);
       return next;
     });
   }
@@ -152,8 +175,8 @@ export default function PlanSetupScreen() {
 
     const hasDate = trimmedDate.length > 0 && objective.goal !== 'fitness';
     const fixed: FixedSport[] = [];
-    for (const [sport, entry] of fixedSports) {
-      for (const day of entry.days) fixed.push({ sport, day, flexible: entry.flexible });
+    for (const [sport, days] of fixedSports) {
+      for (const [day, flexible] of days) fixed.push({ sport, day, flexible });
     }
     const request: PlanRequest = {
       goal_type: hasDate ? 'race' : objective.goal,
@@ -300,30 +323,24 @@ export default function PlanSetupScreen() {
           <Field label="Sports fixes (optionnel)">
             <ThemedText type="small" themeColor="textSecondary">
               Un sport récurrent : le plan est construit autour (pas de séance intense le lendemain).
-              Choisis un ou plusieurs jours ; « jour variable » si le créneau change (ex. match du
-              week-end).
+              Appuie sur un jour pour le rendre <ThemedText themeColor="blaze">fixe</ThemedText>, encore
+              une fois pour <ThemedText themeColor="hydro">variable</ThemedText> (un des jours variables
+              suffit, ex. le match du week-end), encore une fois pour l’enlever.
             </ThemedText>
             {FIXED_SPORT_OPTIONS.map((option) => {
-              const entry = fixedSports.get(option.sport);
+              const days = fixedSports.get(option.sport);
               return (
                 <View key={option.sport} style={styles.fixedRow}>
-                  <View style={styles.fixedHead}>
-                    <ThemedText type="default">{option.label}</ThemedText>
-                    {entry ? (
-                      <Chip
-                        label="Jour variable"
-                        selected={entry.flexible}
-                        onPress={() => toggleFlexible(option.sport)}
-                      />
-                    ) : null}
-                  </View>
+                  <ThemedText type="default" style={styles.fixedLabel}>
+                    {option.label}
+                  </ThemedText>
                   <View style={styles.chipRow}>
                     {DAYS.map((d) => (
-                      <Chip
+                      <DayChip
                         key={d.value}
                         label={d.label}
-                        selected={entry?.days.has(d.value) ?? false}
-                        onPress={() => toggleFixedDay(option.sport, d.value)}
+                        state={days?.has(d.value) ? (days.get(d.value) ? 'flexible' : 'fixed') : 'off'}
+                        onPress={() => cycleFixedDay(option.sport, d.value)}
                       />
                     ))}
                   </View>
@@ -386,12 +403,7 @@ const styles = StyleSheet.create({
   dualRow: { flexDirection: 'row', gap: Spacing.four, flexWrap: 'wrap' },
   dualCol: { gap: Spacing.two },
   fixedRow: { gap: Spacing.one, paddingTop: Spacing.two },
-  fixedHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.half,
-  },
+  fixedLabel: { marginBottom: Spacing.half },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
     minHeight: 44,
@@ -406,6 +418,10 @@ const styles = StyleSheet.create({
   chipSelected: {
     backgroundColor: Colors.blaze,
     borderColor: Colors.blaze,
+  },
+  chipFlexible: {
+    borderColor: Colors.hydro,
+    backgroundColor: Colors.backgroundElement,
   },
   actions: {
     gap: Spacing.two,

@@ -107,17 +107,22 @@ def _check_deload(weeks: list[Week]) -> list[str]:
 
 
 def _check_fixed_sports(weeks: list[Week], request: PlanRequest) -> list[str]:
+    """Flexibility is per DAY, not per sport, so a sport can mix both — e.g.
+    basket = Wednesday training (fixed, exact day) + a match one of Fri/Sat/Sun
+    (flexible pool). Fixed days must each appear every week; the flexible pool
+    needs at least one of its days each week. The two are independent."""
     violations: list[str] = []
-    # A sport can be fixed on several days (e.g. basket Wed AND Sat) — keyed by a
-    # set, not a single day, so the second declaration no longer overwrites the first.
-    fixed_days: dict[SportType, set[Weekday]] = defaultdict(set)
+    fixed_days: dict[SportType, set[Weekday]] = defaultdict(set)  # each must appear
+    flexible_days: dict[SportType, set[Weekday]] = defaultdict(set)  # one must appear
+    all_days: dict[SportType, set[Weekday]] = defaultdict(set)
     for fs in request.fixed_sports:
-        fixed_days[fs.sport].add(fs.day)
+        (flexible_days if fs.flexible else fixed_days)[fs.sport].add(fs.day)
+        all_days[fs.sport].add(fs.day)
 
-    # 1. A fixed sport that appears must be on one of its declared days.
+    # 1. A fixed sport that appears must land on one of its declared days.
     for week in weeks:
         for session in week.sessions:
-            days = fixed_days.get(session.sport)
+            days = all_days.get(session.sport)
             if days is not None and session.day not in days:
                 expected = ", ".join(sorted(d.value for d in days))
                 violations.append(
@@ -125,31 +130,24 @@ def _check_fixed_sports(weeks: list[Week], request: PlanRequest) -> list[str]:
                     f"attendu {expected} (contrainte fixe)."
                 )
 
-    # A sport is treated as flexible if any of its declarations is flexible: it
-    # only needs one of its declared days per week, not all of them.
-    flexible_sports = {fs.sport for fs in request.fixed_sports if fs.flexible}
-
-    # 2. Presence: each declared (sport, day) must appear in every week — unless
-    #    the sport is flexible, where one of its declared days per week suffices.
+    # 2. Presence, per week.
     for week in weeks:
         present: dict[SportType, set[Weekday]] = defaultdict(set)
         for session in week.sessions:
             present[session.sport].add(session.day)
         for sport, days in fixed_days.items():
-            if sport in flexible_sports:
-                if not (present[sport] & days):
-                    expected = ", ".join(sorted(d.value for d in days))
+            for day in days:
+                if day not in present[sport]:
                     violations.append(
-                        f"Semaine {week.index} : {sport} absent (attendu l'un de "
-                        f"{expected}, contrainte fixe)."
+                        f"Semaine {week.index} : {sport} manquant le {day} (contrainte fixe)."
                     )
-            else:
-                for day in days:
-                    if day not in present[sport]:
-                        violations.append(
-                            f"Semaine {week.index} : {sport} manquant le {day} "
-                            "(contrainte fixe)."
-                        )
+        for sport, days in flexible_days.items():
+            if not (present[sport] & days):
+                expected = ", ".join(sorted(d.value for d in days))
+                violations.append(
+                    f"Semaine {week.index} : {sport} absent (attendu l'un de "
+                    f"{expected}, contrainte fixe)."
+                )
     return violations
 
 

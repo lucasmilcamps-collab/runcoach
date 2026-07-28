@@ -364,3 +364,39 @@ def test_flexible_fixed_sport_one_day_ok():
     )
     violations = plan_validation.validate_plan(plan, request, TODAY)
     assert not any("contrainte fixe" in v for v in violations)
+
+
+def test_fixed_and_flexible_days_same_sport():
+    """Basket = Wednesday training (fixed) + a match one of Fri/Sat/Sun (flexible)."""
+    request = _valid_request(
+        fixed_sports=[
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.WEDNESDAY, flexible=False),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY, flexible=True),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.SATURDAY, flexible=True),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.SUNDAY, flexible=True),
+        ]
+    )
+
+    def basket(day: Weekday) -> Session:
+        return _s(day, "cross_training", 90, sport=SportType.BASKETBALL)
+
+    # Wed + Sat each week → satisfies the fixed day and the flexible pool.
+    ok = _valid_plan()
+    for week in ok.phases[0].weeks:
+        week.sessions.append(basket(Weekday.WEDNESDAY))
+        week.sessions.append(basket(Weekday.SUNDAY))
+    assert not any(
+        "contrainte fixe" in v for v in plan_validation.validate_plan(ok, request, TODAY)
+    )
+
+    # Missing Wednesday → fixed-day violation.
+    no_wed = _valid_plan()
+    for week in no_wed.phases[0].weeks:
+        week.sessions.append(basket(Weekday.SATURDAY))
+    assert any("manquant" in v for v in plan_validation.validate_plan(no_wed, request, TODAY))
+
+    # Wednesday only, no match → flexible-pool violation.
+    no_match = _valid_plan()
+    for week in no_match.phases[0].weeks:
+        week.sessions.append(basket(Weekday.WEDNESDAY))
+    assert any("absent" in v for v in plan_validation.validate_plan(no_match, request, TODAY))
