@@ -81,13 +81,17 @@ Le champ `rationale` est obligatoire : il alimente la transparence côté UI.
 
 Retourne la liste des violations (vide = valide) :
 
-1. Rampe : `target_load` hebdo n'augmente jamais de > 10 % (deload exclu de la comparaison ; après deload, on compare à la dernière semaine normale).
-2. Deload : au moins 1 semaine `is_deload` par bloc de 4 semaines.
-3. Contraintes dures : chaque `FixedSport` apparaît au bon jour ; aucune séance course qualitative (tempo/threshold/intervals) le lendemain d'un sport à impacts.
-4. Taper : dernière(s) semaine(s) avec charge décroissante, course le jour J.
-5. Sortie longue : progression ≤ 15 min/sem, plafond selon la distance objectif.
-6. Max 2 séances de qualité course/semaine ; jamais 2 jours de qualité consécutifs.
-7. Cohérence calendrier : nombre de semaines = temps jusqu'à `race_date` ; jours dans `weekly_availability`.
+1. Rampe : `target_load` hebdo n'augmente jamais de > 10 % (deload exclu de la comparaison ; après deload, on compare à la dernière semaine **normale**).
+2. Charge initiale (si `context.avg_weekly_load_4w` dispo et non nul) : `weeks[0].target_load` ≤ charge réelle récente × 1,10 — plafond seulement, jamais plancher (une reprise démarre plus bas, c'est conforme).
+3. Deload : ≥ 1 `is_deload` par bloc de 4 semaines ; une semaine deload doit réellement réduire la charge (≤ 85 % de la dernière normale) ; un plan tout-deload est refusé.
+4. Contraintes dures : chaque `FixedSport` apparaît **chaque semaine** sur l'un de ses jours déclarés (multi-jours géré) ; aucune séance course qualitative (tempo/threshold/intervals) le lendemain d'un sport à impacts (frontière dimanche→lundi incluse).
+5. Nombre de séances course : ≤ `max_run_sessions_per_week` par semaine (min/max complet au lot 3).
+6. Taper : dernière(s) semaine(s) avec charge décroissante, course le jour J.
+7. Sortie longue : progression ≤ 15 min/sem vs la dernière semaine **normale**, plafond absolu selon la distance objectif (appliqué à toutes les semaines).
+8. Max 2 séances de qualité course/semaine ; jamais 2 jours de qualité consécutifs (frontière dimanche→lundi incluse).
+9. Cohérence calendrier : nombre de semaines = temps jusqu'à `race_date` ; jours dans `available_days`.
+
+`validate_plan(plan, request, today, context=None)` : `context` (le dict `build_context`) est optionnel ; il active la règle 2.
 
 En cas d'échec : renvoyer les violations dans le message de retry ("Le plan viole : …, corrige uniquement ces points").
 

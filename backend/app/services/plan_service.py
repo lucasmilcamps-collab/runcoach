@@ -187,6 +187,11 @@ def _system_prompt() -> str:
         "- Maximum 2 séances de qualité (tempo/threshold/intervals) par semaine, "
         "jamais deux jours de qualité consécutifs.\n"
         "- La sortie longue progresse d'au plus 15 min par semaine.\n"
+        "- Respecte `max_run_sessions_per_week` : jamais plus de ce nombre de "
+        "séances de COURSE par semaine (les autres sports et le repos ne comptent pas).\n"
+        "- La charge de la semaine 1 (target_load) reste proche de la charge réelle "
+        "récente `avg_weekly_load_4w` (au plus +10%) : on démarre là où en est "
+        "l'athlète, pas à l'objectif.\n"
         "- Les sports fixes de l'utilisateur apparaissent le bon jour ; aucune "
         "séance de qualité le lendemain d'un sport à impacts (padel, basket).\n"
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
@@ -375,7 +380,7 @@ async def _generate_valid_plan(
             feedback = last_problem + ". Renvoie un JSON strictement conforme au schéma."
             history.append((raw, feedback))
             continue
-        violations = plan_validation.validate_plan(plan, request, today)
+        violations = plan_validation.validate_plan(plan, request, today, context)
         if not violations:
             return plan
         last_problem = " ; ".join(violations)

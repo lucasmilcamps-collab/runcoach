@@ -23,6 +23,7 @@ from app.models.plan import (
 )
 
 RAMP_MAX_RATIO = 1.10  # weekly load never grows more than 10%
+INITIAL_RAMP_MAX_RATIO = 1.10  # week 1 vs the athlete's real recent load
 DELOAD_MAX_RATIO = 0.85  # a deload week is at most 85% of the last normal week
 MAX_CONSECUTIVE_NORMAL_WEEKS = 3  # ≥1 deload per 4-week block
 MAX_QUALITY_PER_WEEK = 2
@@ -240,6 +241,38 @@ def _check_quality_spacing(weeks: list[Week]) -> list[str]:
     return violations
 
 
+def _check_initial_load(weeks: list[Week], context: dict | None) -> list[str]:
+    """The most dangerous jump in a plan is the join between the athlete's real
+    current load and week 1 — _check_ramp only guards ramps *inside* the plan.
+    A ceiling only (never a floor): starting below the real load is fine
+    (e.g. an injury comeback)."""
+    if not context:
+        return []
+    baseline = context.get("avg_weekly_load_4w")
+    if not baseline or baseline <= 0:  # no reliable recent load → nothing to anchor to
+        return []
+    first = weeks[0].target_load
+    if first > baseline * INITIAL_RAMP_MAX_RATIO:
+        pct = (first / baseline - 1) * 100
+        return [
+            f"Semaine 1 : charge {first:.0f} TRIMP, +{pct:.0f}% au-dessus de la charge "
+            f"réelle récente ({baseline:.0f}) — départ trop haut (≤ +10% attendu)."
+        ]
+    return []
+
+
+def _check_run_sessions_max(weeks: list[Week], request: PlanRequest) -> list[str]:
+    violations: list[str] = []
+    limit = request.max_run_sessions_per_week
+    for week in weeks:
+        runs = sum(1 for s in week.sessions if s.sport == SportType.RUN and s.type != "rest")
+        if runs > limit:
+            violations.append(
+                f"Semaine {week.index} : {runs} séances de course (max {limit} demandé)."
+            )
+    return violations
+
+
 def _check_calendar(weeks: list[Week], request: PlanRequest, today: date) -> list[str]:
     violations: list[str] = []
     allowed_days = set(request.available_days) | {fs.day for fs in request.fixed_sports}
@@ -261,16 +294,24 @@ def _check_calendar(weeks: list[Week], request: PlanRequest, today: date) -> lis
     return violations
 
 
-def validate_plan(plan: Plan, request: PlanRequest, today: date) -> list[str]:
-    """Return every rule violation (empty list = the plan may be persisted)."""
+def validate_plan(
+    plan: Plan, request: PlanRequest, today: date, context: dict | None = None
+) -> list[str]:
+    """Return every rule violation (empty list = the plan may be persisted).
+
+    `context` is the build_context dict; when present it anchors week 1's load
+    on the athlete's real recent load. Optional so existing callers/tests keep
+    working unchanged."""
     weeks = _flatten_weeks(plan)
     if not weeks:
         return ["Le plan ne contient aucune semaine."]
 
     violations: list[str] = []
     violations += _check_ramp(weeks)
+    violations += _check_initial_load(weeks, context)
     violations += _check_deload(weeks)
     violations += _check_fixed_sports(weeks, request)
+    violations += _check_run_sessions_max(weeks, request)
     violations += _check_no_quality_after_impact(weeks)
     violations += _check_taper(weeks, request)
     violations += _check_long_run(weeks, request)

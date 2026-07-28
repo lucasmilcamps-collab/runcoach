@@ -282,3 +282,27 @@ def test_missing_fixed_sport_flagged():
     request = _valid_request(fixed_sports=[FixedSport(sport=SportType.BIKE, day=Weekday.WEDNESDAY)])
     violations = plan_validation.validate_plan(plan, request, TODAY)
     assert any("manquant" in v for v in violations)
+
+
+# --- Lot 2: anchor initial load + run-session cap ---
+
+
+def test_initial_load_above_real_load_flagged():
+    plan = _valid_plan()  # week 1 target_load = 100
+    context = {"avg_weekly_load_4w": 80.0}  # real load 80 → ceiling 88
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY, context)
+    assert any("trop haut" in v for v in violations)
+
+
+def test_initial_load_check_skipped_without_context():
+    plan = _valid_plan()
+    assert plan_validation.validate_plan(plan, _valid_request(), TODAY) == []
+    zero = {"avg_weekly_load_4w": 0.0}
+    assert plan_validation.validate_plan(plan, _valid_request(), TODAY, zero) == []
+
+
+def test_too_many_run_sessions_flagged():
+    plan = _valid_plan()  # weeks 1-3 have 3 run sessions each
+    request = _valid_request(max_run_sessions_per_week=2)
+    violations = plan_validation.validate_plan(plan, request, TODAY)
+    assert any("séances de course" in v for v in violations)
