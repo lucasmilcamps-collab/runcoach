@@ -140,6 +140,11 @@ A training week mixes running with padel, basket, vélo and renfo, and the athle
 
 Cross-training is never visually subordinated to running: same card, same weight, different glyph and name. It is load, not noise.
 
+### Action footers
+A screen gets **one** full-width blaze button — the commitment it exists for. Everything else that happens to be actionable shares a single compact ghost row (44pt, sized to the row). Stacking every action as its own full-width block makes them all look equally important and buries the one that matters; it also grows without limit as features are added.
+
+Before adding a button, check it isn't already reachable: a "Voir la semaine" action that only calls `back()` duplicates the header's back arrow and earns nothing.
+
 ### Chips / Segmented controls
 Selectable chips (objectives, weekdays, durations, RPE, days-off) share one component. **Selected is an outline, not a fill:** 1.5px accent border, accent text, semibold weight, on the `backgroundSelected` tone. The setup forms show a dozen chips at once — filling each one with Trail Blaze drowned the screen's primary button in orange, which is exactly what The One Blaze Rule exists to prevent. The single blaze *fill* on a form belongs to its CTA. Selection never rests on color alone (border + text + weight, plus `accessibilityState`), and the plan-setup "variable day" state takes the Hydro tone with an `≈` prefix so the two selected states are distinguishable without color.
 

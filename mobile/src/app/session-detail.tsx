@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
+import { Chip } from '@/components/chip';
 import { Icon } from '@/components/icon';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -360,53 +361,102 @@ export default function SessionDetailScreen() {
           label={linked ? 'Changer l’activité liée' : 'J’ai fait cette séance'}
           onPress={openPicker}
         />
-        {session.sport === 'RUN' ? (
-          <Button
-            label={pushMutation.isSuccess ? 'Envoyée sur Garmin ✓' : 'Envoyer vers ma montre'}
-            variant="ghost"
-            loading={pushMutation.isPending}
-            disabled={pushMutation.isSuccess}
-            onPress={() =>
-              pushMutation.mutate({
-                session_type: session.type,
-                duration_min: session.duration_min,
-                structure: session.structure,
-                pace_range: session.pace_range,
-                hr_zone: session.hr_zone,
-                rationale: session.rationale,
-                week_number: weekNumber,
-              })
-            }
+
+        {/* The two real secondary actions share one compact row. Stacking every
+            action as a full-width 52pt block gave four bars of identical weight
+            and buried the one commitment among them. */}
+        <View style={styles.utilityRow}>
+          {session.sport === 'RUN' ? (
+            <UtilityAction
+              label={pushMutation.isSuccess ? 'Envoyée ✓' : 'Vers ma montre'}
+              busy={pushMutation.isPending}
+              disabled={pushMutation.isSuccess}
+              onPress={() =>
+                pushMutation.mutate({
+                  session_type: session.type,
+                  duration_min: session.duration_min,
+                  structure: session.structure,
+                  pace_range: session.pace_range,
+                  hr_zone: session.hr_zone,
+                  rationale: session.rationale,
+                  week_number: weekNumber,
+                })
+              }
+            />
+          ) : null}
+          <UtilityAction
+            label={moving ? 'Annuler' : 'Déplacer'}
+            selected={moving}
+            onPress={() => setMoving((v) => !v)}
           />
-        ) : null}
+        </View>
+
         {moving ? (
           <View style={styles.moveRow}>
             {WEEKDAYS.map((d) => {
               const current = d === session.day;
               return (
-                <Pressable
+                <Chip
                   key={d}
+                  label={DAY_LABELS[d]}
+                  selected={current}
                   disabled={moveMutation.isPending || current}
+                  fill
                   onPress={() => moveMutation.mutate(d)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Déplacer à ${DAY_LABELS[d]}`}
-                  style={pressable([styles.dayChip, current && styles.dayChipCurrent])}>
-                  <ThemedText type="small" themeColor={current ? 'background' : 'text'}>
-                    {DAY_LABELS[d]}
-                  </ThemedText>
-                </Pressable>
+                  accessibilityLabel={
+                    current ? `${DAY_LABELS[d]}, jour actuel` : `Déplacer à ${DAY_LABELS[d]}`
+                  }
+                />
               );
             })}
           </View>
         ) : null}
-        <Button
-          label={moving ? 'Annuler le déplacement' : 'Déplacer la séance'}
-          variant="ghost"
-          onPress={() => setMoving((v) => !v)}
-        />
-        <Button label="Voir la semaine" variant="ghost" onPress={() => router.back()} />
+        {/* No "Voir la semaine" button: it called router.back(), which is
+            exactly what the back arrow in the header already does. */}
       </View>
     </SafeAreaView>
+  );
+}
+
+/** A secondary action in the footer's compact row: ghost, 44pt, sized to share
+ * the row. Deliberately lighter than `Button` — the screen's one full-width
+ * blaze commitment is "J'ai fait cette séance" (DESIGN.md, The One Blaze Rule). */
+function UtilityAction({
+  label,
+  onPress,
+  busy = false,
+  disabled = false,
+  selected = false,
+}: {
+  label: string;
+  onPress: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  selected?: boolean;
+}) {
+  const isDisabled = disabled || busy;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: isDisabled, busy, selected }}
+      style={pressable([
+        styles.utilityAction,
+        selected && styles.utilityActionSelected,
+        isDisabled && styles.utilityActionDisabled,
+      ])}>
+      {busy ? (
+        <ActivityIndicator color={Colors.text} />
+      ) : (
+        <ThemedText
+          type="small"
+          themeColor={selected ? 'blaze' : isDisabled ? 'textSecondary' : 'text'}>
+          {label}
+        </ThemedText>
+      )}
+    </Pressable>
   );
 }
 
@@ -544,27 +594,32 @@ const styles = StyleSheet.create({
   pushMessage: {
     paddingBottom: Spacing.one,
   },
-  moveRow: {
+  utilityRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing.two,
-    justifyContent: 'center',
-    paddingBottom: Spacing.one,
   },
-  dayChip: {
-    minWidth: 44,
-    minHeight: 40,
-    paddingHorizontal: Spacing.two,
+  utilityAction: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
     borderRadius: Rounded.sm,
     borderWidth: 1,
     borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  dayChipCurrent: {
-    backgroundColor: Colors.blaze,
+  utilityActionSelected: {
+    borderWidth: 1.5,
     borderColor: Colors.blaze,
+    backgroundColor: Colors.backgroundSelected,
+  },
+  utilityActionDisabled: {
+    borderColor: Colors.contourFaint,
+  },
+  moveRow: {
+    flexDirection: 'row',
+    gap: Spacing.one,
+    paddingTop: Spacing.one,
   },
   linkedCard: {
     marginHorizontal: Spacing.four,
