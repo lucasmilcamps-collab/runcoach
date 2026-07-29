@@ -11,6 +11,7 @@ import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
+import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
@@ -111,6 +112,10 @@ export default function DashboardScreen() {
               weekCurrent={weekCurrent}
               weeksTotal={weeksTotal}
             />
+          ) : null}
+
+          {weekProgress.sports.length > 0 ? (
+            <WeekSportStrip sports={weekProgress.sports} />
           ) : null}
 
           {hasPlan && weeksTotal ? (

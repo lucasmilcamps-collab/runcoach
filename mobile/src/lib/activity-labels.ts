@@ -46,6 +46,11 @@ const GARMIN_TYPE_LABELS: Record<string, string> = {
   multi_sport: 'Multisport',
 };
 
+/** Short sport name (manual/fallback label by sport type). */
+export function sportLabel(sport: SportType): string {
+  return SPORT_LABELS[sport] ?? 'Activité';
+}
+
 function prettifyKey(key: string): string {
   const words = key.replace(/_/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
