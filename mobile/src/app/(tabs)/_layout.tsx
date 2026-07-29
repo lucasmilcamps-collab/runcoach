@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
@@ -26,10 +27,13 @@ export default function TabsLayout() {
         tabBarIconStyle: { display: 'none' },
         tabBarActiveTintColor: Colors.blaze,
         tabBarInactiveTintColor: Colors.textSecondary,
-        tabBarLabelStyle: {
-          fontSize: 15,
-          fontWeight: '600',
-        },
+        // The active tab must not rely on color alone (WCAG 1.4.1): the focused
+        // label also carries more weight, so it reads as active without color.
+        tabBarLabel: ({ focused, color, children }) => (
+          <Text style={{ fontSize: 15, fontWeight: focused ? '700' : '500', color }}>
+            {children}
+          </Text>
+        ),
         tabBarStyle: {
           backgroundColor: Colors.backgroundElement,
           borderTopColor: Colors.contour,
