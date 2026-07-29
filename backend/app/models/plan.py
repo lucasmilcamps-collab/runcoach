@@ -36,6 +36,21 @@ WEEKDAY_ORDER: tuple[Weekday, ...] = (
     Weekday.SUNDAY,
 )
 
+_WEEKDAY_INDEX: dict[Weekday, int] = {day: i for i, day in enumerate(WEEKDAY_ORDER)}
+
+
+def session_order_key(session: "Session") -> tuple[int, int]:
+    """Calendar order for a week's sessions: Monday first, and within a day the
+    primary session ahead of its add-on (a short strength block rides along).
+
+    The generator emits sessions in no particular order, so without this a
+    Thursday session could sit above a Wednesday one everywhere the plan is
+    read. Sorting on the model means it holds for freshly generated plans and
+    for the ones already stored in Mongo, with no migration.
+    """
+    return (_WEEKDAY_INDEX[session.day], 1 if session.slot == "addon" else 0)
+
+
 # Run sessions that carry real intensity — capped and never back-to-back.
 QUALITY_SESSION_TYPES: frozenset[str] = frozenset({"tempo", "threshold", "intervals"})
 # Cross-training sports with impact/soreness that shouldn't precede a hard run.
@@ -157,6 +172,14 @@ class Week(BaseModel):
     target_load: float  # weekly TRIMP target
     sessions: list[Session]
 
+    @field_validator("sessions")
+    @classmethod
+    def _calendar_order(cls, sessions: list[Session]) -> list[Session]:
+        """Normalise session order on the way in — see `session_order_key`.
+        Every validation rule reads the week by day rather than by position, so
+        reordering here changes presentation only, never the plan itself."""
+        return sorted(sessions, key=session_order_key)
+
 
 class Phase(BaseModel):
     name: Literal["base", "build", "peak", "taper"]
@@ -226,8 +249,7 @@ class RecoverySummary(BaseModel):
     @property
     def has_any(self) -> bool:
         return any(
-            v is not None
-            for v in (self.hrv, self.resting_hr, self.sleep_hours, self.body_battery)
+            v is not None for v in (self.hrv, self.resting_hr, self.sleep_hours, self.body_battery)
         )
 
 

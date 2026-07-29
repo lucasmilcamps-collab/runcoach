@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.models.plan import Plan, Weekday
+from app.models.plan import Plan, Weekday, session_order_key
 
 
 class NoActivePlanError(Exception):
@@ -47,10 +47,17 @@ def apply_moves(plan: Plan, moves: dict[int, dict[str, str]]) -> None:
             week_moves = moves.get(week.index)
             if not week_moves:
                 continue
+            moved = False
             for session in week.sessions:
                 target = week_moves.get(session.day.value)
                 if target is not None:
                     session.day = Weekday(target)
+                    moved = True
+            # Days changed in place, so the model validator that normalises
+            # order didn't re-run — re-sort or a moved session lands out of
+            # calendar order for the rest of the request.
+            if moved:
+                week.sessions.sort(key=session_order_key)
 
 
 async def move_session(
