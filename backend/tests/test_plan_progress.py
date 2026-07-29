@@ -5,8 +5,10 @@ from app.models.plan import Phase, Plan, PlanGoal, Session, Week, Weekday
 from app.services import plan_progress
 
 
-def _s(day: Weekday, stype: str) -> Session:
-    return Session(day=day, sport=SportType.RUN, type=stype, duration_min=50, rationale="x")
+def _s(day: Weekday, stype: str, priority: str = "key") -> Session:
+    return Session(
+        day=day, sport=SportType.RUN, type=stype, duration_min=50, priority=priority, rationale="x"
+    )
 
 
 async def _seed_user(db) -> str:
@@ -33,8 +35,13 @@ async def _seed_two_week_plan(db, user_id: str) -> tuple:
             _s(Weekday.FRIDAY, "threshold"),
         ],
     )
+    # Current-week filler is optional so it never counts as a key session
+    # regardless of today's weekday (keeps the window assertions date-stable).
     week1 = Week(
-        index=2, is_deload=False, target_load=108.0, sessions=[_s(Weekday.TUESDAY, "easy")]
+        index=2,
+        is_deload=False,
+        target_load=108.0,
+        sessions=[_s(Weekday.TUESDAY, "easy", priority="optional")],
     )
     plan = Plan(
         goal=PlanGoal(description="Test"), phases=[Phase(name="base", weeks=[week0, week1])]
@@ -159,7 +166,7 @@ async def test_optional_run_not_counted_as_key(db):
                 sport=SportType.RUN,
                 type="easy",
                 duration_min=40,
-                priority="key",
+                priority="optional",  # current-week filler, date-stable
                 rationale="x",
             )
         ],
@@ -180,3 +187,41 @@ async def test_optional_run_not_counted_as_key(db):
     assert progress.recent_key_planned == 1  # only the key long_run, not the optional easy
     assert progress.recent_key_missed == 1
     assert progress.replan_suggested is False  # 1 miss < 2-miss trigger
+
+
+async def test_completed_test_session_suggests_replan(db):
+    user_id = await _seed_user(db)
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=today.weekday()) - timedelta(days=7)  # last Monday
+
+    test_session = Session(
+        day=Weekday.MONDAY,
+        sport=SportType.RUN,
+        type="test",
+        duration_min=30,
+        priority="key",
+        rationale="mesure du niveau",
+    )
+    week1 = Week(index=1, is_deload=False, target_load=100.0, sessions=[test_session])
+    week2 = Week(
+        index=2,
+        is_deload=False,
+        target_load=105.0,
+        sessions=[_s(Weekday.TUESDAY, "easy", priority="optional")],
+    )
+    plan = Plan(goal=PlanGoal(description="T"), phases=[Phase(name="base", weeks=[week1, week2])])
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
+    await _seed_activity(db, user_id, start)  # the test was run on its planned day
+
+    progress = await plan_progress.compute_progress(db, user_id)
+    assert progress.replan_suggested is True
+    assert "test" in (progress.replan_reason or "").lower()

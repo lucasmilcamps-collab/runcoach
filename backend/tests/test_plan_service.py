@@ -662,3 +662,37 @@ async def test_generate_plan_computes_time_estimates(db):
 
     stored = await plan_service.get_current_plan(db, user_id)
     assert stored.estimated_time_min == result.estimated_time_min
+
+
+# --- Lot 5: test session ---
+
+
+def test_test_directive_toggles_on_needs_test():
+    assert "SÉANCE DE TEST" in plan_service._test_directive({"needs_test": True})
+    assert plan_service._test_directive({"needs_test": False}) == ""
+
+
+async def test_build_context_needs_test_without_history(db):
+    user_id = await _seed_user(db)  # no run activities at all
+    ctx = await plan_service.build_context(db, user_id, fitness=_stub_fitness())
+    assert ctx["needs_test"] is True  # no measurable recent effort
+
+
+async def test_build_context_no_test_with_recent_effort(db):
+    user_id = await _seed_user(db)
+    await _seed_run(db, user_id, 5, 25, distance_km=5.0)  # recent clean 5k
+    ctx = await plan_service.build_context(db, user_id, fitness=_stub_fitness())
+    assert ctx["needs_test"] is False
+
+
+async def test_no_history_puts_test_directive_in_prompt(db):
+    user_id = await _seed_user(db)  # no history → needs_test
+    create_mock = _create_mock(_mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+    prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "SÉANCE DE TEST" in prompt

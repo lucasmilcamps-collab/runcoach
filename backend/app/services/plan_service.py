@@ -156,7 +156,7 @@ async def build_context(
         if 0 <= weeks_ago <= 7:
             weekly_minutes[7 - weeks_ago] += minutes
 
-        if distance_m and distance_m >= 3000 and duration_s > 0:
+        if distance_m and distance_m >= 1500 and duration_s > 0:
             pace = duration_s / (distance_m / 1000)  # s/km — faster is better
             if best_pace_s is None or pace < best_pace_s:
                 best_pace_s = pace
@@ -178,6 +178,15 @@ async def build_context(
             "avg_pace_min_per_km": _avg_pace_min_per_km(latest["duration_s"], latest["distance_m"]),
         }
 
+    # A test session is warranted when there's no reliable performance to
+    # estimate from: no recent measurable effort, thin history, or a long layoff.
+    needs_test = (
+        best_effort is None
+        or fitness.low_confidence
+        or days_since_last_run is None
+        or days_since_last_run > 21
+    )
+
     weeks = _RUN_VOLUME_DAYS / 7
     return {
         "ctl": fitness.ctl,
@@ -193,7 +202,8 @@ async def build_context(
         "weekly_run_minutes_8w": weekly_minutes,
         "last_run": last_run,
         "longest_run_8w_min": longest_run_8w_min,
-        "best_recent_effort": best_effort,  # fastest ≥3km run in the window
+        "best_recent_effort": best_effort,  # fastest ≥1.5km run in the window
+        "needs_test": needs_test,
         "avg_weekly_load_4w": _avg_weekly_load_4w(fitness, today),
     }
 
@@ -356,6 +366,21 @@ def _counts_directive(request: PlanRequest) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _test_directive(context: dict) -> str:
+    """Ask for a week-1 assessment run when we lack a reliable performance to
+    estimate from (feeds the chrono estimation once synced back)."""
+    if not context.get("needs_test"):
+        return ""
+    return (
+        "\nSÉANCE DE TEST — l'historique ne permet pas d'estimer le niveau de "
+        "façon fiable. Place en SEMAINE 1 une séance type='test' : échauffement, "
+        "un effort MAXIMAL sur 2 km (ou 1500 m), puis retour au calme. Son "
+        "`rationale` explique qu'elle sert à mesurer le niveau et à recaler les "
+        "allures. Conseille dans le rationale de lancer l'effort comme une "
+        "activité Garmin propre (idéalement séparée) pour une mesure nette.\n"
+    )
+
+
 def _user_prompt(
     request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
 ) -> str:
@@ -367,6 +392,7 @@ def _user_prompt(
         f"{_counts_directive(request)}"
         f"{_injury_directive(injury)}"
         f"{_detraining_directive(context)}"
+        f"{_test_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif, puis soumets-le via l'outil submit_plan. La sortie "
         "longue progresse d'au plus 15 min d'une semaine à l'autre. Reste TRÈS "

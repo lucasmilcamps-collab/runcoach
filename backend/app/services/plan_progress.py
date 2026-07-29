@@ -113,6 +113,17 @@ async def compute_progress(
     elif tsb < _CHRONIC_FATIGUE_TSB:
         reason = f"Fatigue élevée persistante (TSB {tsb:+.0f})."
 
+    # A completed assessment ("test") session is fresh performance data — suggest
+    # regenerating so the plan re-anchors on the measured level (Lot 5 loop).
+    for week_pos, week in enumerate(weeks):
+        for session in week.sessions:
+            if session.type != "test":
+                continue
+            test_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
+            if test_date < today and (test_date in activity_dates or test_date in linked_dates):
+                replan_suggested = True
+                reason = "Séance de test réalisée — réestime ton chrono et réajuste le plan."
+
     return PlanProgress(
         has_plan=True,
         week_current=week_current,

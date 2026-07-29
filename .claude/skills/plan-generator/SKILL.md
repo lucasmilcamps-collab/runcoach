@@ -111,7 +111,9 @@ En cas d'échec : renvoyer les violations dans le message de retry ("Le plan vio
 Deux niveaux, à ne pas confondre :
 
 - **Ajustement quotidien** (sans IA) : règles du skill training-science (HRV/sommeil/TSB) appliquées par le code → dégrade ou confirme la séance du jour. Rapide, déterministe, gratuit.
-- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, changement d'objectif, TSB chroniquement < −25). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
+- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, changement d'objectif, TSB chroniquement < −25, **ou séance de test réalisée**). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
+
+**Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` en semaine 1 (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Une fois le test synchronisé, `compute_progress` détecte la séance test réalisée et **propose** (jamais n'impose) une replanification — la régénération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
 
 Chaque adaptation crée une nouvelle version du plan (`plan_versions`) — jamais de mutation en place, l'utilisateur peut voir l'historique.
 
