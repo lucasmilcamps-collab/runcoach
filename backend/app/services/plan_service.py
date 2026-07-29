@@ -722,6 +722,43 @@ async def generate_plan(
     )
 
 
+async def unlogged_strength(
+    db: AsyncIOMotorDatabase, user_id: str, day: date | None = None
+) -> bool:
+    """True when a strength session was planned on `day` (default: yesterday) but
+    no strength/manual activity was recorded that day. Freeletics doesn't sync to
+    Garmin, so this drives a "log it in 2 taps" reminder (Lot 6.3) — otherwise the
+    load is silently under-counted."""
+    target = day or (datetime.now(UTC).date() - timedelta(days=1))
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
+    if doc is None or not doc.get("plan"):
+        return False
+
+    plan = Plan.model_validate(doc["plan"])
+    plan_moves_service.apply_moves(
+        plan, await plan_moves_service.get_moves(db, user_id, doc["version"])
+    )
+    weeks = _flatten_weeks(plan)
+    week_pos = (target - _plan_start_date(doc, target)).days // 7
+    if week_pos < 0 or week_pos >= len(weeks):
+        return False
+
+    weekday = WEEKDAY_ORDER[target.weekday()]
+    planned = any(s.day == weekday and s.type == "strength" for s in weeks[week_pos].sessions)
+    if not planned:
+        return False
+
+    day_start = datetime(target.year, target.month, target.day, tzinfo=UTC)
+    logged = await db.activities.find_one(
+        {
+            "user_id": user_id,
+            "start_time": {"$gte": day_start, "$lt": day_start + timedelta(days=1)},
+            "$or": [{"sport": SportType.STRENGTH}, {"manual": True}],
+        }
+    )
+    return logged is None
+
+
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
     doc = await db.plans.find_one({"user_id": user_id}, sort=[("version", -1)])
     if doc is None:

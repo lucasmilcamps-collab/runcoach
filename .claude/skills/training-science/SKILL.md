@@ -30,7 +30,8 @@ Pour être **sport-agnostique** (indispensable pour le cross-training), on utili
 TRIMP = 1×t(Z1) + 2×t(Z2) + 3×t(Z3) + 4×t(Z4) + 5×t(Z5)   (t en minutes)
 ```
 
-- Si les données FC détaillées manquent : fallback `TRIMP ≈ durée_min × facteur_zone_moyenne` estimé depuis la FC moyenne.
+- Implémentation : `load_service.edwards_trimp(zone_seconds)` calcule la vraie somme par zone quand `Activity.hr_zone_seconds` est présent (5 valeurs Z1..Z5). `compute_trimp(..., zone_seconds=...)` la préfère automatiquement (une séance 6×800m qui moyenne en Z3 mais passe 20 min en Z5 est comptée sur le Z5, plus sous-estimée). *Capture Garmin du temps par zone différée (endpoint séparé par activité = coût rate-limit) ; le champ est consommé dès qu'il est peuplé.*
+- Si les données par zone manquent : fallback `TRIMP ≈ durée_min × facteur_zone_moyenne` estimé depuis la FC moyenne.
 - Si pas de FC du tout (séance déclarée manuellement) : RPE de l'utilisateur (1–10) × durée_min / 10 (session-RPE de Foster).
 - Le TRIMP calculé est stocké dans `Activity.training_load`. **Jamais** utiliser le "Training Load" propriétaire Garmin dans les calculs (non reproductible) ; on peut l'afficher à titre indicatif.
 
@@ -56,6 +57,8 @@ Principe : **toute charge compte dans ATL/CTL** (c'est du stress physiologique),
 - Spécificité : suivre séparément `run_load` (TRIMP des séances course uniquement) pour vérifier que le volume spécifique course progresse.
 - Placement : jamais de séance course qualitative (Z4/Z5) le lendemain d'un sport intense à impacts (basket, padel). Exemple concret : basket le mercredi → l'intervalle de la semaine va mardi ou vendredi, pas jeudi.
 - Les sports fixes déclarés par l'utilisateur (ex. "basket tous les mercredis") sont des **contraintes dures** du générateur de plan : le plan est construit autour, il ne les déplace jamais.
+- **Adhérence (Lot 6.2)** : une séance CLÉ de course n'est comptée « réalisée » que par une activité `RUN` de durée ≥ 60 % du prévu — une partie de padel le même jour ne valide pas la sortie longue. Un lien explicite (activité liée à la séance) compte toujours.
+- **Renfo Freeletics (Lot 6.3)** : ne se synchronise pas avec Garmin → charge invisible. Après un renfo planifié non retrouvé dans les activités (la veille), une notification propose de le logger en 2 taps (RPE) ; alternative sans friction : lancer une activité « Musculation » sur la montre pendant la séance (Garmin la remonte avec la FC).
 
 ## Périodisation d'un plan course
 

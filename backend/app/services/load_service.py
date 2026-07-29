@@ -29,15 +29,30 @@ def zone_for_hr(avg_hr: float, hr_max: int, hr_rest: int) -> int:
     return 1  # below Z2's floor is still Z1 (recovery), never zero
 
 
-def compute_trimp(
-    duration_s: int, avg_hr: float | None, hr_max: int | None, hr_rest: int | None
-) -> float | None:
-    """Edwards TRIMP for one session, using the average-HR fallback the
-    training-science skill defines: duration(min) × the zone factor of the
-    average HR. Sport-agnostic on purpose, so cross-training counts too.
+def edwards_trimp(zone_seconds: list[float] | tuple[float, ...]) -> float:
+    """True Edwards TRIMP from time spent per HR zone (Z1..Z5):
+    `1·t(Z1) + 2·t(Z2) + … + 5·t(Z5)`, t in minutes. This is the accurate form —
+    a 6×800m that averages Z3 but spends 20 min in Z5 is scored on the Z5 time,
+    not the Z3 average (training-science skill)."""
+    return sum((zone + 1) * (seconds / 60) for zone, seconds in enumerate(zone_seconds))
 
-    Returns None when TRIMP can't be derived (no HR sample or no HR profile);
+
+def compute_trimp(
+    duration_s: int,
+    avg_hr: float | None,
+    hr_max: int | None,
+    hr_rest: int | None,
+    zone_seconds: list[float] | tuple[float, ...] | None = None,
+) -> float | None:
+    """Edwards TRIMP for one session. Prefers real time-per-zone when Garmin
+    provides it (`zone_seconds`, 5 values Z1..Z5); otherwise falls back to the
+    average-HR form: duration(min) × the zone factor of the average HR.
+    Sport-agnostic on purpose, so cross-training counts too.
+
+    Returns None when TRIMP can't be derived (no zone times and no usable HR);
     the caller decides how to surface that, never invents a number."""
+    if zone_seconds is not None and len(zone_seconds) == 5 and sum(zone_seconds) > 0:
+        return edwards_trimp(zone_seconds)
     if avg_hr is None or hr_max is None or hr_rest is None or hr_max <= hr_rest:
         return None
     duration_min = duration_s / 60

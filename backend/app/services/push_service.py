@@ -136,6 +136,16 @@ async def _notifications_for_user(
             body += " — ajustée selon ta forme"
         out.append(Notification(title="Séance du jour", body=body, url="/plan"))
 
+    if await plan_service.unlogged_strength(db, user_id):
+        out.append(
+            Notification(
+                title="Renfo à enregistrer",
+                body="Tu as fait ton renfo d'hier ? Enregistre-le en 2 taps (avec le RPE) "
+                "pour qu'il compte dans ta charge.",
+                url="/add-activity",
+            )
+        )
+
     progress = await plan_progress.compute_progress(db, user_id)
     if progress.replan_suggested:
         out.append(

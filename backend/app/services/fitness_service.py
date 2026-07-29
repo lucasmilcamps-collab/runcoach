@@ -70,7 +70,11 @@ async def compute_fitness(db: AsyncIOMotorDatabase, user_id: str) -> FitnessResp
     async for doc in cursor:
         duration_s = doc.get("duration_s") or 0
         trimp = load_service.compute_trimp(
-            duration_s, doc.get("avg_hr"), hr_max, hr_rest
+            duration_s,
+            doc.get("avg_hr"),
+            hr_max,
+            hr_rest,
+            zone_seconds=doc.get("hr_zone_seconds"),
         )
         if trimp is None:
             # No HR sample (typically a manually-logged session): fall back to the

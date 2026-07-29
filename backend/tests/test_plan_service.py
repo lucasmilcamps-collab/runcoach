@@ -696,3 +696,48 @@ async def test_no_history_puts_test_directive_in_prompt(db):
         await plan_service.generate_plan(db, user_id, _request())
     prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
     assert "SÉANCE DE TEST" in prompt
+
+
+# --- Lot 6.3: unlogged strength reminder ---
+
+
+async def test_unlogged_strength_reminder(db):
+    from app.models.plan import WEEKDAY_ORDER
+
+    user_id = await _seed_user(db)
+    yesterday = datetime.now(UTC).date() - timedelta(days=1)
+    start = yesterday - timedelta(days=yesterday.weekday())  # Monday of yesterday's week
+    strength = Session(
+        day=WEEKDAY_ORDER[yesterday.weekday()],
+        sport=SportType.STRENGTH,
+        type="strength",
+        duration_min=20,
+        slot="addon",
+        priority="optional",
+        rationale="x",
+    )
+    week = Week(index=1, is_deload=False, target_load=100.0, sessions=[strength])
+    plan = Plan(goal=PlanGoal(description="T"), phases=[Phase(name="base", weeks=[week])])
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "plan": plan.model_dump(mode="json"),
+            "start_date": start.isoformat(),
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+    assert await plan_service.unlogged_strength(db, user_id) is True  # planned, not logged
+
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.STRENGTH,
+            "manual": True,
+            "start_time": datetime(yesterday.year, yesterday.month, yesterday.day, 18, tzinfo=UTC),
+            "duration_s": 1200,
+        }
+    )
+    assert await plan_service.unlogged_strength(db, user_id) is False  # now logged

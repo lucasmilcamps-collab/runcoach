@@ -50,6 +50,31 @@ def test_compute_trimp_none_without_profile():
     assert load_service.compute_trimp(3600, 140, None, None) is None
 
 
+def test_edwards_trimp_sums_time_per_zone():
+    # 10 min Z1, 20 Z2, 10 Z3, 5 Z4, 5 Z5 (minutes → seconds).
+    zone_s = [10 * 60, 20 * 60, 10 * 60, 5 * 60, 5 * 60]
+    # 1·10 + 2·20 + 3·10 + 4·5 + 5·5 = 10+40+30+20+25 = 125.
+    assert load_service.edwards_trimp(zone_s) == 125.0
+
+
+def test_compute_trimp_prefers_zone_times_over_avg_hr():
+    # A 6×800m that averages Z3 but spent 20 min in Z5: zone times score it higher
+    # than the avg-HR fallback would.
+    zone_s = [5 * 60, 5 * 60, 10 * 60, 5 * 60, 20 * 60]  # Edwards = 5+10+30+20+100 = 165
+    by_zones = load_service.compute_trimp(2700, 150, HR_MAX, HR_REST, zone_seconds=zone_s)
+    assert by_zones == 165.0
+    # Same session by average HR (Z3) → only 45 × 3 = 135, understated.
+    assert load_service.compute_trimp(2700, 150, HR_MAX, HR_REST) == 135.0
+
+
+def test_compute_trimp_falls_back_when_zone_times_empty():
+    # All-zero zone times → not usable → fall back to the average-HR form.
+    assert (
+        load_service.compute_trimp(3600, 134, HR_MAX, HR_REST, zone_seconds=[0, 0, 0, 0, 0])
+        == 120.0
+    )
+
+
 def test_constant_load_keeps_ctl_flat():
     """Seed = mean daily load, and a constant daily load equal to that seed
     leaves CTL and ATL unchanged — the classic steady-state check."""

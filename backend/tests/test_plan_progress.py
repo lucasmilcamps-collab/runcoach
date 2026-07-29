@@ -225,3 +225,34 @@ async def test_completed_test_session_suggests_replan(db):
     progress = await plan_progress.compute_progress(db, user_id)
     assert progress.replan_suggested is True
     assert "test" in (progress.replan_reason or "").lower()
+
+
+async def test_padel_and_short_run_do_not_count_as_key_run(db):
+    user_id = await _seed_user(db)
+    _, key_dates = await _seed_two_week_plan(db, user_id)  # 3 key runs, 50 min, Mon/Wed/Fri
+
+    def _dt(d):
+        return datetime(d.year, d.month, d.day, 7, tzinfo=UTC)
+
+    # Mon: padel (wrong sport). Wed: a 20-min run (< 60% of 50). Fri: a full run.
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.PADEL,
+            "start_time": _dt(key_dates[0]),
+            "duration_s": 3600,
+        }
+    )
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": _dt(key_dates[1]),
+            "duration_s": 20 * 60,
+        }
+    )
+    await _seed_activity(db, user_id, key_dates[2])  # full 50-min run
+
+    progress = await plan_progress.compute_progress(db, user_id)
+    assert progress.recent_key_completed == 1  # only the full Friday run counts
+    assert progress.recent_key_missed == 2

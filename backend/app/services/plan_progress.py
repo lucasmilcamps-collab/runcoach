@@ -68,15 +68,22 @@ async def compute_progress(
     start = _plan_start_date(doc, today)
     window_start = today - timedelta(days=_WINDOW_DAYS)
 
-    # Dates with at least one recorded activity (any sport counts as "did it").
-    activity_dates: set[date] = set()
+    # A key RUN session is only "done" by a RUN activity of sufficient duration —
+    # a padel game the same day doesn't validate a long run (Lot 6.2). Keep the
+    # longest run per day for the 60%-of-planned check.
+    run_minutes_by_date: dict[date, float] = {}
     window_start_dt = datetime(window_start.year, window_start.month, window_start.day, tzinfo=UTC)
-    cursor = db.activities.find({"user_id": user_id, "start_time": {"$gte": window_start_dt}})
+    cursor = db.activities.find(
+        {"user_id": user_id, "sport": SportType.RUN, "start_time": {"$gte": window_start_dt}}
+    )
     async for act in cursor:
         st = act.get("start_time")
-        if st is not None:
-            st_aware = st.replace(tzinfo=UTC) if st.tzinfo is None else st
-            activity_dates.add(st_aware.astimezone(UTC).date())
+        if st is None:
+            continue
+        st_aware = st.replace(tzinfo=UTC) if st.tzinfo is None else st
+        day = st_aware.astimezone(UTC).date()
+        minutes = (act.get("duration_s") or 0) / 60
+        run_minutes_by_date[day] = max(run_minutes_by_date.get(day, 0.0), minutes)
 
     # Sessions the user explicitly linked to an activity — counts as done even
     # if the activity itself lands on a different day than planned.
@@ -91,6 +98,12 @@ async def compute_progress(
             except ValueError:
                 pass
 
+    def _run_done(session_date, planned_min: int) -> bool:
+        if session_date in linked_dates:  # explicit link always counts
+            return True
+        done_min = run_minutes_by_date.get(session_date)
+        return done_min is not None and done_min >= 0.6 * planned_min
+
     planned = completed = 0
     for week_pos, week in enumerate(weeks):
         for session in week.sessions:
@@ -99,7 +112,7 @@ async def compute_progress(
             session_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
             if window_start <= session_date < today:  # only past days in the window
                 planned += 1
-                if session_date in activity_dates or session_date in linked_dates:
+                if _run_done(session_date, session.duration_min):
                     completed += 1
     missed = planned - completed
 
@@ -120,7 +133,9 @@ async def compute_progress(
             if session.type != "test":
                 continue
             test_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
-            if test_date < today and (test_date in activity_dates or test_date in linked_dates):
+            if test_date < today and (
+                test_date in run_minutes_by_date or test_date in linked_dates
+            ):
                 replan_suggested = True
                 reason = "Séance de test réalisée — réestime ton chrono et réajuste le plan."
 
