@@ -7,6 +7,7 @@ import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
 import { Icon } from '@/components/icon';
+import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
@@ -19,7 +20,7 @@ import { pressable } from '@/lib/pressable';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
   DAY_LABELS,
-  SESSION_LABELS,
+  sessionTitle,
   blockZone,
   estimateDistanceKm,
   formatDuration,
@@ -217,9 +218,12 @@ export default function SessionDetailScreen() {
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             Semaine {weekNumber} · Séance {position}/{total}
           </ThemedText>
-          <ThemedText type="title" style={styles.title}>
-            {SESSION_LABELS[session.type]}
-          </ThemedText>
+          <View style={styles.titleRow}>
+            <SportIcon sport={session.sport} size={26} color={Colors.text} />
+            <ThemedText type="title" style={styles.title}>
+              {sessionTitle(session)}
+            </ThemedText>
+          </View>
           {isKey ? (
             <View style={styles.pill}>
               <View style={styles.pin} />
@@ -459,6 +463,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.contour,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   title: { marginTop: Spacing.one },
   pill: {

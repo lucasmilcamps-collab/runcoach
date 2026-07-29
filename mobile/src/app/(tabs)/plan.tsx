@@ -8,6 +8,7 @@ import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
 import { PlanWeekPager } from '@/components/plan-view';
+import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
@@ -25,7 +26,7 @@ import {
   RecoverySummary,
   TodaySession,
 } from '@/lib/api/plans';
-import { SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
@@ -317,7 +318,12 @@ function TodayCard({ today }: { today: TodaySession }) {
         Aujourd’hui{weekTag}
       </ThemedText>
       <View style={styles.todayTitleRow}>
-        <ThemedText type="subtitle">{SESSION_LABELS[shownType]}</ThemedText>
+        <View style={styles.todayTitleLeft}>
+          <SportIcon sport={primary?.sport ?? 'RUN'} size={22} />
+          <ThemedText type="subtitle">
+            {sessionTitle({ sport: primary?.sport ?? 'RUN', type: shownType })}
+          </ThemedText>
+        </View>
         {primary ? (
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             {formatDuration(primary.duration_min)}
@@ -326,7 +332,7 @@ function TodayCard({ today }: { today: TodaySession }) {
       </View>
       {addons.map((s, i) => (
         <ThemedText key={i} type="small" themeColor="textSecondary">
-          + {SESSION_LABELS[s.type]} · {formatDuration(s.duration_min)}
+          + {sessionTitle(s)} · {formatDuration(s.duration_min)}
         </ThemedText>
       ))}
       {adj?.adjusted ? (
@@ -454,6 +460,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   forecastCol: { gap: Spacing.half, alignItems: 'center', flex: 1 },
+  todayTitleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    flex: 1,
+  },
   todayTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

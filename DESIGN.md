@@ -133,6 +133,13 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 - **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
 - **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
 
+### Sport identity on a session
+A training week mixes running with padel, basket, vélo and renfo, and the athlete's first question scanning it is *"which of these are runs?"*. Every session therefore carries **two redundant cues**: a sport glyph (`sport-icon.tsx`, same 24px/1.75 stroke vocabulary as the rest of the icon set) and a **sport-aware name**.
+
+**Name runs by their training type, everything else by its sport.** "Footing" and "Tempo" are the meaningful distinction between two runs; "Cross-training" is a label that hides the one thing that distinguishes a basket session from a padel one. The sport is already on every session — the UI simply wasn't using it.
+
+Cross-training is never visually subordinated to running: same card, same weight, different glyph and name. It is load, not noise.
+
 ### Chips / Segmented controls
 Selectable chips (objectives, weekdays, durations, RPE, days-off) share one component. **Selected is an outline, not a fill:** 1.5px accent border, accent text, semibold weight, on the `backgroundSelected` tone. The setup forms show a dozen chips at once — filling each one with Trail Blaze drowned the screen's primary button in orange, which is exactly what The One Blaze Rule exists to prevent. The single blaze *fill* on a form belongs to its CTA. Selection never rests on color alone (border + text + weight, plus `accessibilityState`), and the plan-setup "variable day" state takes the Hydro tone with an `≈` prefix so the two selected states are distinguishable without color.
 

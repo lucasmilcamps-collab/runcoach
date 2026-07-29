@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DifficultyBolts } from '@/components/difficulty-bolts';
 import { Icon } from '@/components/icon';
+import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
@@ -11,10 +12,10 @@ import type { Plan, PlanPhase, PlanSession, PlanWeek } from '@/lib/api/plans';
 import {
   DAY_LABELS,
   PHASE_LABELS,
-  SESSION_LABELS,
   estimateDistanceKm,
   formatDuration,
   sessionDifficulty,
+  sessionTitle,
 } from '@/lib/plan-format';
 
 type FlatWeek = { week: PlanWeek; phase: PlanPhase['name'] };
@@ -226,7 +227,7 @@ function SessionCard({
       style={pressable(styles.sessionCard)}
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${SESSION_LABELS[session.type]}, séance ${position} sur ${total}`}>
+      accessibilityLabel={`${sessionTitle(session)}, séance ${position} sur ${total}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
           {isKey && !isAddon ? (
@@ -244,7 +245,12 @@ function SessionCard({
         <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
       </View>
 
-      <ThemedText type="subtitle">{SESSION_LABELS[session.type]}</ThemedText>
+      {/* Glyph + sport-aware name: the two cues that let a week be scanned for
+          "which of these are runs?" without reading every card. */}
+      <View style={styles.sessionTitleRow}>
+        <SportIcon sport={session.sport} size={22} />
+        <ThemedText type="subtitle">{sessionTitle(session)}</ThemedText>
+      </View>
 
       <View style={styles.sessionStats}>
         <MiniStat label="Durée" value={formatDuration(session.duration_min)} />
@@ -330,6 +336,11 @@ const styles = StyleSheet.create({
   navArrowDisabled: { borderColor: Colors.contourFaint, opacity: 0.5 },
 
   sessionList: { gap: Spacing.three },
+  sessionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   sessionCard: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,

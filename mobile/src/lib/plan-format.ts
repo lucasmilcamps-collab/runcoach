@@ -1,3 +1,4 @@
+import { sportLabel } from '@/lib/activity-labels';
 import type { PaceRange, PlanBlock, PlanPhase, PlanSession, Weekday } from '@/lib/api/plans';
 
 export const PHASE_LABELS: Record<PlanPhase['name'], string> = {
@@ -20,6 +21,22 @@ export const SESSION_LABELS: Record<PlanSession['type'], string> = {
   race: 'Course',
   rest: 'Repos',
 };
+
+/**
+ * What a session should be called on screen.
+ *
+ * A running plan distinguishes its runs by training type — Footing, Tempo,
+ * Sortie longue — so that's the useful name for them. Every other sport is
+ * named by the sport itself, because "Cross-training" is the label that hides
+ * precisely what the athlete needs to tell apart: a basket session from a padel
+ * one. The sport is already on every session; only the UI was dropping it.
+ *
+ * OTHER keeps its type label — "Autre" would say less than "Cross-training".
+ */
+export function sessionTitle(session: Pick<PlanSession, 'sport' | 'type'>): string {
+  if (session.sport === 'RUN' || session.sport === 'OTHER') return SESSION_LABELS[session.type];
+  return sportLabel(session.sport);
+}
 
 export const DAY_LABELS: Record<Weekday, string> = {
   MONDAY: 'Lun',

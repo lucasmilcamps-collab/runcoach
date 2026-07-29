@@ -7,7 +7,7 @@ import { Colors, Rounded, Spacing } from '@/constants/theme';
 import type { Fitness } from '@/lib/api/fitness';
 import type { TodaySession } from '@/lib/api/plans';
 import { formBand, signed } from '@/lib/fitness-format';
-import { SESSION_LABELS, formatDuration } from '@/lib/plan-format';
+import { formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
 
 /**
@@ -73,7 +73,9 @@ function nextMove(today: TodaySession): string {
   const primary = today.sessions[0] ?? null;
   const type = adj?.adjusted ? adj.suggested_type : (primary?.type ?? 'easy');
   const duration = primary ? ` · ${formatDuration(primary.duration_min)}` : '';
-  return `${SESSION_LABELS[type]}${duration}`;
+  // Name it by sport, like the plan cards do — "Basket" says more than
+  // "Cross-training" when you're deciding what today actually is.
+  return `${sessionTitle({ sport: primary?.sport ?? 'RUN', type })}${duration}`;
 }
 
 const styles = StyleSheet.create({
