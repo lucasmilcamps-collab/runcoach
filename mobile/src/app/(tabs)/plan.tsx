@@ -8,6 +8,7 @@ import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
 import { PlanWeekPager } from '@/components/plan-view';
+import { ScreenCrest } from '@/components/screen-crest';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
@@ -134,6 +135,7 @@ export default function PlanScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <TopBar title="SÉANCES" subtitle={ready ? currentWeekRangeLabel() : undefined} />
 

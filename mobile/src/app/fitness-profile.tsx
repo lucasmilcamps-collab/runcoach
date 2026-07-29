@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
@@ -92,6 +93,7 @@ export default function FitnessProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
+          <ScreenCrest />
           <View style={styles.header}>
             <ThemedText type="waypointLabel" themeColor="textSecondary">
               Fréquence cardiaque

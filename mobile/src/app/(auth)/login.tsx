@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
@@ -64,6 +65,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
+          <ScreenCrest />
           <WaypointStepper currentStep={1} />
 
           <View style={styles.header}>

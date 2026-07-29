@@ -8,6 +8,7 @@ import Svg, { G, Path } from 'react-native-svg';
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { Icon } from '@/components/icon';
+import { ScreenCrest } from '@/components/screen-crest';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
@@ -83,25 +84,6 @@ function Bolt({ active }: { active: boolean }) {
     <Svg width={11} height={15} viewBox="0 0 11 15">
       <Path d="M6 0 0 9h4l-1 6 8-10H6z" fill={active ? Colors.blaze : Colors.contourFaint} />
     </Svg>
-  );
-}
-
-function ContourTexture() {
-  return (
-    <View pointerEvents="none" style={styles.texture}>
-      <Svg width={220} height={180} viewBox="0 0 220 180" fill="none">
-        <G stroke={Colors.contour} strokeWidth={1} fill="none">
-          <Path
-            d="M30 90 C25 45 80 15 130 22 C185 30 215 70 205 115 C196 158 130 175 80 160 C40 148 35 120 30 90Z"
-            opacity={0.32}
-          />
-          <Path
-            d="M60 92 C56 60 95 40 135 47 C172 54 190 82 182 112 C174 143 128 154 90 143 C62 135 63 116 60 92Z"
-            opacity={0.22}
-          />
-        </G>
-      </Svg>
-    </View>
   );
 }
 
@@ -205,7 +187,7 @@ export default function SessionDetailScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <ContourTexture />
+          <ScreenCrest />
           <View style={styles.topbar}>
             <Pressable
               onPress={() => router.back()}
@@ -503,7 +485,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.four,
     overflow: 'hidden',
   },
-  texture: { position: 'absolute', right: -40, top: -30, opacity: 0.5 },
   topbar: { flexDirection: 'row', marginBottom: Spacing.four },
   iconBtn: {
     width: 36,

@@ -10,6 +10,7 @@ import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
 import { ReadinessHero } from '@/components/readiness-hero';
+import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
@@ -107,6 +108,7 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TopBar title="RUNCOACH" subtitle={currentWeekRangeLabel()} />
