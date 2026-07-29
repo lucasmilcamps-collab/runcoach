@@ -16,6 +16,7 @@ import {
   formatDuration,
   sessionDifficulty,
   sessionTitle,
+  sortSessionsByDay,
 } from '@/lib/plan-format';
 
 type FlatWeek = { week: PlanWeek; phase: PlanPhase['name'] };
@@ -159,12 +160,15 @@ function NavArrow({
 }
 
 function WeekSessions({ week }: { week: PlanWeek }) {
+  // The generator doesn't emit sessions in calendar order, so sort before
+  // rendering — this also makes "Séance n/N" count through the week in order.
+  const ordered = sortSessionsByDay(week.sessions);
   // Addons (e.g. a strength block) share a day and aren't numbered as sessions.
-  const total = week.sessions.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
+  const total = ordered.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
   let counter = 0;
   return (
     <View style={styles.sessionList}>
-      {week.sessions.map((session, si) => {
+      {ordered.map((session, si) => {
         const isPrimary = session.type !== 'rest' && session.slot === 'primary';
         const position = isPrimary ? (counter += 1) : 0;
         return (
