@@ -3,10 +3,16 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Spacing } from '@/constants/theme';
+import { useIsWide } from '@/hooks/use-breakpoint';
 import { pressable } from '@/lib/pressable';
 
 /** Horizontal week tracker (Campus "Programme en cours"): past weeks filled,
- * the current one highlighted, future ones faint. Tapping a node calls onPick. */
+ * the current one highlighted, future ones faint. Tapping a node calls onPick.
+ *
+ * On a wide viewport the trail stretches to fill its container (the connectors
+ * flex), so it reads as one continuous path across the dashboard instead of a
+ * short scrollable stub with the last week clipped off. On phones it stays a
+ * horizontal scroller, which is the only way a 12-week plan fits. */
 export function WeekStepper({
   weeksTotal,
   weekCurrent,
@@ -17,21 +23,25 @@ export function WeekStepper({
   onPick?: (weekIndex: number) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const wide = useIsWide();
   const weeks = Array.from({ length: weeksTotal }, (_, i) => i + 1);
 
-  return (
-    <ScrollView
-      ref={scrollRef}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.track}>
+  const nodes = (
+    <>
       {weeks.map((w, i) => {
         const state = weekCurrent == null ? 'todo' : w < weekCurrent ? 'done' : w === weekCurrent ? 'current' : 'todo';
         return (
-          <View key={w} style={styles.item}>
+          // Only the items that carry a connector may flex: week 1 has none, so
+          // letting it take an equal share would push the first gap wider than
+          // all the others and break the trail's rhythm.
+          <View key={w} style={[styles.item, wide && i > 0 && styles.itemWide]}>
             {i > 0 ? (
               <View
-                style={[styles.connector, (state === 'done' || state === 'current') && styles.connectorDone]}
+                style={[
+                  styles.connector,
+                  wide && styles.connectorWide,
+                  (state === 'done' || state === 'current') && styles.connectorDone,
+                ]}
               />
             ) : null}
             <Pressable
@@ -57,6 +67,18 @@ export function WeekStepper({
           </View>
         );
       })}
+    </>
+  );
+
+  if (wide) return <View style={styles.trackWide}>{nodes}</View>;
+
+  return (
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.track}>
+      {nodes}
     </ScrollView>
   );
 }
@@ -68,14 +90,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Spacing.one,
   },
+  trackWide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.one,
+  },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  itemWide: {
+    // Each week takes an equal share of the row, so the trail spans the full
+    // dashboard width instead of clipping its last node.
+    flex: 1,
   },
   connector: {
     width: Spacing.four,
     height: 2,
     backgroundColor: Colors.contourFaint,
+  },
+  connectorWide: {
+    flex: 1,
+    width: undefined,
   },
   connectorDone: {
     // Completed path reads in parchment-muted, not blaze — blaze is reserved

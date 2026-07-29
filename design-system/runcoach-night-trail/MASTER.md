@@ -78,7 +78,7 @@ Don't hand-roll a width check — use the hook and the component.
 - **Load breakdown** (`week-sport-strip.tsx`): "Ta charge cette semaine" — one row per sport logged, identical `contour` bars for running and cross-training alike (the product thesis, made literal). Not a second accent, not a rainbow.
 - **Card columns** (`card-columns.tsx`): the responsive wrapper described above. Distributes children by index parity; falls back to one column when there's a single card.
 - **Top bar** (`top-bar.tsx`): initials avatar (→ Settings) absolutely left, wordmark centered, optional week-range subtitle.
-- **Tab bar**: stroke icon + 12px label, height `62 + safe-area bottom`, active tint `blaze` **and** bold label (never tint alone — WCAG 1.4.1). Icons are decorative; the label is the accessible name.
+- **Tab bar**: stroke icon + 12px label, height `62 + safe-area bottom`, active tint `blaze` **and** bold label (never tint alone — WCAG 1.4.1). Icons are decorative; the label is the accessible name. Capped at `MaxContentWidthWide` and centred, so on desktop the tabs sit on the **same axis as the content column** instead of spreading edge to edge under a centred layout; below the cap it's edge to edge as usual.
 
 ---
 

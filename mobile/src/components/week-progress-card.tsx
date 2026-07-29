@@ -54,13 +54,19 @@ export function WeekProgressCard({
 
   return (
     <View style={styles.card}>
-      <Stat label={leftLabel} value={leftValue} />
-      <Ring fraction={fraction} top={ringTop} bottom={ringBottom} />
-      <Stat
-        label="Semaines"
-        value={weekCurrent != null && weeksTotal != null ? `${weekCurrent}/${weeksTotal}` : '—'}
-        align="flex-end"
-      />
+      {/* The card fills its column, but its three elements don't: past ~420px
+          the two stats drift to the far edges and the ring floats alone in the
+          middle. Cap the row and centre it so the group stays readable as one
+          unit at any column width. */}
+      <View style={styles.row}>
+        <Stat label={leftLabel} value={leftValue} />
+        <Ring fraction={fraction} top={ringTop} bottom={ringBottom} />
+        <Stat
+          label="Semaines"
+          value={weekCurrent != null && weeksTotal != null ? `${weekCurrent}/${weeksTotal}` : '—'}
+          align="flex-end"
+        />
+      </View>
     </View>
   );
 }
@@ -135,9 +141,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
     padding: Spacing.four,
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
   },
   stat: {
     flex: 1,

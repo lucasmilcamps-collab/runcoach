@@ -108,6 +108,8 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 
 Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bottom safe area as heavy, latching commitments (native call-to-action placement), never floating mid-content. The waypoint stepper sits above the screen title on every screen in the onboarding flow, so the trail position is always the first thing read.
 
+**One alignment axis.** On a wide screen every element of a dashboard — the hero, both card columns, the week trail and the tab bar — starts and ends on the same two vertical lines. Anything that opts out (a bar stretched edge to edge, a block left outside the grid, a row whose contents drift to its extremes) reads as broken even when each piece is individually fine.
+
 **Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
 
 Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
