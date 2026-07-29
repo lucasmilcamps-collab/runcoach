@@ -54,7 +54,7 @@
 
 `half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64` — cards pad `four`, list gaps `three`, inline gaps `two`.
 `Rounded.sm 8` (chips, pills) · `Rounded.md 14` (cards, buttons) · `Rounded.lg 20` (avatar).
-Layout: `MaxContentWidth 800` centered; bottom scroll padding `BottomTabInset + Spacing.four`.
+Layout: bottom scroll padding `BottomTabInset + Spacing.four`. Reading/list screens centre at `MaxContentWidth 800`; **dashboard screens (Accueil, Séances) use `MaxContentWidthWide 1000` and wrap their summary cards in `<CardColumns>`**, which switches to two columns at `WideBreakpoint 720` (`useIsWide()`) and stacks below it. Don't hand-roll a width check — use the hook and the component.
 
 ### Depth = tone, not shadow
 
@@ -69,6 +69,9 @@ Layout: `MaxContentWidth 800` centered; bottom scroll padding `BottomTabInset + 
 - **Row / list item**: hairline separators via `borderColor: contourFaint`; chevron-right icon trailing when navigable.
 - **Chip / segmented**: `minHeight 44`, `Rounded.sm`, `contour` border; selected = `blaze` bg + `background` text.
 - **Icons** (`components/icon.tsx` + `difficulty-bolts.tsx`): in-house **SVG stroke set**, `strokeWidth 1.75`, on a 24px grid (`chevron-*`, `arrow-left`). Difficulty = lightning bolts, ring = `react-native-svg`. **No emoji, no icon font.**
+- **Readiness hero** (`readiness-hero.tsx`): Accueil's lead card — plain-language form verdict first, `Forme ±N · Mot` as a supporting line, today's session below a hairline as the tappable next move. The verdict comes from `formBand()` (`lib/fitness-format.ts`) — the **single** source; never restate it in another card on the same screen.
+- **Load breakdown** (`week-sport-strip.tsx`): "Ta charge cette semaine" — one row per sport logged, identical `contour` bars for running and cross-training alike (the product thesis, made literal). Not a second accent, not a rainbow.
+- **Card columns** (`card-columns.tsx`): the responsive wrapper described above. Distributes children by index parity; falls back to one column when there's a single card.
 - **Top bar** (`top-bar.tsx`): initials avatar (→ Settings) absolutely left, wordmark centered, optional week-range subtitle.
 - **Tab bar**: label-only (`tabBarIconStyle: display:none`), height `56 + safe-area bottom`, active tint `blaze`.
 

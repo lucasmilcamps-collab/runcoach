@@ -12,30 +12,6 @@ function openProfileEntry() {
   router.push('/fitness-profile');
 }
 
-// Form (TSB) bands, kept deliberately coarse — a directional cue, not a
-// prescription (no medical advice, per the project's guardrails). `verdict` is
-// the plain-language lead; `word` is the short tag. Color stays neutral — teal
-// is reserved for live Garmin data, so form (a stored, computed metric) never
-// uses it; only severe fatigue reaches for the flare warning color.
-function formBand(tsb: number): { word: string; verdict: string; color: keyof typeof Colors } {
-  if (tsb > 5) {
-    return { word: 'Frais', verdict: 'Reposé — bon jour pour une séance intense.', color: 'text' };
-  }
-  if (tsb < -25) {
-    return {
-      word: 'Fatigue élevée',
-      verdict: 'Fatigue marquée — allège et privilégie la récupération.',
-      color: 'flare',
-    };
-  }
-  return { word: 'Équilibré', verdict: 'Charge et récupération équilibrées.', color: 'text' };
-}
-
-function signed(value: number): string {
-  const rounded = Math.round(value);
-  return rounded > 0 ? `+${rounded}` : `${rounded}`;
-}
-
 export function FitnessCard({
   fitness,
   isLoading,
@@ -74,8 +50,6 @@ export function FitnessCard({
     );
   }
 
-  const band = formBand(fitness.tsb);
-
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -95,14 +69,8 @@ export function FitnessCard({
         </Pressable>
       </View>
 
-      {/* Plain-language verdict leads; the number is demoted to a supporting line. */}
-      <ThemedText type="subtitle" themeColor={band.color}>
-        {band.verdict}
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        Forme {signed(fitness.tsb)} · {band.word}
-      </ThemedText>
-
+      {/* The readiness hero states the current form value and verdict; this card
+          is the trend read-out behind it, so it doesn't repeat that line. */}
       {showHelp ? (
         <ThemedText type="small" themeColor="textSecondary">
           Ta forme = ta caisse de fond (l’endurance accumulée) moins ta fatigue récente. Positif :

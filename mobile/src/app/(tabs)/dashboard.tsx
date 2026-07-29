@@ -6,17 +6,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SyncingCard } from '@/components/activity-list';
 import { Button } from '@/components/button';
+import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { FitnessCard } from '@/components/fitness-card';
+import { ReadinessHero } from '@/components/readiness-hero';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
 import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
-import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { getFitness } from '@/lib/api/fitness';
-import { getCurrentPlan, getPlanProgress } from '@/lib/api/plans';
+import { getCurrentPlan, getPlanProgress, getTodaySession } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -43,6 +45,12 @@ export default function DashboardScreen() {
     queryFn: getPlanProgress,
     retry: false,
   });
+  // Today's (form-adjusted) session powers the readiness hero's "next move".
+  const todayQuery = useQuery({
+    queryKey: ['plan-today'],
+    queryFn: getTodaySession,
+    retry: false,
+  });
 
   // Register the Web Push service worker on web (no-op on native / unsupported).
   useEffect(() => {
@@ -59,6 +67,22 @@ export default function DashboardScreen() {
   const weeksTotal = progressQuery.data?.weeks_total ?? null;
   const hasPlan = plan != null;
   const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
+
+  // The two summary cards laid out side by side on wide viewports. Built as an
+  // array (nulls filtered) so a single card falls back to full width.
+  const summaryCards = [
+    hasPlan ? (
+      <WeekProgressCard
+        key="week-progress"
+        progress={weekProgress}
+        weekCurrent={weekCurrent}
+        weeksTotal={weeksTotal}
+      />
+    ) : null,
+    garminConnected && !firstImport ? (
+      <FitnessCard key="fitness" fitness={fitnessQuery.data} isLoading={fitnessQuery.isLoading} />
+    ) : null,
+  ].filter(Boolean);
 
   // Surface (rather than silently swallow) a failed data load, with a retry.
   // Each query owns its own retry so tapping only refetches what actually broke.
@@ -106,13 +130,13 @@ export default function DashboardScreen() {
             ) : null}
           </View>
 
-          {hasPlan ? (
-            <WeekProgressCard
-              progress={weekProgress}
-              weekCurrent={weekCurrent}
-              weeksTotal={weeksTotal}
-            />
+          {garminConnected && !firstImport ? (
+            <ReadinessHero fitness={fitnessQuery.data} today={todayQuery.data} />
           ) : null}
+
+          {/* The two summary cards sit side by side on wide web/tablet and stack
+              on phones (CardColumns), instead of stranding a narrow strip. */}
+          {summaryCards.length > 0 ? <CardColumns>{summaryCards}</CardColumns> : null}
 
           {weekProgress.sports.length > 0 ? (
             <WeekSportStrip sports={weekProgress.sports} />
@@ -146,10 +170,6 @@ export default function DashboardScreen() {
               />
             </EmptyState>
           ) : null}
-
-          {garminConnected && !firstImport ? (
-            <FitnessCard fitness={fitnessQuery.data} isLoading={fitnessQuery.isLoading} />
-          ) : null}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -164,7 +184,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxContentWidthWide,
     alignSelf: 'center',
     width: '100%',
   },

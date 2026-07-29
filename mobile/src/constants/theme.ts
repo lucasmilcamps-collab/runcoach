@@ -48,4 +48,16 @@ export const Rounded = {
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+
+/** Reading-width cap (single column) — keeps line length in HIG/Material
+ * bounds on wide web/tablet. Used by list/reading screens. */
 export const MaxContentWidth = 800;
+
+/** Wider cap for dashboard screens that lay their cards out in two columns on
+ * desktop/tablet (see `CardColumns`), so wide web no longer strands one narrow
+ * strip flanked by dead space. */
+export const MaxContentWidthWide = 1000;
+
+/** Width at/above which a screen is treated as "wide" (tablet landscape /
+ * desktop web): dashboards switch to a two-column card layout. */
+export const WideBreakpoint = 720;
