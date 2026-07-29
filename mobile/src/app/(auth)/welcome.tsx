@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 
 export default function WelcomeScreen() {
   return (
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     gap: Spacing.six,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

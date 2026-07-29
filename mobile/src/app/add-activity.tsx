@@ -1,17 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { Chip } from '@/components/chip';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { createManualActivity, ManualActivityCreate } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
-import { pressable } from '@/lib/pressable';
 
 const SPORT_OPTIONS: { sport: SportType; label: string }[] = [
   { sport: 'RUN', label: 'Course' },
@@ -28,20 +28,6 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      style={pressable([styles.chip, selected && styles.chipSelected])}>
-      <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
 }
 
 function nearestDuration(n: number): number {
@@ -214,7 +200,7 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -223,24 +209,10 @@ const styles = StyleSheet.create({
   header: { gap: Spacing.two },
   field: { gap: Spacing.two },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  chip: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Rounded.sm,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
-  },
-  chipSelected: {
-    backgroundColor: Colors.blaze,
-    borderColor: Colors.blaze,
-  },
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

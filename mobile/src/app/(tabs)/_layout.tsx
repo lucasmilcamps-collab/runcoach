@@ -1,14 +1,24 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon, type IconName } from '@/components/icon';
 import { Colors } from '@/constants/theme';
 
 /**
- * A single tab for now (Dashboard). Plan / activity / settings screens land
- * as their own stack routes reachable from here (api-conventions), not as
+ * Three tabs (Accueil / Séances / Activités). Settings and the detail screens
+ * land as their own stack routes reachable from here (api-conventions), not as
  * additional tabs invented ahead of the surfaces they'd belong to.
  */
+/** Tab glyph: stroke icon that inherits the bar's active/inactive tint, so the
+ * icon and its label always read as one state. Decorative — the label beside it
+ * is the accessible name, so the icon must not add a second one. */
+function tabIcon(name: IconName) {
+  return function TabBarIcon({ color }: { color: ColorValue }) {
+    return <Icon name={name} size={24} color={String(color)} />;
+  };
+}
+
 export default function TabsLayout() {
   // The bar height must include the bottom safe-area inset (iPhone home
   // indicator, drawn under the app because of viewport-fit=cover +
@@ -20,17 +30,12 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        // No icons in this app: hide the reserved icon slot so the label gets
-        // the full height and stays centered (otherwise the empty icon + label
-        // stack overflows the bar height and the text is clipped away).
-        tabBarIcon: () => null,
-        tabBarIconStyle: { display: 'none' },
         tabBarActiveTintColor: Colors.blaze,
         tabBarInactiveTintColor: Colors.textSecondary,
         // The active tab must not rely on color alone (WCAG 1.4.1): the focused
         // label also carries more weight, so it reads as active without color.
         tabBarLabel: ({ focused, color, children }) => (
-          <Text style={{ fontSize: 15, fontWeight: focused ? '700' : '500', color }}>
+          <Text style={{ fontSize: 12, fontWeight: focused ? '700' : '500', color }}>
             {children}
           </Text>
         ),
@@ -38,13 +43,23 @@ export default function TabsLayout() {
           backgroundColor: Colors.backgroundElement,
           borderTopColor: Colors.contour,
           borderTopWidth: 1,
-          height: 56 + insets.bottom,
+          height: 62 + insets.bottom,
+          paddingTop: 6,
           paddingBottom: insets.bottom,
         },
       }}>
-      <Tabs.Screen name="dashboard" options={{ title: 'Accueil' }} />
-      <Tabs.Screen name="plan" options={{ title: 'Séances' }} />
-      <Tabs.Screen name="activities" options={{ title: 'Activités' }} />
+      <Tabs.Screen
+        name="dashboard"
+        options={{ title: 'Accueil', tabBarIcon: tabIcon('tab-home') }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{ title: 'Séances', tabBarIcon: tabIcon('tab-sessions') }}
+      />
+      <Tabs.Screen
+        name="activities"
+        options={{ title: 'Activités', tabBarIcon: tabIcon('tab-activities') }}
+      />
     </Tabs>
   );
 }
