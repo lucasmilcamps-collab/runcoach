@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -11,12 +12,23 @@ function openProfileEntry() {
   router.push('/fitness-profile');
 }
 
-// Form (TSB) bands, kept deliberately coarse — this is a directional cue, not a
-// prescription (no medical advice, per the project's guardrails).
-function formBand(tsb: number): { word: string; color: keyof typeof Colors } {
-  if (tsb > 5) return { word: 'Frais', color: 'hydro' };
-  if (tsb < -25) return { word: 'Fatigue élevée', color: 'flare' };
-  return { word: 'Équilibré', color: 'text' };
+// Form (TSB) bands, kept deliberately coarse — a directional cue, not a
+// prescription (no medical advice, per the project's guardrails). `verdict` is
+// the plain-language lead; `word` is the short tag. Color stays neutral — teal
+// is reserved for live Garmin data, so form (a stored, computed metric) never
+// uses it; only severe fatigue reaches for the flare warning color.
+function formBand(tsb: number): { word: string; verdict: string; color: keyof typeof Colors } {
+  if (tsb > 5) {
+    return { word: 'Frais', verdict: 'Reposé — bon jour pour une séance intense.', color: 'text' };
+  }
+  if (tsb < -25) {
+    return {
+      word: 'Fatigue élevée',
+      verdict: 'Fatigue marquée — allège et privilégie la récupération.',
+      color: 'flare',
+    };
+  }
+  return { word: 'Équilibré', verdict: 'Charge et récupération équilibrées.', color: 'text' };
 }
 
 function signed(value: number): string {
@@ -31,6 +43,8 @@ export function FitnessCard({
   fitness: Fitness | undefined;
   isLoading: boolean;
 }) {
+  const [showHelp, setShowHelp] = useState(false);
+
   if (isLoading && !fitness) {
     return (
       <View style={[styles.card, styles.centered]}>
@@ -68,29 +82,43 @@ export function FitnessCard({
         <ThemedText type="waypointLabel" themeColor="textSecondary">
           Forme
         </ThemedText>
-        <ThemedText type="waypointLabel" themeColor={band.color}>
-          {band.word}
-        </ThemedText>
+        <Pressable
+          onPress={() => setShowHelp((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel="Qu’est-ce que la forme ?"
+          accessibilityState={{ expanded: showHelp }}
+          hitSlop={12}
+          style={pressable(styles.help)}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {showHelp ? 'Masquer' : 'C’est quoi ?'}
+          </ThemedText>
+        </Pressable>
       </View>
 
-      <View style={styles.formRow}>
-        <ThemedText type="title" themeColor={band.color}>
-          {signed(fitness.tsb)}
-        </ThemedText>
+      {/* Plain-language verdict leads; the number is demoted to a supporting line. */}
+      <ThemedText type="subtitle" themeColor={band.color}>
+        {band.verdict}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        Forme {signed(fitness.tsb)} · {band.word}
+      </ThemedText>
+
+      {showHelp ? (
         <ThemedText type="small" themeColor="textSecondary">
-          équilibre charge / récupération
+          Ta forme = ta caisse de fond (l’endurance accumulée) moins ta fatigue récente. Positif :
+          tu es reposé ; négatif : tu encaisses encore la charge des dernières séances.
         </ThemedText>
-      </View>
+      ) : null}
 
       <ThemedText type="waypointLabel" themeColor="textSecondary">
-        Forme (fitness) — 90 jours
+        Caisse de fond — 90 jours
       </ThemedText>
       <FitnessSparkline series={fitness.series} />
 
       <View style={styles.statsRow}>
-        <Stat label="Fitness 42j" value={Math.round(fitness.ctl)} />
+        <Stat label="Base 42 j" value={Math.round(fitness.ctl)} />
         <View style={styles.statDivider} />
-        <Stat label="Fatigue 7j" value={Math.round(fitness.atl)} />
+        <Stat label="Fatigue 7 j" value={Math.round(fitness.atl)} />
       </View>
 
       {fitness.low_confidence ? (
@@ -99,9 +127,18 @@ export function FitnessCard({
         </ThemedText>
       ) : null}
 
-      <Pressable onPress={openProfileEntry} accessibilityRole="button" style={pressable(styles.cta)}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
-          {fitness.manual ? 'FC saisie manuellement · modifier' : 'Ajuster ma fréquence cardiaque'}
+      <Pressable
+        onPress={openProfileEntry}
+        accessibilityRole="button"
+        accessibilityLabel={
+          fitness.manual ? 'Modifier ma fréquence cardiaque' : 'Ajuster ma fréquence cardiaque'
+        }
+        style={pressable(styles.cta)}>
+        <ThemedText type="link" themeColor="text">
+          {fitness.manual ? 'FC saisie manuellement — modifier' : 'Ajuster ma fréquence cardiaque'}
+        </ThemedText>
+        <ThemedText type="link" themeColor="textSecondary">
+          ›
         </ThemedText>
       </Pressable>
     </View>
@@ -159,8 +196,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  formRow: {
-    gap: Spacing.half,
+  help: {
+    minHeight: 24,
+    justifyContent: 'center',
   },
   sparkline: {
     flexDirection: 'row',
@@ -182,7 +220,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.contour,
   },
   barLast: {
-    backgroundColor: Colors.blaze,
+    // "Today" reads through brightness, not the blaze accent — blaze stays
+    // reserved for the current position / primary action on the screen.
+    backgroundColor: Colors.text,
   },
   statsRow: {
     flexDirection: 'row',
@@ -198,7 +238,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.contourFaint,
   },
   cta: {
-    paddingTop: Spacing.one,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    marginTop: Spacing.one,
+    paddingTop: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: Colors.contourFaint,
   },
   ctaButton: {
     paddingTop: Spacing.two,

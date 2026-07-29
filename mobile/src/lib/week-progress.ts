@@ -1,11 +1,17 @@
 import type { Activity } from '@/lib/api/activities';
+import type { SportType } from '@/lib/api/types';
 import type { Plan, PlanWeek } from '@/lib/api/plans';
 import { estimateDistanceKm } from '@/lib/plan-format';
+
+export type WeekSport = { sport: SportType; count: number };
 
 export type WeekProgress = {
   rangeLabel: string;
   done: { count: number; km: number; minutes: number };
   target: { count: number; km: number };
+  // Every sport logged this week, running first — this is how cross-training
+  // (padel, basket…) is made visible as load rather than hidden in the totals.
+  sports: WeekSport[];
 };
 
 /** Monday 00:00 of the week containing `d` (fr week starts Monday). */
@@ -54,14 +60,21 @@ export function computeWeekProgress(
   let count = 0;
   let meters = 0;
   let seconds = 0;
+  const sportCounts = new Map<SportType, number>();
   for (const a of activities) {
     const t = new Date(a.start_time);
     if (t >= start && t < end) {
       count += 1;
       meters += a.distance_m ?? 0;
       seconds += a.duration_s ?? 0;
+      sportCounts.set(a.sport, (sportCounts.get(a.sport) ?? 0) + 1);
     }
   }
+
+  // Running first, then the rest by frequency — cross-training stays visible.
+  const sports: WeekSport[] = [...sportCounts.entries()]
+    .map(([sport, n]) => ({ sport, count: n }))
+    .sort((x, y) => (x.sport === 'RUN' ? -1 : y.sport === 'RUN' ? 1 : y.count - x.count));
 
   const planned = (week?.sessions ?? []).filter((s) => s.type !== 'rest');
   const targetKm = planned.reduce(
@@ -73,5 +86,6 @@ export function computeWeekProgress(
     rangeLabel: currentWeekRangeLabel(now),
     done: { count, km: Math.round(meters / 100) / 10, minutes: Math.round(seconds / 60) },
     target: { count: planned.length, km: Math.round(targetKm * 10) / 10 },
+    sports,
   };
 }

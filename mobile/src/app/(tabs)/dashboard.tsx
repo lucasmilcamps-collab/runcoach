@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SyncingCard } from '@/components/activity-list';
@@ -11,11 +11,13 @@ import { FitnessCard } from '@/components/fitness-card';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
+import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { getFitness } from '@/lib/api/fitness';
 import { getCurrentPlan, getPlanProgress } from '@/lib/api/plans';
+import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
@@ -58,6 +60,20 @@ export default function DashboardScreen() {
   const hasPlan = plan != null;
   const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
 
+  // Surface (rather than silently swallow) a failed data load, with a retry.
+  // Each query owns its own retry so tapping only refetches what actually broke.
+  const dataError =
+    activitiesQuery.isError ||
+    fitnessQuery.isError ||
+    planQuery.isError ||
+    progressQuery.isError;
+  const retryData = () => {
+    if (activitiesQuery.isError) activitiesQuery.refetch();
+    if (fitnessQuery.isError) fitnessQuery.refetch();
+    if (planQuery.isError) planQuery.refetch();
+    if (progressQuery.isError) progressQuery.refetch();
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -77,6 +93,17 @@ export default function DashboardScreen() {
                 </ThemedText>
               </View>
             ) : null}
+            {dataError ? (
+              <Pressable
+                onPress={retryData}
+                accessibilityRole="button"
+                accessibilityLabel="Réessayer de charger vos données"
+                style={pressable(styles.retryRow)}>
+                <ThemedText type="small" themeColor="flare" style={styles.centerText}>
+                  Impossible de charger vos données. Appuyez pour réessayer.
+                </ThemedText>
+              </Pressable>
+            ) : null}
           </View>
 
           {hasPlan ? (
@@ -85,6 +112,10 @@ export default function DashboardScreen() {
               weekCurrent={weekCurrent}
               weeksTotal={weeksTotal}
             />
+          ) : null}
+
+          {weekProgress.sports.length > 0 ? (
+            <WeekSportStrip sports={weekProgress.sports} />
           ) : null}
 
           {hasPlan && weeksTotal ? (
@@ -157,5 +188,8 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     marginTop: Spacing.one,
     justifyContent: 'center',
+  },
+  retryRow: {
+    paddingVertical: Spacing.two,
   },
 });

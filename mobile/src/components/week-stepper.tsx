@@ -37,7 +37,10 @@ export function WeekStepper({
             <Pressable
               onPress={() => onPick?.(w)}
               accessibilityRole="button"
-              accessibilityLabel={`Semaine ${w}`}
+              accessibilityLabel={`Semaine ${w}${
+                state === 'current' ? ', en cours' : state === 'done' ? ', terminée' : ''
+              }`}
+              accessibilityState={{ selected: state === 'current' }}
               hitSlop={8}
               style={pressable([
                 styles.node,
@@ -75,7 +78,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.contourFaint,
   },
   connectorDone: {
-    backgroundColor: Colors.blaze,
+    // Completed path reads in parchment-muted, not blaze — blaze is reserved
+    // for the single current-week marker (the One Blaze Rule).
+    backgroundColor: Colors.textSecondary,
   },
   node: {
     width: NODE,
@@ -88,8 +93,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   nodeDone: {
-    backgroundColor: Colors.contour,
-    borderColor: Colors.contour,
+    // Parchment-muted fill (per DESIGN.md) — also lifts the dark node number to
+    // ~7:1 contrast, where the previous contour fill sat at a failing 3.9:1.
+    backgroundColor: Colors.textSecondary,
+    borderColor: Colors.textSecondary,
   },
   nodeCurrent: {
     backgroundColor: Colors.blaze,
