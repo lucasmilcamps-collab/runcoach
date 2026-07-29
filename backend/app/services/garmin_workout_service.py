@@ -91,7 +91,7 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
     if hr_zone is not None and 1 <= hr_zone <= 5:
         return (
             {
-                "workoutTargetTypeId": gw.TargetType.HEART_RATE_ZONE,
+                "workoutTargetTypeId": gw.TargetType.HEART_RATE,
                 "workoutTargetTypeKey": "heart.rate.zone",
                 "displayOrder": 1,
             },
@@ -107,10 +107,14 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
             if s is not None
         ]
         if speeds:
+            # Garmin expresses a running pace band as a *speed* target: the
+            # values are m/s (see `_pace_to_speed`) and the watch renders them
+            # back as min/km. `TargetType.SPEED` (5) is the id the library
+            # documents for the "speed.zone" key — there is no pace constant.
             return (
                 {
-                    "workoutTargetTypeId": gw.TargetType.PACE_ZONE,
-                    "workoutTargetTypeKey": "pace.zone",
+                    "workoutTargetTypeId": gw.TargetType.SPEED,
+                    "workoutTargetTypeKey": "speed.zone",
                     "displayOrder": 1,
                 },
                 {"targetValueOne": min(speeds), "targetValueTwo": max(speeds)},
@@ -280,8 +284,13 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
         target_type, extra = _target_for(req.hr_zone, req.pace_range)
         steps.append(
             _make_step(
-                1, gw.StepType.INTERVAL, "interval", _end_condition("time"),
-                max(1, req.duration_min) * 60, target_type, extra,
+                1,
+                gw.StepType.INTERVAL,
+                "interval",
+                _end_condition("time"),
+                max(1, req.duration_min) * 60,
+                target_type,
+                extra,
             )
         )
         est = max(1, req.duration_min) * 60
