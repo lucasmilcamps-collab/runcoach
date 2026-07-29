@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DifficultyBolts } from '@/components/difficulty-bolts';
 import { Icon } from '@/components/icon';
+import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
@@ -11,10 +12,11 @@ import type { Plan, PlanPhase, PlanSession, PlanWeek } from '@/lib/api/plans';
 import {
   DAY_LABELS,
   PHASE_LABELS,
-  SESSION_LABELS,
   estimateDistanceKm,
   formatDuration,
   sessionDifficulty,
+  sessionTitle,
+  sortSessionsByDay,
 } from '@/lib/plan-format';
 
 type FlatWeek = { week: PlanWeek; phase: PlanPhase['name'] };
@@ -158,12 +160,15 @@ function NavArrow({
 }
 
 function WeekSessions({ week }: { week: PlanWeek }) {
+  // The generator doesn't emit sessions in calendar order, so sort before
+  // rendering — this also makes "Séance n/N" count through the week in order.
+  const ordered = sortSessionsByDay(week.sessions);
   // Addons (e.g. a strength block) share a day and aren't numbered as sessions.
-  const total = week.sessions.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
+  const total = ordered.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
   let counter = 0;
   return (
     <View style={styles.sessionList}>
-      {week.sessions.map((session, si) => {
+      {ordered.map((session, si) => {
         const isPrimary = session.type !== 'rest' && session.slot === 'primary';
         const position = isPrimary ? (counter += 1) : 0;
         return (
@@ -226,7 +231,7 @@ function SessionCard({
       style={pressable(styles.sessionCard)}
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${SESSION_LABELS[session.type]}, séance ${position} sur ${total}`}>
+      accessibilityLabel={`${sessionTitle(session)}, séance ${position} sur ${total}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
           {isKey && !isAddon ? (
@@ -244,7 +249,12 @@ function SessionCard({
         <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
       </View>
 
-      <ThemedText type="subtitle">{SESSION_LABELS[session.type]}</ThemedText>
+      {/* Glyph + sport-aware name: the two cues that let a week be scanned for
+          "which of these are runs?" without reading every card. */}
+      <View style={styles.sessionTitleRow}>
+        <SportIcon sport={session.sport} size={22} />
+        <ThemedText type="subtitle">{sessionTitle(session)}</ThemedText>
+      </View>
 
       <View style={styles.sessionStats}>
         <MiniStat label="Durée" value={formatDuration(session.duration_min)} />
@@ -330,6 +340,11 @@ const styles = StyleSheet.create({
   navArrowDisabled: { borderColor: Colors.contourFaint, opacity: 0.5 },
 
   sessionList: { gap: Spacing.three },
+  sessionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   sessionCard: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,

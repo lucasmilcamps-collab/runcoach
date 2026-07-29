@@ -3,7 +3,7 @@ import { Text, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
-import { Colors } from '@/constants/theme';
+import { Colors, MaxContentWidthWide } from '@/constants/theme';
 
 /**
  * Three tabs (Accueil / Séances / Activités). Settings and the detail screens
@@ -46,6 +46,15 @@ export default function TabsLayout() {
           height: 62 + insets.bottom,
           paddingTop: 6,
           paddingBottom: insets.bottom,
+          // On desktop web the bar would otherwise stretch its three items
+          // across the whole viewport while the content sits in a centred
+          // column — the tabs then line up with nothing above them. Capping the
+          // bar to the same width centres it on the same axis as the content.
+          // Below the cap (phones, the PWA) this is a no-op and the bar stays
+          // edge to edge.
+          maxWidth: MaxContentWidthWide,
+          width: '100%',
+          alignSelf: 'center',
         },
       }}>
       <Tabs.Screen

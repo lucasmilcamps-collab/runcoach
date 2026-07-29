@@ -1,3 +1,4 @@
+import { sportLabel } from '@/lib/activity-labels';
 import type { PaceRange, PlanBlock, PlanPhase, PlanSession, Weekday } from '@/lib/api/plans';
 
 export const PHASE_LABELS: Record<PlanPhase['name'], string> = {
@@ -20,6 +21,52 @@ export const SESSION_LABELS: Record<PlanSession['type'], string> = {
   race: 'Course',
   rest: 'Repos',
 };
+
+/**
+ * What a session should be called on screen.
+ *
+ * A running plan distinguishes its runs by training type — Footing, Tempo,
+ * Sortie longue — so that's the useful name for them. Every other sport is
+ * named by the sport itself, because "Cross-training" is the label that hides
+ * precisely what the athlete needs to tell apart: a basket session from a padel
+ * one. The sport is already on every session; only the UI was dropping it.
+ *
+ * OTHER keeps its type label — "Autre" would say less than "Cross-training".
+ */
+export function sessionTitle(session: Pick<PlanSession, 'sport' | 'type'>): string {
+  if (session.sport === 'RUN' || session.sport === 'OTHER') return SESSION_LABELS[session.type];
+  return sportLabel(session.sport);
+}
+
+const WEEKDAY_ORDER: Record<Weekday, number> = {
+  MONDAY: 0,
+  TUESDAY: 1,
+  WEDNESDAY: 2,
+  THURSDAY: 3,
+  FRIDAY: 4,
+  SATURDAY: 5,
+  SUNDAY: 6,
+};
+
+/**
+ * A week's sessions in calendar order (Monday first), with each day's add-on
+ * (renfo…) right after the main session it hangs off.
+ *
+ * The plan's `sessions` array arrives in whatever order the generator emitted —
+ * nothing upstream sorts it — so a Thursday session could render above a
+ * Wednesday one, and the "Séance n/N" numbering followed that same wrong order.
+ * Returns a new array: the source lives in the query cache and must not be
+ * sorted in place.
+ */
+export function sortSessionsByDay<T extends Pick<PlanSession, 'day' | 'slot'>>(
+  sessions: readonly T[],
+): T[] {
+  return [...sessions].sort((a, b) => {
+    const byDay = WEEKDAY_ORDER[a.day] - WEEKDAY_ORDER[b.day];
+    if (byDay !== 0) return byDay;
+    return (a.slot === 'addon' ? 1 : 0) - (b.slot === 'addon' ? 1 : 0);
+  });
+}
 
 export const DAY_LABELS: Record<Weekday, string> = {
   MONDAY: 'Lun',

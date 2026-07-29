@@ -108,6 +108,8 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 
 Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bottom safe area as heavy, latching commitments (native call-to-action placement), never floating mid-content. The waypoint stepper sits above the screen title on every screen in the onboarding flow, so the trail position is always the first thing read.
 
+**One alignment axis.** On a wide screen every element of a dashboard — the hero, both card columns, the week trail and the tab bar — starts and ends on the same two vertical lines. Anything that opts out (a bar stretched edge to edge, a block left outside the grid, a row whose contents drift to its extremes) reads as broken even when each piece is individually fine.
+
 **Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
 
 Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
@@ -130,6 +132,18 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 - **Primary:** Trail Blaze fill, Night Ground text, semibold, full-width at the bottom safe area. Pressed → Trail Blaze Deep.
 - **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
 - **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
+
+### Sport identity on a session
+A training week mixes running with padel, basket, vélo and renfo, and the athlete's first question scanning it is *"which of these are runs?"*. Every session therefore carries **two redundant cues**: a sport glyph (`sport-icon.tsx`, same 24px/1.75 stroke vocabulary as the rest of the icon set) and a **sport-aware name**.
+
+**Name runs by their training type, everything else by its sport.** "Footing" and "Tempo" are the meaningful distinction between two runs; "Cross-training" is a label that hides the one thing that distinguishes a basket session from a padel one. The sport is already on every session — the UI simply wasn't using it.
+
+Cross-training is never visually subordinated to running: same card, same weight, different glyph and name. It is load, not noise.
+
+### Action footers
+A screen gets **one** full-width blaze button — the commitment it exists for. Everything else that happens to be actionable shares a single compact ghost row (44pt, sized to the row). Stacking every action as its own full-width block makes them all look equally important and buries the one that matters; it also grows without limit as features are added.
+
+Before adding a button, check it isn't already reachable: a "Voir la semaine" action that only calls `back()` duplicates the header's back arrow and earns nothing.
 
 ### Chips / Segmented controls
 Selectable chips (objectives, weekdays, durations, RPE, days-off) share one component. **Selected is an outline, not a fill:** 1.5px accent border, accent text, semibold weight, on the `backgroundSelected` tone. The setup forms show a dozen chips at once — filling each one with Trail Blaze drowned the screen's primary button in orange, which is exactly what The One Blaze Rule exists to prevent. The single blaze *fill* on a form belongs to its CTA. Selection never rests on color alone (border + text + weight, plus `accessibilityState`), and the plan-setup "variable day" state takes the Hydro tone with an `≈` prefix so the two selected states are distinguishable without color.

@@ -37,7 +37,10 @@ def test_pace_block_converts_to_speed_band():
     )
     workout, _ = gws.build_workout(req)
     step = _dump(workout)["workoutSegments"][0]["workoutSteps"][0]
-    assert step["targetType"]["workoutTargetTypeKey"] == "pace.zone"
+    # Garmin carries a running pace band as a speed target in m/s; the watch
+    # renders it back as min/km. The library exposes no pace constant.
+    assert step["targetType"]["workoutTargetTypeKey"] == "speed.zone"
+    assert step["targetType"]["workoutTargetTypeId"] == 5
     # 4:00 = 240s -> 4.1667 m/s ; 4:10 = 250s -> 4.0 m/s. one <= two.
     assert step["targetValueOne"] == 4.0
     assert round(step["targetValueTwo"], 2) == 4.17

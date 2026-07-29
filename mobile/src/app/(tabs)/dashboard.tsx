@@ -68,8 +68,11 @@ export default function DashboardScreen() {
   const hasPlan = plan != null;
   const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
 
-  // The two summary cards laid out side by side on wide viewports. Built as an
-  // array (nulls filtered) so a single card falls back to full width.
+  // Every dashboard block below the hero goes through the same two-column grid
+  // on wide viewports. Blocks left outside it ended up orphaned against one
+  // column with dead space beside them, so the week trail and the load
+  // breakdown participate too. Order is the mobile (stacked) reading order;
+  // parity then splits it into balanced columns.
   const summaryCards = [
     hasPlan ? (
       <WeekProgressCard
@@ -81,6 +84,9 @@ export default function DashboardScreen() {
     ) : null,
     garminConnected && !firstImport ? (
       <FitnessCard key="fitness" fitness={fitnessQuery.data} isLoading={fitnessQuery.isLoading} />
+    ) : null,
+    weekProgress.sports.length > 0 ? (
+      <WeekSportStrip key="sports" sports={weekProgress.sports} />
     ) : null,
   ].filter(Boolean);
 
@@ -134,14 +140,13 @@ export default function DashboardScreen() {
             <ReadinessHero fitness={fitnessQuery.data} today={todayQuery.data} />
           ) : null}
 
-          {/* The two summary cards sit side by side on wide web/tablet and stack
-              on phones (CardColumns), instead of stranding a narrow strip. */}
+          {/* Summary blocks sit side by side on wide web/tablet and stack on
+              phones (CardColumns), instead of stranding a narrow strip. */}
           {summaryCards.length > 0 ? <CardColumns>{summaryCards}</CardColumns> : null}
 
-          {weekProgress.sports.length > 0 ? (
-            <WeekSportStrip sports={weekProgress.sports} />
-          ) : null}
-
+          {/* The week trail spans the full content width below the grid: it's a
+              single continuous path, so boxing it into one column both clipped
+              it and broke the metaphor. */}
           {hasPlan && weeksTotal ? (
             <View style={styles.program}>
               <ThemedText type="waypointLabel" themeColor="textSecondary">

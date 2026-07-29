@@ -24,28 +24,40 @@ export function Chip({
   selected,
   onPress,
   tone = 'blaze',
+  disabled = false,
+  fill = false,
   accessibilityLabel,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   tone?: ChipTone;
+  /** Not choosable — e.g. the day a session already sits on. Still shows its
+   * selected state, so "you are here" reads without being an offer. */
+  disabled?: boolean;
+  /** Share the row equally with its siblings instead of hugging its label —
+   * for a fixed set that should fit on one line (the 7 weekdays). */
+  fill?: boolean;
   accessibilityLabel?: string;
 }) {
   const accent = tone === 'hydro' ? 'hydro' : 'blaze';
+  const color = selected ? accent : disabled ? 'textSecondary' : 'text';
 
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
       style={pressable([
         styles.chip,
+        fill && styles.chipFill,
+        disabled && !selected && styles.chipDisabled,
         selected && styles.chipSelected,
         selected && { borderColor: Colors[accent] },
       ])}>
-      <ThemedText type={selected ? 'link' : 'default'} themeColor={selected ? accent : 'text'}>
+      <ThemedText type={selected ? 'link' : 'default'} themeColor={color}>
         {label}
       </ThemedText>
     </Pressable>
@@ -66,5 +78,15 @@ const styles = StyleSheet.create({
   chipSelected: {
     borderWidth: 1.5,
     backgroundColor: Colors.backgroundSelected,
+  },
+  chipFill: {
+    // Width comes from the row, so the label-hugging padding would only stop
+    // the set fitting on one line.
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: Spacing.one,
+  },
+  chipDisabled: {
+    borderColor: Colors.contourFaint,
   },
 });
