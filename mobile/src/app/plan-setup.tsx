@@ -1,17 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { Chip } from '@/components/chip';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
-import { pressable } from '@/lib/pressable';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
 // Per sport: day → isFlexible. Flexibility is per DAY (e.g. basket Wed fixed +
@@ -45,20 +45,9 @@ const RUN_COUNTS = [2, 3, 4, 5];
 const STRENGTH_COUNTS = [1, 2];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      style={pressable([styles.chip, selected && styles.chipSelected])}>
-      <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
-}
-
+/** A weekday in the fixed-sport grid: off → fixed → flexible. "Flexible" takes
+ * the hydro tone and an "≈" prefix so the two selected states never differ by
+ * color alone. */
 function DayChip({
   label,
   state,
@@ -69,21 +58,15 @@ function DayChip({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <Chip
+      label={state === 'flexible' ? `≈ ${label}` : label}
+      selected={state !== 'off'}
+      tone={state === 'flexible' ? 'hydro' : 'blaze'}
       onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: state !== 'off' }}
-      style={pressable([
-        styles.chip,
-        state === 'fixed' && styles.chipSelected,
-        state === 'flexible' && styles.chipFlexible,
-      ])}>
-      <ThemedText
-        type="default"
-        themeColor={state === 'fixed' ? 'background' : state === 'flexible' ? 'hydro' : 'text'}>
-        {state === 'flexible' ? `≈ ${label}` : label}
-      </ThemedText>
-    </Pressable>
+      accessibilityLabel={
+        state === 'off' ? label : `${label}, ${state === 'fixed' ? 'fixe' : 'variable'}`
+      }
+    />
   );
 }
 
@@ -392,7 +375,7 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -405,28 +388,10 @@ const styles = StyleSheet.create({
   fixedRow: { gap: Spacing.one, paddingTop: Spacing.two },
   fixedLabel: { marginBottom: Spacing.half },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  chip: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Rounded.sm,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
-  },
-  chipSelected: {
-    backgroundColor: Colors.blaze,
-    borderColor: Colors.blaze,
-  },
-  chipFlexible: {
-    borderColor: Colors.hydro,
-    backgroundColor: Colors.backgroundElement,
-  },
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

@@ -54,7 +54,12 @@
 
 `half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64` — cards pad `four`, list gaps `three`, inline gaps `two`.
 `Rounded.sm 8` (chips, pills) · `Rounded.md 14` (cards, buttons) · `Rounded.lg 20` (avatar).
-Layout: `MaxContentWidth 800` centered; bottom scroll padding `BottomTabInset + Spacing.four`.
+Layout: bottom scroll padding `BottomTabInset + Spacing.four`. Three width caps, one per kind of screen:
+- **`MaxFormWidth 560`** — forms & dialogs (login, garmin-connect, plan-setup, add-activity, injury-report, fitness-profile, settings).
+- **`MaxContentWidth 800`** — reading/list screens (activités, historique, détail de séance).
+- **`MaxContentWidthWide 1000`** — dashboards (Accueil, Séances), which wrap their summary cards in `<CardColumns>`: two columns at `WideBreakpoint 720` (`useIsWide()`), stacked below.
+
+Don't hand-roll a width check — use the hook and the component.
 
 ### Depth = tone, not shadow
 
@@ -67,10 +72,13 @@ Layout: `MaxContentWidth 800` centered; bottom scroll padding `BottomTabInset + 
 - **Button** (`components/button.tsx`): `minHeight 52`, `Rounded.md`. `primary` = `blaze` bg + `background`-colored `link` label, pressed → `blazeDeep`. `ghost` = transparent + `contour` border, pressed → `backgroundElement`. Loading shows `ActivityIndicator`, disabled = `contourFaint` bg. One primary per screen; secondary actions are `ghost`.
 - **Card**: `backgroundElement`, `Rounded.md`, padding `four`, gap `two`. Accent variant = left border 2px `blaze` (today) or `flare` (replan).
 - **Row / list item**: hairline separators via `borderColor: contourFaint`; chevron-right icon trailing when navigable.
-- **Chip / segmented**: `minHeight 44`, `Rounded.sm`, `contour` border; selected = `blaze` bg + `background` text.
-- **Icons** (`components/icon.tsx` + `difficulty-bolts.tsx`): in-house **SVG stroke set**, `strokeWidth 1.75`, on a 24px grid (`chevron-*`, `arrow-left`). Difficulty = lightning bolts, ring = `react-native-svg`. **No emoji, no icon font.**
+- **Chip / segmented** (`chip.tsx` — use the shared component, don't redefine it per screen): `minHeight 44`, `Rounded.sm`, `contour` border. **Selected = outline, not fill**: 1.5px accent border + accent text + `link` weight on `backgroundSelected`. A form shows a dozen chips at once, so filling each with `blaze` buried the primary CTA — the one blaze *fill* per screen belongs to the CTA. `tone="hydro"` marks the plan-setup "variable" day (paired with an `≈` prefix, never color alone).
+- **Icons** (`components/icon.tsx` + `difficulty-bolts.tsx`): in-house **SVG stroke set**, `strokeWidth 1.75`, on a 24px grid (`chevron-*`, `arrow-left`, `tab-*`). Difficulty = lightning bolts, ring = `react-native-svg`. **No emoji, no icon font.** The `tab-*` glyphs come from the Night-Trail vocabulary (waypoint pin over a contour, week grid, logbook) rather than a generic icon pack.
+- **Readiness hero** (`readiness-hero.tsx`): Accueil's lead card — plain-language form verdict first, `Forme ±N · Mot` as a supporting line, today's session below a hairline as the tappable next move. The verdict comes from `formBand()` (`lib/fitness-format.ts`) — the **single** source; never restate it in another card on the same screen.
+- **Load breakdown** (`week-sport-strip.tsx`): "Ta charge cette semaine" — one row per sport logged, identical `contour` bars for running and cross-training alike (the product thesis, made literal). Not a second accent, not a rainbow.
+- **Card columns** (`card-columns.tsx`): the responsive wrapper described above. Distributes children by index parity; falls back to one column when there's a single card.
 - **Top bar** (`top-bar.tsx`): initials avatar (→ Settings) absolutely left, wordmark centered, optional week-range subtitle.
-- **Tab bar**: label-only (`tabBarIconStyle: display:none`), height `56 + safe-area bottom`, active tint `blaze`.
+- **Tab bar**: stroke icon + 12px label, height `62 + safe-area bottom`, active tint `blaze` **and** bold label (never tint alone — WCAG 1.4.1). Icons are decorative; the label is the accessible name.
 
 ---
 

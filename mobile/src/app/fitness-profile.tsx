@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
 import { pressable } from '@/lib/pressable';
@@ -196,7 +196,7 @@ function Segmented({
             accessibilityRole="button"
             accessibilityState={{ selected }}
             style={pressable([styles.segment, selected && styles.segmentSelected])}>
-            <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
+            <ThemedText type={selected ? 'link' : 'default'} themeColor={selected ? 'blaze' : 'text'}>
               {opt.label}
             </ThemedText>
           </Pressable>
@@ -224,8 +224,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundElement,
   },
   segmentSelected: {
-    backgroundColor: Colors.blaze,
+    // Outline-selected, matching the shared Chip: the screen's one blaze fill
+    // stays with the primary action (DESIGN.md, The One Blaze Rule).
+    borderWidth: 1.5,
     borderColor: Colors.blaze,
+    backgroundColor: Colors.backgroundSelected,
   },
   safeArea: {
     flex: 1,
@@ -236,7 +239,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     gap: Spacing.five,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -250,7 +253,7 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

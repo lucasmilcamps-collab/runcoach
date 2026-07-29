@@ -5,9 +5,10 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { Chip } from '@/components/chip';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
 import { ApiError } from '@/lib/api/client';
 import { InjuryReport, reportInjury } from '@/lib/api/plans';
@@ -21,20 +22,6 @@ const SEVERITIES: { value: Severity; label: string; hint: string }[] = [
 ];
 
 const DAYS_OFF = [0, 3, 5, 7, 10, 14, 21];
-
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      style={pressable([styles.chip, selected && styles.chipSelected])}>
-      <ThemedText type="default" themeColor={selected ? 'background' : 'text'}>
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
-}
 
 export default function InjuryReportScreen() {
   const queryClient = useQueryClient();
@@ -179,7 +166,7 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -200,22 +187,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.blaze,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  chip: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Rounded.sm,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
-  },
-  chipSelected: {
-    backgroundColor: Colors.blaze,
-    borderColor: Colors.blaze,
-  },
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

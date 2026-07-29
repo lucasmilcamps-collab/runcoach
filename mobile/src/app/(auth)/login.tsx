@@ -8,7 +8,7 @@ import { Button } from '@/components/button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { login, register } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     gap: Spacing.five,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
     paddingTop: Spacing.four,
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
     paddingBottom: Spacing.four,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

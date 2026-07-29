@@ -4,13 +4,14 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
 import { PlanWeekPager } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
-import { BottomTabInset, Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { BottomTabInset, Colors, MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -161,13 +162,20 @@ export default function PlanScreen() {
 
           {todayQuery.data?.has_plan ? <TodayCard today={todayQuery.data} /> : null}
 
-          {ready ? <WeeklyOverview progress={weekProgress} /> : null}
-
-          {ready && query.data?.estimated_time_min != null ? (
-            <ForecastCard
-              estimated={query.data.estimated_time_min}
-              projected={query.data.projected_time_min}
-            />
+          {/* Weekly overview + chrono forecast pair up on wide viewports. */}
+          {ready ? (
+            <CardColumns>
+              {[
+                <WeeklyOverview key="overview" progress={weekProgress} />,
+                query.data?.estimated_time_min != null ? (
+                  <ForecastCard
+                    key="forecast"
+                    estimated={query.data.estimated_time_min}
+                    projected={query.data.projected_time_min}
+                  />
+                ) : null,
+              ].filter(Boolean)}
+            </CardColumns>
           ) : null}
 
           {ready && query.data?.feasibility_warning ? (
@@ -378,7 +386,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxContentWidthWide,
     alignSelf: 'center',
     width: '100%',
   },

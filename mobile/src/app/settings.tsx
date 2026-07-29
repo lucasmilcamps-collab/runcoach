@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icon';
 import { NotificationsCard } from '@/components/notifications-card';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    maxWidth: MaxContentWidth,
+    maxWidth: MaxFormWidth,
     alignSelf: 'center',
     width: '100%',
   },

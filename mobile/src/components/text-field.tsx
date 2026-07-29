@@ -9,7 +9,15 @@ type TextFieldProps = TextInputProps & {
   error?: string;
 };
 
-export function TextField({ label, error, style, onFocus, onBlur, ...rest }: TextFieldProps) {
+export function TextField({
+  label,
+  error,
+  style,
+  onFocus,
+  onBlur,
+  accessibilityLabel,
+  ...rest
+}: TextFieldProps) {
   const [focused, setFocused] = useState(false);
 
   const borderColor = error ? Colors.flare : focused ? Colors.blaze : Colors.contour;
@@ -26,6 +34,11 @@ export function TextField({ label, error, style, onFocus, onBlur, ...rest }: Tex
           style,
         ]}
         placeholderTextColor={Colors.textSecondary}
+        // The visible label is a sibling <Text>, which assistive tech has no way
+        // to associate with this input — so name the input explicitly, and let
+        // the error be announced with it rather than read as loose text.
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={error}
         onFocus={(event) => {
           setFocused(true);
           onFocus?.(event);

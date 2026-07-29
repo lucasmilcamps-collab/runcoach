@@ -106,7 +106,9 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 
 ## Layout
 
-Single-column, generous vertical rhythm (Spacing scale below); content max-width 800 on web/tablet to keep line length in HIG/Material-friendly bounds. Primary actions anchor to the bottom safe area as heavy, latching commitments (native call-to-action placement), never floating mid-content. The waypoint stepper sits above the screen title on every screen in the onboarding flow, so the trail position is always the first thing read.
+Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bottom safe area as heavy, latching commitments (native call-to-action placement), never floating mid-content. The waypoint stepper sits above the screen title on every screen in the onboarding flow, so the trail position is always the first thing read.
+
+**Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
 
 Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
 
@@ -129,6 +131,9 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 - **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
 - **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
 
+### Chips / Segmented controls
+Selectable chips (objectives, weekdays, durations, RPE, days-off) share one component. **Selected is an outline, not a fill:** 1.5px accent border, accent text, semibold weight, on the `backgroundSelected` tone. The setup forms show a dozen chips at once — filling each one with Trail Blaze drowned the screen's primary button in orange, which is exactly what The One Blaze Rule exists to prevent. The single blaze *fill* on a form belongs to its CTA. Selection never rests on color alone (border + text + weight, plus `accessibilityState`), and the plan-setup "variable day" state takes the Hydro tone with an `≈` prefix so the two selected states are distinguishable without color.
+
 ### Inputs / Fields
 - **Style:** Elevated Ground fill, 1px Contour border, Parchment text, Parchment Muted placeholder.
 - **Focus:** border shifts to Trail Blaze at 1.5px, no glow.
@@ -136,6 +141,14 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 
 ### Waypoint Stepper (signature component)
 Four waypoint dots (Welcome → Login → Connect Garmin → Dashboard) connected by a thin Contour path. The current step's dot is a Trail Blaze *stroke* with the named glow — not a fill, so it never competes with the screen's primary button for the One Blaze Rule's one allowed fill. Completed steps fill Parchment Muted solid; upcoming steps stay hollow (Contour outline only). A Waypoint Label ("01/04", in Parchment, not Blaze) sits beside the current dot. This is the one component every onboarding screen shares — it only appears during onboarding, never as permanent chrome on the dashboard once the trail is complete.
+
+### Readiness Hero (Accueil's lead)
+The Accueil screen opens with the one question a Home tab exists to answer: **"suis-je prêt à courir, et qu'est-ce que je fais aujourd'hui ?"** — answered in plain French before any number. The plain-language form verdict ("Reposé — bon jour pour une séance intense.") leads; the computed value is demoted to a supporting `Forme +14 · Frais` line; today's (form-adjusted) session sits below a hairline as the single next move, tappable through to Séances. No blaze *fill* lives here — only the "Aujourd'hui" text kicker — so the One Blaze Rule's one fill stays with the current-week waymarker.
+
+**The verdict lives in exactly one place.** `formBand()` (`lib/fitness-format.ts`) is the single source of the band, its wording and its color; the hero states it and the Forme card never repeats it. A screen that says "Forme +14 · Frais" twice reads as unfinished.
+
+### Load Breakdown (the thesis, made literal)
+"Ta charge cette semaine" lists every sport logged this week — running *and* padel/basket/bike — with the **same bar treatment**, because the product's whole thesis is that cross-training is load, not noise. Bars are sienna Contour, never a second accent: this is a read-out, not a call to act. Cross-training is never visually subordinated to running, and never collapsed into a single "activities" total.
 
 ### Navigation
 No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.
