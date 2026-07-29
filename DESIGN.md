@@ -133,6 +133,15 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 - **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
 - **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
 
+### Screen Crest (the signature, everywhere)
+Two topographic contour lines bleed off the **top-right corner of every screen**, behind the header — the app's letterhead. One component (`screen-crest.tsx`), one drawing, one placement: the welcome screen used to build its own out of bordered `View` ellipses while the session detail drew real contours in SVG, so the same intent read as two unrelated ornaments rather than an identity.
+
+**Near-subliminal by design** (contour at 7–10% opacity). You should have to look for it. A motif at full strength on every screen stops signifying anything and becomes wallpaper, and texture behind numbers costs legibility — so it lives in the header band and never under data or a list.
+
+It sits inside the content column, not against the viewport edge, so it holds the same alignment axis as everything else on wide screens. The frame clips its own bleed: hanging the drawing on negative offsets added up to 36px of horizontal scroll on every screen.
+
+**Considered and rejected:** making the motif *encode* something (contour density by plan phase). Invisible in practice, and it would break the constancy that makes a signature readable as one. The crest is identity, not information.
+
 ### Sport identity on a session
 A training week mixes running with padel, basket, vélo and renfo, and the athlete's first question scanning it is *"which of these are runs?"*. Every session therefore carries **two redundant cues**: a sport glyph (`sport-icon.tsx`, same 24px/1.75 stroke vocabulary as the rest of the icon set) and a **sport-aware name**.
 

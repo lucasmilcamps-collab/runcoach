@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
@@ -94,6 +95,7 @@ export default function GarminConnectScreen() {
       <SafeAreaView style={styles.safeArea}>
         {mfaToken ? (
           <View style={styles.content}>
+            <ScreenCrest />
             <WaypointStepper currentStep={2} />
 
             <View style={styles.header}>
@@ -126,6 +128,7 @@ export default function GarminConnectScreen() {
           </View>
         ) : (
           <View style={styles.content}>
+            <ScreenCrest />
             <WaypointStepper currentStep={2} />
 
             <View style={styles.header}>

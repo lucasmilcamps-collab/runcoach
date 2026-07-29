@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/icon';
 import { NotificationsCard } from '@/components/notifications-card';
+import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
@@ -21,6 +22,7 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <ScreenCrest />
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>

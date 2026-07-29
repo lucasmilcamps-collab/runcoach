@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
+import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
@@ -80,6 +81,7 @@ export default function LinkActivityScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Pressable
             onPress={() => router.back()}

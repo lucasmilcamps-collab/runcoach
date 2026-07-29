@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActivityList, SyncingCard } from '@/components/activity-list';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
+import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -35,6 +36,7 @@ export default function ActivitiesScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TopBar title="ACTIVITÉS" subtitle={subtitle} />

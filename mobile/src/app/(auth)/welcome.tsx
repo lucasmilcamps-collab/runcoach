@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
 import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
@@ -10,7 +11,7 @@ import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 export default function WelcomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ContourRings />
+      <ScreenCrest />
 
       <View style={styles.content}>
         <WaypointStepper currentStep={0} />
@@ -32,42 +33,12 @@ export default function WelcomeScreen() {
   );
 }
 
-function ContourRings() {
-  return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ringsWrapper]}>
-      {[280, 220, 160, 100].map((size) => (
-        <View
-          key={size}
-          style={[
-            styles.ring,
-            {
-              width: size,
-              height: size * 0.62,
-              borderRadius: size / 2,
-              top: -size * 0.28,
-              right: -size * 0.32,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: Colors.background,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
-  },
-  ringsWrapper: {
-    overflow: 'hidden',
-  },
-  ring: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: Colors.contourFaint,
   },
   content: {
     flex: 1,
