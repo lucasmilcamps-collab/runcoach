@@ -3,7 +3,10 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
+
+/** Avatar diameter — also drives the top bar's row height. */
+export const AVATAR = 52;
 import { getMe, initialsFromEmail } from '@/lib/api/auth';
 import { pressable } from '@/lib/pressable';
 
@@ -13,7 +16,9 @@ import { pressable } from '@/lib/pressable';
  */
 export function AvatarButton() {
   const { data } = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: Infinity });
-  const initials = initialsFromEmail(data?.email) || '·';
+  // No placeholder glyph while /me loads: a lone '·' reads as a broken
+  // avatar. The empty ring is a calmer, honest loading state.
+  const initials = initialsFromEmail(data?.email);
 
   return (
     <Pressable
@@ -30,10 +35,12 @@ export function AvatarButton() {
 
 const styles = StyleSheet.create({
   avatar: {
-    // 44pt, not 40 + hitSlop: hitSlop is inert on react-native-web (PWA).
-    width: 44,
-    height: 44,
-    borderRadius: Rounded.lg,
+    // Well past the 44pt minimum: this is the only way into Settings, and at
+    // 44 it read as an afterthought beside the wordmark. Circular, not the
+    // Rounded.lg squircle, which stops looking round as the box grows.
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: AVATAR / 2,
     borderWidth: 1,
     borderColor: Colors.contour,
     backgroundColor: Colors.backgroundElement,
@@ -41,7 +48,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   initials: {
-    fontSize: 13,
+    fontSize: 15,
     letterSpacing: 0.5,
   },
 });
