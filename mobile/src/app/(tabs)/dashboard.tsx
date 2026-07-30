@@ -16,17 +16,19 @@ import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
 import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
-import { BottomTabInset, Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { getFitness } from '@/lib/api/fitness';
 import { getCurrentPlan, getPlanProgress, getTodaySession } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
+import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
 export default function DashboardScreen() {
+  const bottomPad = useTabScrollPadding();
   const garminConnected = useAuthStore((state) => state.garminConnected);
   const { isSyncing, errorMessage } = useGarminSync();
 
@@ -109,7 +111,7 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TopBar title="RUNCOACH" subtitle={currentWeekRangeLabel()} />
             {errorMessage ? (
@@ -196,9 +198,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   scrollContent: {
-    gap: Spacing.five,
+    // Spacing.four like every other tab — Accueil used `five` and read looser
+    // than Séances/Activités for no reason.
+    gap: Spacing.four,
     paddingTop: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
   },
   header: {
     gap: Spacing.two,

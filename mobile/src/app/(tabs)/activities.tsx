@@ -9,12 +9,14 @@ import { EmptyState } from '@/components/empty-state';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
-import { BottomTabInset, Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
+import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 
 export default function ActivitiesScreen() {
+  const bottomPad = useTabScrollPadding();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const { sync, isSyncing, errorMessage } = useGarminSync();
 
@@ -37,7 +39,7 @@ export default function ActivitiesScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TopBar title="ACTIVITÉS" subtitle={subtitle} />
             {errorMessage ? (
@@ -125,7 +127,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: Spacing.four,
     paddingTop: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
   },
   header: {
     gap: Spacing.two,

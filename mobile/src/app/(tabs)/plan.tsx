@@ -13,7 +13,7 @@ import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
-import { BottomTabInset, Colors, MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -29,6 +29,7 @@ import {
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
+import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
@@ -104,6 +105,7 @@ export default function PlanScreen() {
     queryFn: getPlanProgress,
     retry: false,
   });
+  const bottomPad = useTabScrollPadding();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const activitiesQuery = useQuery({
     queryKey: ['activities'],
@@ -136,7 +138,7 @@ export default function PlanScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
           <TopBar title="SÉANCES" subtitle={ready ? currentWeekRangeLabel() : undefined} />
 
           {ready ? (
@@ -400,7 +402,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: Spacing.four,
     paddingTop: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
   },
   headerRow: {
     flexDirection: 'row',

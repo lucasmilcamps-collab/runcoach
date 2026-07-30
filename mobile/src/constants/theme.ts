@@ -52,8 +52,10 @@ export const Rounded = {
   lg: 20,
 } as const;
 
-/** Bottom scroll padding that clears the tab bar (62pt + safe-area inset). */
-export const BottomTabInset = Platform.select({ ios: 56, android: 86 }) ?? 0;
+/** Tab bar height without the safe-area inset — mirrors `(tabs)/_layout`.
+ * Screens shouldn't use this directly: `useTabScrollPadding()` adds the real
+ * inset, which a per-platform constant can't know. */
+export const TabBarHeight = 62;
 
 /** Reading-width cap (single column) — keeps line length in HIG/Material
  * bounds on wide web/tablet. Used by list/reading screens. */
