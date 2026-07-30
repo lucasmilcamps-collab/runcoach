@@ -176,6 +176,11 @@ The Accueil screen opens with the one question a Home tab exists to answer: **"s
 ### Load Breakdown (the thesis, made literal)
 "Ta charge cette semaine" lists every sport logged this week — running *and* padel/basket/bike — with the **same bar treatment**, because the product's whole thesis is that cross-training is load, not noise. Bars are sienna Contour, never a second accent: this is a read-out, not a call to act. Cross-training is never visually subordinated to running, and never collapsed into a single "activities" total.
 
+### Charts: baselines, and saying it in words
+The 90-day fitness trend is a **line**, not bars. Bars and filled areas state their value through their height, so they are only ever drawn from a zero baseline; a line carries no such claim and may be scaled to the data's own range. CTL lives inside a narrow band, and a zero baseline pressed three months of training into the top fifth of the plot — so the line gets a fitted window, with a floor on how far it will zoom (a couple of points of drift must keep looking like drift, never a mountain range).
+
+**A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
+
 ### Navigation
 No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.
 
