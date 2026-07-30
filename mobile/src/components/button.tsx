@@ -31,7 +31,11 @@ export function Button({ label, variant = 'primary', loading = false, disabled, 
       ) : (
         <ThemedText
           type="link"
-          themeColor={variant === 'primary' ? 'background' : isDisabled ? 'textSecondary' : 'text'}>
+          // Disabled is checked first: a disabled primary keeps the blaze fill's
+          // near-black label on the faint disabled fill otherwise — 1.23:1, all
+          // but invisible. The old order meant this branch was only ever
+          // reachable for the ghost variant.
+          themeColor={isDisabled ? 'textSecondary' : variant === 'primary' ? 'background' : 'text'}>
           {label}
         </ThemedText>
       )}

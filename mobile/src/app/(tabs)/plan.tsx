@@ -145,7 +145,6 @@ export default function PlanScreen() {
                 onPress={() => router.push('/plan-history')}
                 accessibilityRole="button"
                 accessibilityLabel="Historique des versions du plan"
-                hitSlop={8}
                 style={pressable(styles.historyLink)}>
                 <ThemedText type="waypointLabel" themeColor="blaze">
                   Historique
@@ -416,6 +415,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one,
+    // 16pt tall as laid out; hitSlop doesn't help on web.
+    minHeight: 44,
   },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   actions: {

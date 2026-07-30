@@ -67,6 +67,10 @@ export function Chip({
 const styles = StyleSheet.create({
   chip: {
     minHeight: 44,
+    // A one-character label ("2", "9") only comes to 43pt wide from its padding
+    // alone — a pixel under the target on the narrow axis.
+    minWidth: 44,
+    alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,

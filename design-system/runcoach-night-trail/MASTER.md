@@ -30,7 +30,7 @@
 | `blaze` | `#E8792C` | **THE accent** — primary CTA, active state, current week |
 | `blazeDeep` | `#C05F1B` | Pressed state of blaze surfaces |
 | `hydro` | `#2FA8A0` | Teal — informational (deload, "manual", easing) |
-| `flare` | `#E5484D` | Danger / error only |
+| `flare` | `#F26D71` | Danger / error only (AA on all three grounds) |
 
 **One Blaze Rule:** `blaze` is the *only* saturated accent. Use it for a single primary emphasis per view (one CTA, the active tab, the current week). Everything else is ground + contour + text tones. Never introduce a second bright hue.
 
@@ -88,7 +88,7 @@ Don't hand-roll a width check — use the hook and the component.
 ## Interaction & Motion (native, not web)
 
 - **Press feedback is mandatory** on every tappable surface. Custom `Pressable`s use the shared `pressable(style)` helper (`lib/pressable.ts`) → opacity dip on press. There is **no hover** and no `cursor` on this platform — don't port web hover patterns.
-- **Touch targets ≥ 44×44**; add `hitSlop={8}` to anything visually smaller (avatar, arrows, small chevrons, stepper nodes).
+- **Touch targets ≥ 44×44 in the layout itself** — padding or an explicit `width`/`height`/`minHeight`, never `hitSlop`. **`hitSlop` does nothing on react-native-web**, and this app ships as an installed iOS PWA, so a control that relies on it is exactly its painted size for the real user. When the visual must stay small (a 28pt stepper dot), wrap it in a transparent 44pt frame.
 - Keep transitions ~150–300ms if animating; respect reduced-motion. Currently the app is mostly static — that's acceptable.
 
 ## Accessibility
@@ -117,7 +117,7 @@ Don't hand-roll a width check — use the hook and the component.
 - [ ] Colors come from `theme.ts` tokens; only `blaze` as accent (One Blaze Rule)
 - [ ] Text via `<ThemedText type=…>`; body ≥ 13px; mono only for `waypointLabel`
 - [ ] Surfaces use tone + `contourFaint` hairlines (no shadows)
-- [ ] Every tappable uses `pressable()` feedback; targets ≥ 44px (`hitSlop` if smaller)
+- [ ] Every tappable uses `pressable()` feedback; targets ≥ 44px **in layout** (not `hitSlop` — inert on web/PWA)
 - [ ] Icons from the SVG `Icon` set / bolts / svg — no emoji, no glyphs
 - [ ] `accessibilityLabel` on icon-only controls & tappable cards; no color-only meaning
 - [ ] Safe-area respected; scroll padding clears the tab bar; no horizontal scroll at 375px

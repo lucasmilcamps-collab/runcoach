@@ -20,7 +20,6 @@ export function AvatarButton() {
       onPress={() => router.push('/settings')}
       accessibilityRole="button"
       accessibilityLabel="Réglages"
-      hitSlop={8}
       style={pressable(styles.avatar)}>
       <ThemedText type="waypointLabel" themeColor="text" style={styles.initials}>
         {initials}
@@ -31,8 +30,9 @@ export function AvatarButton() {
 
 const styles = StyleSheet.create({
   avatar: {
-    width: 40,
-    height: 40,
+    // 44pt, not 40 + hitSlop: hitSlop is inert on react-native-web (PWA).
+    width: 44,
+    height: 44,
     borderRadius: Rounded.lg,
     borderWidth: 1,
     borderColor: Colors.contour,

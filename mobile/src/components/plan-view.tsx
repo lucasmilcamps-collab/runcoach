@@ -148,7 +148,6 @@ function NavArrow({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={dir === 'prev' ? 'Semaine précédente' : 'Semaine suivante'}
-      hitSlop={8}
       style={pressable([styles.navArrow, disabled && styles.navArrowDisabled])}>
       <Icon
         name={dir === 'prev' ? 'chevron-left' : 'chevron-right'}

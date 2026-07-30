@@ -61,7 +61,6 @@ export function FitnessCard({
           accessibilityRole="button"
           accessibilityLabel="Qu’est-ce que la forme ?"
           accessibilityState={{ expanded: showHelp }}
-          hitSlop={12}
           style={pressable(styles.help)}>
           <ThemedText type="small" themeColor="textSecondary">
             {showHelp ? 'Masquer' : 'C’est quoi ?'}
@@ -165,7 +164,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   help: {
-    minHeight: 24,
+    // 44pt for real — hitSlop doesn't apply on web.
+    minHeight: 44,
     justifyContent: 'center',
   },
   sparkline: {
