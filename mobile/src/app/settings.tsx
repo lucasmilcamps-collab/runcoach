@@ -31,7 +31,6 @@ export default function SettingsScreen() {
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/dashboard'))}
               accessibilityRole="button"
               accessibilityLabel="Retour"
-              hitSlop={8}
               style={pressable(styles.iconBtn)}>
               <Icon name="arrow-left" size={22} />
             </Pressable>
@@ -158,9 +157,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    // A real 44pt target: hitSlop does not extend the hit area on
+    // react-native-web, and this app ships as an installed PWA.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: Colors.contour,
     alignItems: 'center',

@@ -51,18 +51,23 @@ export function WeekStepper({
                 state === 'current' ? ', en cours' : state === 'done' ? ', terminée' : ''
               }`}
               accessibilityState={{ selected: state === 'current' }}
-              hitSlop={8}
-              style={pressable([
-                styles.node,
-                state === 'done' && styles.nodeDone,
-                state === 'current' && styles.nodeCurrent,
-              ])}>
-              <ThemedText
-                type="waypointLabel"
-                themeColor={state === 'todo' ? 'textSecondary' : 'background'}
-                style={styles.nodeLabel}>
-                {w}
-              </ThemedText>
+              style={pressable(styles.nodeTouch)}>
+              {/* The dot stays 28pt; the 44pt target is the transparent frame
+                  around it. hitSlop would have been the lighter fix, but it
+                  does nothing on react-native-web and this app ships as an
+                  installed PWA. */}
+              <View
+                style={[
+                  styles.node,
+                  state === 'done' && styles.nodeDone,
+                  state === 'current' && styles.nodeCurrent,
+                ]}>
+                <ThemedText
+                  type="waypointLabel"
+                  themeColor={state === 'todo' ? 'textSecondary' : 'background'}>
+                  {w}
+                </ThemedText>
+              </View>
             </Pressable>
           </View>
         );
@@ -84,6 +89,8 @@ export function WeekStepper({
 }
 
 const NODE = 28;
+// Minimum comfortable target — the dot is smaller, the touch frame is not.
+const TOUCH = 44;
 
 const styles = StyleSheet.create({
   track: {
@@ -118,6 +125,12 @@ const styles = StyleSheet.create({
     // for the single current-week marker (the One Blaze Rule).
     backgroundColor: Colors.textSecondary,
   },
+  nodeTouch: {
+    width: TOUCH,
+    height: TOUCH,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   node: {
     width: NODE,
     height: NODE,
@@ -137,8 +150,5 @@ const styles = StyleSheet.create({
   nodeCurrent: {
     backgroundColor: Colors.blaze,
     borderColor: Colors.blaze,
-  },
-  nodeLabel: {
-    fontSize: 11,
   },
 });

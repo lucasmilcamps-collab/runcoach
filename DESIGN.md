@@ -11,7 +11,7 @@ colors:
   blaze: "#E8792C"
   blaze-deep: "#C05F1B"
   hydro: "#2FA8A0"
-  flare: "#E5484D"
+  flare: "#F26D71"
 typography:
   body:
     fontFamily: "System (SF Pro / Roboto / system-ui)"
@@ -75,7 +75,7 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 - **Hydro Teal** (`#2FA8A0`): reserved for one meaning only — a live, successful data connection (Garmin connected, sync running). Borrowed from the hydrology-blue convention on real topo maps.
 
 ### Tertiary
-- **Flare Red** (`#E5484D`): errors and destructive actions only. Distinct enough from Trail Blaze that "act here" and "something's wrong" are never visually confused.
+- **Flare Red** (`#F26D71`): errors and destructive actions only. Distinct enough from Trail Blaze that "act here" and "something's wrong" are never visually confused.
 
 ### Neutral
 - **Night Ground** (`#14140F`): base background. Warm near-black, not a pure or cool black.
@@ -132,6 +132,9 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 - **Primary:** Trail Blaze fill, Night Ground text, semibold, full-width at the bottom safe area. Pressed → Trail Blaze Deep.
 - **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
 - **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
+
+### Touch targets on a PWA
+Every control reserves **44×44 in the layout** — padding, or a transparent frame around a deliberately small visual. `hitSlop` is not an option here: it has no effect on react-native-web, and the web build *is* the product (an installed iOS PWA), so a control that leans on it is only as big as it looks. Measured before this rule existed: the plan's "Historique" link was 97×16, the week dots 28×28, the back buttons 36×36.
 
 ### Screen Crest (the signature, everywhere)
 Two topographic contour lines bleed off the **top-right corner of every screen**, behind the header — the app's letterhead. One component (`screen-crest.tsx`), one drawing, one placement: the welcome screen used to build its own out of bordered `View` ellipses while the session detail drew real contours in SVG, so the same intent read as two unrelated ornaments rather than an identity.

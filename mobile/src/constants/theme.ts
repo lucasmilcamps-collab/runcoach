@@ -19,7 +19,12 @@ export const Colors = {
   blaze: '#E8792C',
   blazeDeep: '#C05F1B',
   hydro: '#2FA8A0',
-  flare: '#E5484D',
+  // Lightened from #E5484D, which only cleared AA on the base ground (4.72:1)
+  // and failed on every card (4.20:1) and selected surface (3.76:1) — where
+  // error text actually lives. This value mirrors blaze's contrast almost
+  // exactly on all three grounds (6.34 / 5.63 / 5.05), so the two semantic
+  // accents now carry the same perceptual weight.
+  flare: '#F26D71',
 } as const;
 
 export type ThemeColor = keyof typeof Colors;

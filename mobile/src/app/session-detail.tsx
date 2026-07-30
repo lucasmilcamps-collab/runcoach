@@ -226,7 +226,6 @@ export default function SessionDetailScreen() {
               onPress={() => router.back()}
               accessibilityRole="button"
               accessibilityLabel="Retour"
-              hitSlop={8}
               style={pressable(styles.iconBtn)}>
               <Icon name="arrow-left" size={22} />
             </Pressable>
@@ -304,8 +303,7 @@ export default function SessionDetailScreen() {
                 disabled={unlinkMutation.isPending}
                 accessibilityRole="button"
                 accessibilityLabel="Délier l’activité"
-                hitSlop={8}
-                style={pressable(undefined)}>
+                style={pressable(styles.unlink)}>
                 <ThemedText type="waypointLabel" themeColor="textSecondary">
                   {unlinkMutation.isPending ? 'Déliaison…' : 'Délier'}
                 </ThemedText>
@@ -568,9 +566,11 @@ const styles = StyleSheet.create({
   },
   topbar: { flexDirection: 'row', marginBottom: Spacing.four },
   iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    // A real 44pt target: hitSlop does not extend the hit area on
+    // react-native-web, and this app ships as an installed PWA.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: Colors.contour,
     alignItems: 'center',
@@ -705,6 +705,11 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     borderLeftWidth: 2,
     borderLeftColor: Colors.blaze,
+  },
+  unlink: {
+    // hitSlop is inert on web, so the row carries the 44pt itself.
+    minHeight: 44,
+    justifyContent: 'center',
   },
   linkedHead: {
     flexDirection: 'row',

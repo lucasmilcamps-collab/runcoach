@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AvatarButton } from '@/components/avatar-button';
+import { AVATAR, AvatarButton } from '@/components/avatar-button';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 
@@ -35,7 +35,8 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.two,
   },
   row: {
-    height: 40,
+    // Driven by the avatar: a fixed 40 left it overflowing the row.
+    height: AVATAR,
     alignItems: 'center',
     justifyContent: 'center',
   },

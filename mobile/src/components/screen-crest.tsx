@@ -23,11 +23,11 @@ export function ScreenCrest() {
         <G stroke={Colors.contour} strokeWidth={1} fill="none" strokeLinejoin="round">
           <Path
             d="M30 90 C25 45 80 15 130 22 C185 30 215 70 205 115 C196 158 130 175 80 160 C40 148 35 120 30 90Z"
-            opacity={0.1}
+            opacity={0.22}
           />
           <Path
             d="M60 92 C56 60 95 40 135 47 C172 54 190 82 182 112 C174 143 128 154 90 143 C62 135 63 116 60 92Z"
-            opacity={0.07}
+            opacity={0.15}
           />
         </G>
       </Svg>
