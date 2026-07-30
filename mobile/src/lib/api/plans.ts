@@ -220,6 +220,36 @@ export function setSessionLink(weekIndex: number, day: Weekday, activityId: stri
 }
 
 /**
+ * Change a session's duration for one week only. Same override model as a move:
+ * the stored plan is untouched and a replan clears it.
+ */
+export function setSessionDuration(
+  weekIndex: number,
+  day: Weekday,
+  slot: PlanSession['slot'],
+  durationMin: number,
+) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/session/duration', {
+    week_index: weekIndex,
+    day,
+    slot,
+    duration_min: durationMin,
+  });
+}
+
+/**
+ * Drop a session for one week only. The backend refuses this for a run: losing
+ * one would break the plan's guaranteed run count, which is a replan decision.
+ */
+export function deleteSession(weekIndex: number, day: Weekday, slot: PlanSession['slot']) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/session/delete', {
+    week_index: weekIndex,
+    day,
+    slot,
+  });
+}
+
+/**
  * Move a session to another weekday for one week only (a per-week override —
  * the stored plan is untouched). Returns the updated current plan.
  */

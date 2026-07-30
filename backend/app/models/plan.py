@@ -303,3 +303,23 @@ class SessionMoveRequest(BaseModel):
     week_index: int
     from_day: Weekday  # the session's currently-shown day
     to_day: Weekday
+
+
+class SessionDurationRequest(BaseModel):
+    """Shorten or lengthen a session for one week only. Same override model as a
+    move: the stored plan version is untouched and a replan clears it."""
+
+    week_index: int
+    day: Weekday  # the session's currently-shown day
+    slot: Literal["primary", "addon"] = "primary"
+    duration_min: int = Field(ge=5, le=300)
+
+
+class SessionDeleteRequest(BaseModel):
+    """Drop a session for one week only. Running sessions are refused: removing
+    one would silently break the plan's guaranteed run count, which is a replan
+    decision, not a per-week tweak."""
+
+    week_index: int
+    day: Weekday  # the session's currently-shown day
+    slot: Literal["primary", "addon"] = "primary"

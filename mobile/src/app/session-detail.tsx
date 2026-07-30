@@ -16,7 +16,13 @@ import { activityLabel } from '@/lib/activity-labels';
 import type { Activity } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import { pushWorkoutToWatch, WorkoutPushPayload } from '@/lib/api/garmin';
-import { getSessionLink, moveSession, setSessionLink } from '@/lib/api/plans';
+import {
+  deleteSession,
+  getSessionLink,
+  moveSession,
+  setSessionDuration,
+  setSessionLink,
+} from '@/lib/api/plans';
 import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
@@ -31,6 +37,10 @@ import {
   zoneColor,
   zoneHeightPct,
 } from '@/lib/plan-format';
+
+// Minutes offered when retuning a session in place. Coarse on purpose: this is
+// "I only have 40 minutes today", not a stopwatch.
+const DURATION_CHOICES = [20, 30, 40, 45, 60, 75, 90];
 
 const WEEKDAYS: Weekday[] = [
   'MONDAY',
@@ -100,6 +110,12 @@ export default function SessionDetailScreen() {
   });
 
   const queryClient = useQueryClient();
+  /** Every per-week override changes the same three reads. */
+  const invalidatePlan = () => {
+    queryClient.invalidateQueries({ queryKey: ['plan'] });
+    queryClient.invalidateQueries({ queryKey: ['plan-today'] });
+    queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+  };
   const linkQuery = useQuery({
     queryKey: ['session-link', data?.weekNumber, data?.session.day],
     queryFn: () => getSessionLink(data!.weekNumber, data!.session.day),
@@ -113,13 +129,30 @@ export default function SessionDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
     },
   });
+  const [editingDuration, setEditingDuration] = useState(false);
+  // Deleting is not undoable until the next replan, so it takes two taps rather
+  // than an Alert (which barely exists on react-native-web).
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const durationMutation = useMutation({
+    mutationFn: (durationMin: number) =>
+      setSessionDuration(data!.weekNumber, data!.session.day, data!.session.slot, durationMin),
+    onSuccess: () => {
+      invalidatePlan();
+      router.back(); // the detail param carries the old duration — it's stale now
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteSession(data!.weekNumber, data!.session.day, data!.session.slot),
+    onSuccess: () => {
+      invalidatePlan();
+      router.back(); // the session no longer exists
+    },
+  });
   const [moving, setMoving] = useState(false);
   const moveMutation = useMutation({
     mutationFn: (toDay: Weekday) => moveSession(data!.weekNumber, data!.session.day, toDay),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['plan'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      invalidatePlan();
       router.back(); // the session now lives on another day — the detail param is stale
     },
   });
@@ -217,9 +250,20 @@ export default function SessionDetailScreen() {
           ) : null}
         </View>
 
-        {/* Stats */}
+        {/* Stats — the duration is editable in place, so the footer doesn't
+            grow another button for it. */}
         <View style={styles.stats}>
-          <Stat label="Durée" value={formatDuration(session.duration_min)} />
+          <Pressable
+            onPress={() => setEditingDuration((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={`Durée ${formatDuration(session.duration_min)}, modifier`}
+            accessibilityState={{ expanded: editingDuration }}
+            style={pressable(styles.statPress)}>
+            <Stat
+              label={editingDuration ? 'Durée · fermer' : 'Durée · modifier'}
+              value={formatDuration(session.duration_min)}
+            />
+          </Pressable>
           {distanceKm != null ? (
             <Stat label="Distance ≈" value={frDistance(distanceKm)} bordered />
           ) : null}
@@ -231,6 +275,22 @@ export default function SessionDetailScreen() {
             </View>
           </Stat>
         </View>
+
+        {editingDuration ? (
+          <View style={styles.durationRow}>
+            {DURATION_CHOICES.map((d) => (
+              <Chip
+                key={d}
+                label={`${d}`}
+                selected={d === session.duration_min}
+                disabled={durationMutation.isPending || d === session.duration_min}
+                fill
+                onPress={() => durationMutation.mutate(d)}
+                accessibilityLabel={`Passer à ${d} minutes`}
+              />
+            ))}
+          </View>
+        ) : null}
 
         {/* Linked activity (session validated) */}
         {linked ? (
@@ -371,6 +431,21 @@ export default function SessionDetailScreen() {
             selected={moving}
             onPress={() => setMoving((v) => !v)}
           />
+          {/* A run is never deletable: losing one breaks the plan's guaranteed
+              run count, which is a replan decision. The backend refuses it too —
+              this only keeps the control from being offered. */}
+          {session.sport !== 'RUN' ? (
+            <UtilityAction
+              label={confirmDelete ? 'Confirmer ?' : 'Supprimer'}
+              danger
+              selected={confirmDelete}
+              busy={deleteMutation.isPending}
+              onPress={() => {
+                if (confirmDelete) deleteMutation.mutate();
+                else setConfirmDelete(true);
+              }}
+            />
+          ) : null}
         </View>
 
         {moving ? (
@@ -409,14 +484,18 @@ function UtilityAction({
   busy = false,
   disabled = false,
   selected = false,
+  danger = false,
 }: {
   label: string;
   onPress: () => void;
   busy?: boolean;
   disabled?: boolean;
   selected?: boolean;
+  /** Destructive — carries the flare tone instead of the accent. */
+  danger?: boolean;
 }) {
   const isDisabled = disabled || busy;
+  const accent = danger ? 'flare' : 'blaze';
   return (
     <Pressable
       onPress={onPress}
@@ -427,6 +506,8 @@ function UtilityAction({
       style={pressable([
         styles.utilityAction,
         selected && styles.utilityActionSelected,
+        selected && { borderColor: Colors[accent] },
+        danger && !selected && styles.utilityActionDanger,
         isDisabled && styles.utilityActionDisabled,
       ])}>
       {busy ? (
@@ -434,7 +515,7 @@ function UtilityAction({
       ) : (
         <ThemedText
           type="small"
-          themeColor={selected ? 'blaze' : isDisabled ? 'textSecondary' : 'text'}>
+          themeColor={selected ? accent : isDisabled ? 'textSecondary' : danger ? 'flare' : 'text'}>
           {label}
         </ThemedText>
       )}
@@ -594,8 +675,22 @@ const styles = StyleSheet.create({
     borderColor: Colors.blaze,
     backgroundColor: Colors.backgroundSelected,
   },
+  utilityActionDanger: {
+    borderColor: Colors.flare,
+  },
   utilityActionDisabled: {
     borderColor: Colors.contourFaint,
+  },
+  statPress: {
+    flex: 1,
+  },
+  durationRow: {
+    flexDirection: 'row',
+    gap: Spacing.one,
+    // The scroll container has no padding of its own — every section applies
+    // its own, so this row needs it too or it runs edge to edge.
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.three,
   },
   moveRow: {
     flexDirection: 'row',
