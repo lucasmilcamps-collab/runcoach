@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BackButton } from '@/components/back-button';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Icon } from '@/components/icon';
@@ -32,6 +33,9 @@ export default function PlanHistoryScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ScreenCrest />
+        <View style={styles.topbar}>
+          <BackButton />
+        </View>
         <View style={styles.header}>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             Mon plan
@@ -128,6 +132,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.four,
     paddingBottom: Spacing.four,
   },
+  topbar: { flexDirection: 'row' },
   header: { gap: Spacing.two, marginBottom: Spacing.one },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   card: {

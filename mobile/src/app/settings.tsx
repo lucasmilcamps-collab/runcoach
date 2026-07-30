@@ -1,17 +1,41 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BackButton } from '@/components/back-button';
 import { Icon } from '@/components/icon';
 import { NotificationsCard } from '@/components/notifications-card';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
+import { cancelPlan, getCurrentPlan } from '@/lib/api/plans';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 export default function SettingsScreen() {
   const garminConnected = useAuthStore((s) => s.garminConnected);
+  const queryClient = useQueryClient();
+  // Only offer the stop when there is something to stop.
+  const planQuery = useQuery({ queryKey: ['plan'], queryFn: getCurrentPlan, retry: false });
+  // `isError` matters as much as the data: after the stop the refetch 404s, and
+  // TanStack Query keeps the last successful value — so checking `data` alone
+  // left the row on screen offering to stop an already-stopped plan.
+  const hasPlan = planQuery.data?.status === 'ready' && !planQuery.isError;
+  // Irreversible from the app's side (the plan leaves every current-plan read),
+  // so it asks twice rather than firing on the first tap.
+  const [confirmStop, setConfirmStop] = useState(false);
+  const stopMutation = useMutation({
+    mutationFn: cancelPlan,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plan'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-versions'] });
+      setConfirmStop(false);
+    },
+  });
   const signOut = useAuthStore((s) => s.signOut);
 
   async function handleSignOut() {
@@ -27,13 +51,7 @@ export default function SettingsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
           <View style={styles.topbar}>
-            <Pressable
-              onPress={() => (router.canGoBack() ? router.back() : router.replace('/dashboard'))}
-              accessibilityRole="button"
-              accessibilityLabel="Retour"
-              style={pressable(styles.iconBtn)}>
-              <Icon name="arrow-left" size={22} />
-            </Pressable>
+            <BackButton />
           </View>
 
           <View style={styles.header}>
@@ -54,8 +72,27 @@ export default function SettingsScreen() {
                 label="Objectif du plan"
                 hint="Distance, date de course et disponibilités"
                 onPress={() => router.push('/plan-setup')}
-                last
+                last={!hasPlan}
               />
+              {hasPlan ? (
+                <SettingRow
+                  label={
+                    stopMutation.isPending
+                      ? 'Arrêt en cours…'
+                      : confirmStop
+                        ? 'Confirmer l’arrêt du plan ?'
+                        : 'Arrêter le plan en cours'
+                  }
+                  hint={
+                    confirmStop
+                      ? 'Il quittera l’Accueil et les Séances, mais restera dans l’historique.'
+                      : 'Repartir sans plan — tu pourras en générer un nouveau quand tu veux'
+                  }
+                  onPress={() => (confirmStop ? stopMutation.mutate() : setConfirmStop(true))}
+                  danger
+                  last
+                />
+              ) : null}
             </View>
           </Section>
 
@@ -155,17 +192,6 @@ const styles = StyleSheet.create({
   },
   topbar: {
     flexDirection: 'row',
-  },
-  iconBtn: {
-    // A real 44pt target: hitSlop does not extend the hit area on
-    // react-native-web, and this app ships as an installed PWA.
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   header: {
     gap: Spacing.two,

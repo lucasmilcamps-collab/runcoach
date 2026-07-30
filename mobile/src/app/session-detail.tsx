@@ -7,6 +7,7 @@ import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { BackButton } from '@/components/back-button';
 import { Icon } from '@/components/icon';
 import { ScreenCrest } from '@/components/screen-crest';
 import { SportIcon } from '@/components/sport-icon';
@@ -222,13 +223,7 @@ export default function SessionDetailScreen() {
         <View style={styles.header}>
           <ScreenCrest />
           <View style={styles.topbar}>
-            <Pressable
-              onPress={() => router.back()}
-              accessibilityRole="button"
-              accessibilityLabel="Retour"
-              style={pressable(styles.iconBtn)}>
-              <Icon name="arrow-left" size={22} />
-            </Pressable>
+            <BackButton />
           </View>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             Semaine {weekNumber} · Séance {position}/{total}
@@ -565,17 +560,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   topbar: { flexDirection: 'row', marginBottom: Spacing.four },
-  iconBtn: {
-    // A real 44pt target: hitSlop does not extend the hit area on
-    // react-native-web, and this app ships as an installed PWA.
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

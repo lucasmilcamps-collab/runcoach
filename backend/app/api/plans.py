@@ -205,6 +205,19 @@ async def delete_session(
     return plan
 
 
+@router.post("/cancel", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_plan(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Stop the active plan. It leaves the current-plan reads (today, progress,
+    per-week overrides) but stays readable in the version history."""
+    try:
+        await plan_service.cancel_current_plan(db, str(user["_id"]))
+    except plan_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+
+
 @router.get("/current", response_model=PlanResponse)
 async def current_plan(
     db: AsyncIOMotorDatabase = Depends(get_db),

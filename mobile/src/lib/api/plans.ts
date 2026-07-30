@@ -220,6 +220,15 @@ export function setSessionLink(weekIndex: number, day: Weekday, activityId: stri
 }
 
 /**
+ * Stop the active plan. It leaves every current-plan read (today, progress,
+ * per-week overrides) but stays readable in the version history, and a new plan
+ * can be generated right after.
+ */
+export function cancelPlan() {
+  return apiClient.post<void>('/api/v1/plans/cancel', {});
+}
+
+/**
  * Change a session's duration for one week only. Same override model as a move:
  * the stored plan is untouched and a replan clears it.
  */

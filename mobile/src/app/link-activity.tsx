@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
+import { BackButton } from '@/components/back-button';
 import { Icon } from '@/components/icon';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
@@ -83,13 +84,7 @@ export default function LinkActivityScreen() {
       <View style={styles.container}>
         <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Retour"
-            style={pressable(styles.iconBtn)}>
-            <Icon name="arrow-left" size={22} />
-          </Pressable>
+          <BackButton />
 
           <View style={styles.header}>
             <ThemedText type="waypointLabel" themeColor="textSecondary">
@@ -200,17 +195,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: Spacing.four },
   container: { flex: 1, maxWidth: MaxContentWidth, alignSelf: 'center', width: '100%' },
   scroll: { gap: Spacing.four, paddingTop: Spacing.three, paddingBottom: Spacing.six },
-  iconBtn: {
-    // A real 44pt target: hitSlop does not extend the hit area on
-    // react-native-web, and this app ships as an installed PWA.
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.contour,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   list: { gap: Spacing.three },

@@ -201,7 +201,7 @@ class PlanResponse(BaseModel):
     """Public shape for a stored plan (api-conventions: never leaks user_id)."""
 
     id: str
-    status: Literal["generating", "ready", "failed"]
+    status: Literal["generating", "ready", "failed", "cancelled"]
     request: PlanRequest | None = None
     plan: Plan | None = None
     estimated_time_min: int | None = None  # estimated current time at the target

@@ -4,6 +4,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PlanView } from '@/components/plan-view';
+import { BackButton } from '@/components/back-button';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -24,6 +25,9 @@ export default function PlanVersionScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ScreenCrest />
+        <View style={styles.topbar}>
+          <BackButton />
+        </View>
         <View style={styles.header}>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
             Historique
@@ -64,6 +68,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.four,
     paddingBottom: Spacing.four,
   },
+  topbar: { flexDirection: 'row' },
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
 });
