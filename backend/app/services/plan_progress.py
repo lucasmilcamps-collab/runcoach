@@ -61,9 +61,7 @@ async def compute_progress(
         return PlanProgress(has_plan=False, tsb=tsb)
 
     plan = Plan.model_validate(doc["plan"])
-    plan_moves_service.apply_moves(
-        plan, await plan_moves_service.get_moves(db, user_id, doc["version"])
-    )
+    await plan_moves_service.apply_overrides(db, user_id, plan, doc["version"])
     weeks = [week for phase in plan.phases for week in phase.weeks]
     start = _plan_start_date(doc, today)
     window_start = today - timedelta(days=_WINDOW_DAYS)

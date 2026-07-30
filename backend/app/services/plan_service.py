@@ -735,9 +735,7 @@ async def unlogged_strength(
         return False
 
     plan = Plan.model_validate(doc["plan"])
-    plan_moves_service.apply_moves(
-        plan, await plan_moves_service.get_moves(db, user_id, doc["version"])
-    )
+    await plan_moves_service.apply_overrides(db, user_id, plan, doc["version"])
     weeks = _flatten_weeks(plan)
     week_pos = (target - _plan_start_date(doc, target)).days // 7
     if week_pos < 0 or week_pos >= len(weeks):
@@ -765,8 +763,7 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
         return None
     plan = Plan.model_validate(doc["plan"]) if doc.get("plan") else None
     if plan is not None and doc.get("status") == "ready":
-        moves = await plan_moves_service.get_moves(db, user_id, doc["version"])
-        plan_moves_service.apply_moves(plan, moves)
+        await plan_moves_service.apply_overrides(db, user_id, plan, doc["version"])
     return PlanResponse(
         id=str(doc["_id"]),
         status=doc["status"],
@@ -877,8 +874,7 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
         )
 
     plan = Plan.model_validate(doc["plan"])
-    moves = await plan_moves_service.get_moves(db, user_id, doc["version"])
-    plan_moves_service.apply_moves(plan, moves)
+    await plan_moves_service.apply_overrides(db, user_id, plan, doc["version"])
     weeks = _flatten_weeks(plan)
     start = _plan_start_date(doc, today)
     week_pos = (today - start).days // 7  # 0-based position

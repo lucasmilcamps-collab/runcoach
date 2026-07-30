@@ -9,6 +9,8 @@ from app.models.plan import (
     PlanRequest,
     PlanResponse,
     PlanVersionSummary,
+    SessionDeleteRequest,
+    SessionDurationRequest,
     SessionLinkInfo,
     SessionLinkRequest,
     SessionMoveRequest,
@@ -29,6 +31,13 @@ def _no_plan_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={"code": "NO_PLAN", "message": "Aucun plan actif."},
+    )
+
+
+def _session_not_found_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "SESSION_NOT_FOUND", "message": "Séance introuvable pour ce jour."},
     )
 
 
@@ -92,9 +101,7 @@ async def get_session_link(
     """The activity linked to a planned session (by week + weekday), plus the
     session's real calendar date so the picker can surface nearby activities."""
     try:
-        return await plan_completion_service.get_session_link(
-            db, str(user["_id"]), week_index, day
-        )
+        return await plan_completion_service.get_session_link(db, str(user["_id"]), week_index, day)
     except plan_completion_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
 
@@ -136,9 +143,61 @@ async def move_session(
     except plan_moves_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
     except plan_moves_service.SessionNotFoundError as exc:
+        raise _session_not_found_error() from exc
+    plan = await plan_service.get_current_plan(db, user_id)
+    if plan is None:
+        raise _no_plan_error()
+    return plan
+
+
+@router.post("/session/duration", response_model=PlanResponse)
+async def set_session_duration(
+    body: SessionDurationRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Change a session's duration for one week only (per-week override).
+    Returns the updated current plan."""
+    user_id = str(user["_id"])
+    try:
+        await plan_moves_service.set_session_duration(
+            db, user_id, body.week_index, body.day, body.slot, body.duration_min
+        )
+    except plan_moves_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_moves_service.SessionNotFoundError as exc:
+        raise _session_not_found_error() from exc
+    plan = await plan_service.get_current_plan(db, user_id)
+    if plan is None:
+        raise _no_plan_error()
+    return plan
+
+
+@router.post("/session/delete", response_model=PlanResponse)
+async def delete_session(
+    body: SessionDeleteRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Drop a non-run session for one week only (per-week override). Returns the
+    updated current plan."""
+    user_id = str(user["_id"])
+    try:
+        await plan_moves_service.delete_session(db, user_id, body.week_index, body.day, body.slot)
+    except plan_moves_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_moves_service.SessionNotFoundError as exc:
+        raise _session_not_found_error() from exc
+    except plan_moves_service.CannotDeleteRunError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "SESSION_NOT_FOUND", "message": "Séance introuvable pour ce jour."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CANNOT_DELETE_RUN",
+                "message": (
+                    "Une séance de course ne se supprime pas à la semaine : "
+                    "régénère le plan pour changer le nombre de courses."
+                ),
+            },
         ) from exc
     plan = await plan_service.get_current_plan(db, user_id)
     if plan is None:

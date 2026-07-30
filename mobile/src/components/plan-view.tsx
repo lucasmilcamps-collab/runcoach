@@ -218,6 +218,10 @@ function SessionCard({
 
   const distanceKm = estimateDistanceKm(session.duration_min, session.pace_range);
   const difficulty = sessionDifficulty(session.type);
+  const meta =
+    distanceKm != null
+      ? `${formatDuration(session.duration_min)} · ${frKm(distanceKm)} km`
+      : formatDuration(session.duration_min);
 
   function open() {
     router.push({
@@ -231,7 +235,7 @@ function SessionCard({
       style={pressable(styles.sessionCard)}
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${sessionTitle(session)}, séance ${position} sur ${total}`}>
+      accessibilityLabel={`${sessionTitle(session)}, ${meta}, séance ${position} sur ${total}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
           {isKey && !isAddon ? (
@@ -249,50 +253,29 @@ function SessionCard({
         <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
       </View>
 
-      {/* Glyph + sport-aware name: the two cues that let a week be scanned for
-          "which of these are runs?" without reading every card. */}
+      {/* One line carries the whole session: glyph + sport-aware name (the two
+          cues that let a week be scanned for "which of these are runs?"), then
+          its numbers. A labelled stats block underneath cost a third of the
+          card's height to say "Durée" and "Difficulté" above values that
+          already read as a duration and an intensity — the card is a list row,
+          the detail screen is where the breakdown belongs. */}
       <View style={styles.sessionTitleRow}>
-        <SportIcon sport={session.sport} size={22} />
-        <ThemedText type="subtitle">{sessionTitle(session)}</ThemedText>
-      </View>
-
-      <View style={styles.sessionStats}>
-        <MiniStat label="Durée" value={formatDuration(session.duration_min)} />
-        {distanceKm != null ? (
-          <MiniStat label="Distance" value={`${frKm(distanceKm)} km`} bordered />
-        ) : null}
-        <MiniStat label="Difficulté" bordered={distanceKm != null}>
-          <DifficultyBolts level={difficulty} />
-        </MiniStat>
+        <SportIcon sport={session.sport} size={20} />
+        <ThemedText type="link" numberOfLines={1} style={styles.sessionName}>
+          {sessionTitle(session)}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          {meta}
+        </ThemedText>
+        <DifficultyBolts level={difficulty} />
       </View>
 
       {session.rationale ? (
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
           {session.rationale}
         </ThemedText>
       ) : null}
     </Pressable>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-  bordered,
-  children,
-}: {
-  label: string;
-  value?: string;
-  bordered?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <View style={[styles.miniStat, bordered && styles.miniStatBordered]}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
-      {value ? <ThemedText type="default">{value}</ThemedText> : <View style={styles.boltsRow}>{children}</View>}
-    </View>
   );
 }
 
@@ -339,17 +322,20 @@ const styles = StyleSheet.create({
   },
   navArrowDisabled: { borderColor: Colors.contourFaint, opacity: 0.5 },
 
-  sessionList: { gap: Spacing.three },
+  sessionList: { gap: Spacing.two },
   sessionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
   },
+  // Takes the leftover width so the numbers stay pinned right and a long name
+  // truncates instead of pushing them off the row.
+  sessionName: { flex: 1 },
   sessionCard: {
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
-    padding: Spacing.four,
-    gap: Spacing.two,
+    padding: Spacing.three,
+    gap: Spacing.one,
   },
   sessionHead: {
     flexDirection: 'row',
@@ -369,17 +355,6 @@ const styles = StyleSheet.create({
     borderColor: '#E8792C66',
     backgroundColor: '#E8792C1f',
   },
-  sessionStats: {
-    flexDirection: 'row',
-    paddingTop: Spacing.two,
-  },
-  miniStat: { flex: 1, gap: Spacing.half },
-  miniStatBordered: {
-    borderLeftWidth: 1,
-    borderLeftColor: Colors.contourFaint,
-    paddingLeft: Spacing.three,
-  },
-  boltsRow: { height: 22, justifyContent: 'center' },
 
   restCard: {
     flexDirection: 'row',

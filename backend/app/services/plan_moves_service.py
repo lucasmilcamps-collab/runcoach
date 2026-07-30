@@ -1,16 +1,23 @@
-"""Per-week day overrides ("this week my long run is Sunday, not Saturday").
+"""Per-week overrides on the current plan — "this week my long run is Sunday",
+"this week the basket session is off", "make it 40 min instead of 60".
 
-Stored in `session_moves`, keyed to the current plan version so a replan resets
-them. The immutable plan document is never touched — moves are applied on read
-(current plan, today's session, adherence). A move is day-level: everything on
-the source day (a run + its strength addon) moves together.
+Two collections, both keyed to the current plan version so a replan resets them:
+`session_moves` (day changes) and `session_edits` (duration changes and
+deletions). The immutable plan document is never touched — overrides are
+applied on read.
+
+A move is day-level: everything on the source day (a run plus its strength
+addon) moves together. An edit is session-level, keyed by the session's
+*original* day and slot, so it survives a move of the same session.
 """
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.models.plan import Plan, Weekday, session_order_key
+from app.models.activity import SportType
+from app.models.plan import Plan, Session, Weekday, session_order_key
 
 
 class NoActivePlanError(Exception):
@@ -19,6 +26,11 @@ class NoActivePlanError(Exception):
 
 class SessionNotFoundError(Exception):
     pass
+
+
+class CannotDeleteRunError(Exception):
+    """Deleting a run would break the plan's guaranteed run count — that's a
+    replan decision, not a per-week tweak."""
 
 
 async def _current_doc(db: AsyncIOMotorDatabase, user_id: str) -> dict:
@@ -58,6 +70,125 @@ def apply_moves(plan: Plan, moves: dict[int, dict[str, str]]) -> None:
             # calendar order for the rest of the request.
             if moved:
                 week.sessions.sort(key=session_order_key)
+
+
+async def get_edits(
+    db: AsyncIOMotorDatabase, user_id: str, plan_version: int
+) -> dict[int, dict[tuple[str, str], dict]]:
+    """{week_index: {(original_day, slot): edit}} for the given plan version."""
+    out: dict[int, dict[tuple[str, str], dict]] = {}
+    async for e in db.session_edits.find({"user_id": user_id, "plan_version": plan_version}):
+        out.setdefault(e["week_index"], {})[(e["day"], e["slot"])] = e
+    return out
+
+
+def apply_edits(plan: Plan, edits: dict[int, dict[tuple[str, str], dict]]) -> None:
+    """Drop deleted sessions and rewrite durations, in place (no-op when empty)."""
+    if not edits:
+        return
+    for phase in plan.phases:
+        for week in phase.weeks:
+            week_edits = edits.get(week.index)
+            if not week_edits:
+                continue
+            kept: list[Session] = []
+            for session in week.sessions:
+                edit = week_edits.get((session.day.value, session.slot))
+                if edit is None:
+                    kept.append(session)
+                    continue
+                if edit.get("deleted"):
+                    continue
+                duration = edit.get("duration_min")
+                if duration:
+                    session.duration_min = duration
+                kept.append(session)
+            week.sessions = kept
+
+
+async def apply_overrides(
+    db: AsyncIOMotorDatabase, user_id: str, plan: Plan, plan_version: int
+) -> None:
+    """Apply every per-week override to `plan`, in place.
+
+    The single entry point on purpose: fetching and applying each kind at every
+    read site meant four copies of the same two lines, and a new override type
+    only had to be forgotten in one of them to make a screen disagree with the
+    rest of the app.
+
+    Edits run first — they're keyed on the plan's original days, which a move
+    would have already rewritten.
+    """
+    apply_edits(plan, await get_edits(db, user_id, plan_version))
+    apply_moves(plan, await get_moves(db, user_id, plan_version))
+
+
+def _find_session(week, day: Weekday, slot: str, existing_moves: dict[str, str]) -> Session | None:
+    """The session shown on `day` in `slot`, resolved back to its original day
+    when a move is already in effect."""
+    original = next((o for o, cur in existing_moves.items() if cur == day.value), day.value)
+    return next(
+        (s for s in week.sessions if s.day.value == original and s.slot == slot),
+        None,
+    )
+
+
+async def _edit_session(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    week_index: int,
+    day: Weekday,
+    slot: str,
+    change: dict,
+) -> None:
+    doc = await _current_doc(db, user_id)
+    version = doc["version"]
+    plan = Plan.model_validate(doc["plan"])
+    week = next((w for phase in plan.phases for w in phase.weeks if w.index == week_index), None)
+    if week is None:
+        raise SessionNotFoundError
+
+    moves = (await get_moves(db, user_id, version)).get(week_index, {})
+    session = _find_session(week, day, slot, moves)
+    if session is None:
+        raise SessionNotFoundError
+    if change.get("deleted") and session.sport == SportType.RUN:
+        raise CannotDeleteRunError
+
+    key = {
+        "user_id": user_id,
+        "plan_version": version,
+        "week_index": week_index,
+        "day": session.day.value,  # always the plan's original day
+        "slot": slot,
+    }
+    await db.session_edits.update_one(
+        key, {"$set": {**key, **change, "edited_at": datetime.now(UTC)}}, upsert=True
+    )
+
+
+async def set_session_duration(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    week_index: int,
+    day: Weekday,
+    slot: Literal["primary", "addon"],
+    duration_min: int,
+) -> None:
+    """Change a session's duration for this week only."""
+    await _edit_session(db, user_id, week_index, day, slot, {"duration_min": duration_min})
+
+
+async def delete_session(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    week_index: int,
+    day: Weekday,
+    slot: Literal["primary", "addon"],
+) -> None:
+    """Drop a non-run session for this week only. Raises CannotDeleteRunError
+    for a run: the plan guarantees a run count, so removing one is a replan."""
+    await _edit_session(db, user_id, week_index, day, slot, {"deleted": True})
 
 
 async def move_session(
