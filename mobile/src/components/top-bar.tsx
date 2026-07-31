@@ -1,55 +1,75 @@
+import { useQuery } from '@tanstack/react-query';
 import { StyleSheet, View } from 'react-native';
 
-import { AVATAR, AvatarButton } from '@/components/avatar-button';
+import { AvatarButton } from '@/components/avatar-button';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Colors, Spacing } from '@/constants/theme';
+import { displayNameFromEmail, getMe } from '@/lib/api/auth';
 
 /**
- * Campus-style header: initials avatar on the left (→ Settings), a centered
- * wordmark, and an optional subtitle line (e.g. the current week range).
- * The avatar is absolutely positioned so the wordmark stays truly centered.
+ * The header of the three main tabs: the avatar, then who you are and which
+ * week you're in, as one left-aligned group.
+ *
+ * It used to centre a "RUNCOACH" wordmark with the avatar floating alone in the
+ * far corner — a small circle adrift in a wide empty band, above an app telling
+ * you daily which app you had opened. The wordmark is gone from the tabs (the
+ * tab bar already says where you are); the avatar now anchors a block carrying
+ * the only two things worth a permanent line.
+ *
+ * `compact` is the scrolled state: the same row with a smaller avatar and a
+ * single line, so a pinned header costs a thin strip rather than a tenth of the
+ * screen.
  */
-export function TopBar({ title = 'RUNCOACH', subtitle }: { title?: string; subtitle?: string }) {
+export function TopBar({ subtitle, compact = false }: { subtitle?: string; compact?: boolean }) {
+  // Shares the cache with AvatarButton — same key, so this costs no request.
+  const { data } = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: Infinity });
+  const name = displayNameFromEmail(data?.email) ?? 'RunCoach';
+
   return (
-    <View style={styles.wrap}>
-      <View style={styles.row}>
-        <View style={styles.left}>
-          <AvatarButton />
-        </View>
-        <ThemedText type="waypointLabel" themeColor="text" style={styles.title}>
-          {title}
-        </ThemedText>
+    <View style={[styles.row, compact && styles.rowCompact]}>
+      <AvatarButton compact={compact} />
+      <View style={styles.block}>
+        {compact ? (
+          // Collapsed, the week range takes the one remaining line: it is the
+          // half that changes, and the avatar already carries who you are.
+          <ThemedText type="default" numberOfLines={1}>
+            {subtitle ?? name}
+          </ThemedText>
+        ) : (
+          <>
+            <ThemedText type="subtitle" numberOfLines={1}>
+              {name}
+            </ThemedText>
+            {subtitle ? (
+              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                {subtitle}
+              </ThemedText>
+            ) : null}
+          </>
+        )}
       </View>
-      {subtitle ? (
-        <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
-          {subtitle}
-        </ThemedText>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    gap: Spacing.two,
-    paddingTop: Spacing.two,
-  },
   row: {
-    // Driven by the avatar: a fixed 40 left it overflowing the row.
-    height: AVATAR,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: Spacing.three,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.two,
   },
-  left: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
+  rowCompact: {
+    paddingTop: Spacing.one,
+    paddingBottom: Spacing.one,
+    // A hairline is what tells a pinned bar from content that happens to sit at
+    // the top — without it, a stuck header just looks like it failed to scroll.
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.contourFaint,
   },
-  title: {
-    fontSize: 15,
-    letterSpacing: 1.5,
-  },
-  subtitle: {
-    textAlign: 'center',
+  block: {
+    flex: 1,
+    gap: Spacing.half,
   },
 });

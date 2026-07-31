@@ -96,10 +96,18 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 **Character:** The system font carries every sentence a user reads and every native control, so Dynamic Type and platform conventions stay intact. IBM Plex Mono appears only for things that are literally a measurement or a position — a step counter, a waypoint index — the way a topo map sets grid references and elevation figures in a technical face distinct from its place names.
 
 ### Hierarchy
+Six steps, and only six — every size in the app comes from this table (`ThemedText`). A screen that needs a size between two of them needs a different layout, not a seventh step.
+
 - **Title** (system font, semibold, 28/34): screen titles ("Bienvenue", "Connecter Garmin").
-- **Body** (system font, regular, 16/22, max ~70ch on web): all reading text, form labels, button labels.
-- **Caption** (system font, regular, 13/18): helper text, error text, secondary metadata.
-- **Waypoint Label** (IBM Plex Mono, medium, 12/16, tracking 0.04em, uppercase): the "01 / 04" step counter and any coordinate-style micro-label. Never used for a full sentence.
+- **Subtitle** (system font, medium, 20/26): the one figure a card is answering (80 %, 34,3 km, a stat value), a card's lead sentence, a session name in a hero.
+- **Body** (system font, regular, 16/22, max ~70ch on web): all reading text, form labels, list rows, the line under a screen title.
+- **Link** (system font, semibold, 16/22): button labels and the title of a tappable card — Body's weight, never its own size.
+- **Caption** (system font, regular, 13/18): helper text, error text, secondary metadata, the sentence explaining what a card is for.
+- **Waypoint Label** (IBM Plex Mono, medium, 12/16, tracking 0.04em, uppercase): section labels, the "01 / 04" step counter, any coordinate-style micro-label. Never used for a full sentence.
+
+**One 28 per screen.** The largest step marks the single loudest element on a page, and a page has exactly one: usually its title, and on Accueil — which has no title — the week ring. A card's hero figure is Subtitle, never Title: at 28 it tied with the screen's own name, and made a number on a summary *larger* than the same number on the detail screen behind it, inverting the hierarchy between a summary and its depth.
+
+**The line under a screen title is Body, everywhere.** It is the same sentence doing the same job on every screen; dropping it to Caption on one screen is the kind of difference that reads as sloppiness rather than as emphasis.
 
 ### Named Rules
 **The Signage-Not-Sentence Rule.** IBM Plex Mono never carries a full sentence or a paragraph; the moment it would wrap past a few characters, it has left signage and become body text, and switches to the system font.
@@ -198,6 +206,13 @@ Under the week trail on Accueil: the current week's running sessions, one 44pt r
 The 90-day fitness trend is a **line**, not bars. Bars and filled areas state their value through their height, so they are only ever drawn from a zero baseline; a line carries no such claim and may be scaled to the data's own range. CTL lives inside a narrow band, and a zero baseline pressed three months of training into the top fifth of the plot — so the line gets a fitted window, with a floor on how far it will zoom (a couple of points of drift must keep looking like drift, never a mountain range).
 
 **A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
+
+### Tab header (who you are, and when)
+The three main tabs share one header: the avatar (60pt, → Réglages), then the athlete's name and the current week range, as a **left-aligned group**. It replaced a centred "RUNCOACH" wordmark with the avatar floating alone in the far corner — a small circle adrift in a wide empty band, above an app announcing daily which app you had opened. The wordmark is gone from the tabs; the tab bar already says where you are.
+
+**The header is pinned, and collapses.** It sits outside the scroll view — pinned by layout, not by `position: sticky`, so native and the installed PWA behave identically. Past ~20px of scroll it drops to a 49pt strip: a 40pt avatar and the week range on one line, closed by a hairline. Full height is 76pt; permanently reserving that on a phone, on top of the 62pt tab bar, would hand ~18% of the screen to chrome. The collapse buys back 27pt and keeps the only route into Réglages reachable from anywhere in a long list. The threshold has hysteresis (collapse at 20, expand at 6) — a single threshold flickers while a finger rests on it.
+
+**No gauge on the avatar.** It is identity, not a read-out: every figure it could carry (week position, form, adherence) is already stated on Accueil, twice in some cases. A ring there would be a third telling.
 
 ### Navigation
 No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.

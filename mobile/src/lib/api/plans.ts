@@ -24,6 +24,9 @@ export type PlanRequest = {
   distance_km: number | null;
   race_date: string | null; // ISO date
   target_time_min: number | null;
+  /** Monday week 1 begins on (ISO date). Null lets the server choose: the
+   * current week while it still has room to train, next Monday otherwise. */
+  start_date: string | null;
   available_days: Weekday[];
   min_run_sessions_per_week: number;
   max_run_sessions_per_week: number;
