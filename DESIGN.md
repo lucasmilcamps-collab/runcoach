@@ -96,10 +96,18 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 **Character:** The system font carries every sentence a user reads and every native control, so Dynamic Type and platform conventions stay intact. IBM Plex Mono appears only for things that are literally a measurement or a position — a step counter, a waypoint index — the way a topo map sets grid references and elevation figures in a technical face distinct from its place names.
 
 ### Hierarchy
+Six steps, and only six — every size in the app comes from this table (`ThemedText`). A screen that needs a size between two of them needs a different layout, not a seventh step.
+
 - **Title** (system font, semibold, 28/34): screen titles ("Bienvenue", "Connecter Garmin").
-- **Body** (system font, regular, 16/22, max ~70ch on web): all reading text, form labels, button labels.
-- **Caption** (system font, regular, 13/18): helper text, error text, secondary metadata.
-- **Waypoint Label** (IBM Plex Mono, medium, 12/16, tracking 0.04em, uppercase): the "01 / 04" step counter and any coordinate-style micro-label. Never used for a full sentence.
+- **Subtitle** (system font, medium, 20/26): the one figure a card is answering (80 %, 34,3 km, a stat value), a card's lead sentence, a session name in a hero.
+- **Body** (system font, regular, 16/22, max ~70ch on web): all reading text, form labels, list rows, the line under a screen title.
+- **Link** (system font, semibold, 16/22): button labels and the title of a tappable card — Body's weight, never its own size.
+- **Caption** (system font, regular, 13/18): helper text, error text, secondary metadata, the sentence explaining what a card is for.
+- **Waypoint Label** (IBM Plex Mono, medium, 12/16, tracking 0.04em, uppercase): section labels, the "01 / 04" step counter, any coordinate-style micro-label. Never used for a full sentence.
+
+**One 28 per screen.** The largest step marks the single loudest element on a page, and a page has exactly one: usually its title, and on Accueil — which has no title — the week ring. A card's hero figure is Subtitle, never Title: at 28 it tied with the screen's own name, and made a number on a summary *larger* than the same number on the detail screen behind it, inverting the hierarchy between a summary and its depth.
+
+**The line under a screen title is Body, everywhere.** It is the same sentence doing the same job on every screen; dropping it to Caption on one screen is the kind of difference that reads as sloppiness rather than as emphasis.
 
 ### Named Rules
 **The Signage-Not-Sentence Rule.** IBM Plex Mono never carries a full sentence or a paragraph; the moment it would wrap past a few characters, it has left signage and become body text, and switches to the system font.

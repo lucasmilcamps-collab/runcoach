@@ -38,7 +38,7 @@ export default function PlanSessionsScreen() {
             Plan {version}
           </ThemedText>
           <ThemedText type="title">Toutes les séances</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="default" themeColor="textSecondary">
             Lecture seule — ce plan n’est pas modifiable ici.
           </ThemedText>
         </View>

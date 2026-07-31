@@ -141,11 +141,17 @@ function Card({
   );
 }
 
-/** A big number with its unit — the one figure a card is answering. */
+/** The one figure a card is answering, with its unit.
+ *
+ * `subtitle`, not `title`: the 28px step belongs to the loudest element of a
+ * screen, and there is exactly one. Used here it tied with "Plan 3" at the top
+ * of the page — a card's number shouting as loud as the page's name — and it
+ * also made this 80% *bigger* than the same 80% on its own detail screen, which
+ * inverts the hierarchy between a summary and the depth behind it. */
 function Hero({ value, unit }: { value: string; unit?: string }) {
   return (
     <View style={styles.hero}>
-      <ThemedText type="title">{value}</ThemedText>
+      <ThemedText type="subtitle">{value}</ThemedText>
       {unit ? (
         <ThemedText type="small" themeColor="textSecondary">
           {unit}
