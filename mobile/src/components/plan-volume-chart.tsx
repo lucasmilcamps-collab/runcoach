@@ -2,7 +2,8 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
-import type { WeekVolume } from '@/lib/plan-overview';
+import { volumeValue } from '@/lib/plan-overview';
+import type { VolumeMetric, WeekVolume } from '@/lib/plan-overview';
 
 const ChartHeight = 96;
 // Enough to stay visible on a week the plan barely runs, without pretending a
@@ -21,15 +22,20 @@ const MinBarHeight = 3;
 export function PlanVolumeChart({
   weeks,
   weekCurrent,
+  metric = 'km',
 }: {
   weeks: WeekVolume[];
   weekCurrent: number | null;
+  metric?: VolumeMetric;
 }) {
-  const peak = Math.max(...weeks.map((w) => w.km), 1);
+  const peak = Math.max(...weeks.map((w) => volumeValue(w, metric)), 1);
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.chart} accessibilityRole="image" accessibilityLabel={label(weeks, peak)}>
+      <View
+        style={styles.chart}
+        accessibilityRole="image"
+        accessibilityLabel={label(weeks, peak, metric)}>
         {weeks.map((week) => {
           const isCurrent = week.index === weekCurrent;
           return (
@@ -37,7 +43,7 @@ export function PlanVolumeChart({
               <View
                 style={[
                   styles.bar,
-                  { height: `${Math.max((week.km / peak) * 100, MinBarHeight)}%` },
+                  { height: `${Math.max((volumeValue(week, metric) / peak) * 100, MinBarHeight)}%` },
                   // Deload weeks are lighter, not missing: a shorter bar already
                   // says "less", and the tone says the drop was planned.
                   week.isDeload && styles.barDeload,
@@ -60,8 +66,9 @@ export function PlanVolumeChart({
   );
 }
 
-function label(weeks: WeekVolume[], peak: number): string {
-  return `Volume prévu sur ${weeks.length} semaines, jusqu’à ${Math.round(peak)} kilomètres par semaine.`;
+function label(weeks: WeekVolume[], peak: number, metric: VolumeMetric): string {
+  const unit = metric === 'km' ? 'kilomètres' : 'minutes';
+  return `Volume prévu sur ${weeks.length} semaines, jusqu’à ${Math.round(peak)} ${unit} par semaine.`;
 }
 
 const styles = StyleSheet.create({

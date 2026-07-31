@@ -5,8 +5,13 @@ import { estimateDistanceKm } from '@/lib/plan-format';
 export type WeekVolume = {
   index: number;
   km: number;
+  minutes: number;
   isDeload: boolean;
 };
+
+/** Which measure the volume views are showing. Minutes are what the plan
+ * actually prescribes; kilometres are derived from the target pace. */
+export type VolumeMetric = 'km' | 'minutes';
 
 /** A phase and the span of weeks it covers, for the cycles bar. */
 export type PhaseSpan = {
@@ -29,14 +34,61 @@ export function planWeeks(plan: Plan): PlanWeek[] {
  * one that invents kilometres from an assumed pace.
  */
 export function weeklyVolume(plan: Plan): WeekVolume[] {
-  return planWeeks(plan).map((week) => ({
-    index: week.index,
-    isDeload: week.is_deload,
-    km: week.sessions.reduce((total, session) => {
-      if (session.sport !== 'RUN' || session.type === 'rest') return total;
-      return total + (estimateDistanceKm(session.duration_min, session.pace_range) ?? 0);
-    }, 0),
-  }));
+  return planWeeks(plan).map((week) => {
+    const runs = week.sessions.filter((s) => s.sport === 'RUN' && s.type !== 'rest');
+    return {
+      index: week.index,
+      isDeload: week.is_deload,
+      km: runs.reduce(
+        (total, s) => total + (estimateDistanceKm(s.duration_min, s.pace_range) ?? 0),
+        0,
+      ),
+      minutes: runs.reduce((total, s) => total + s.duration_min, 0),
+    };
+  });
+}
+
+export function volumeValue(week: WeekVolume, metric: VolumeMetric): number {
+  return metric === 'km' ? week.km : week.minutes;
+}
+
+/**
+ * What each phase of a plan is for, in the athlete's words.
+ *
+ * Straight from the project's training-science reference (periodisation), not
+ * invented copy: base builds aerobic volume, build introduces threshold then
+ * VO2 work, peak sharpens at goal pace, taper cuts volume while keeping
+ * intensity so freshness peaks on race day.
+ */
+export const PHASE_PURPOSE: Record<PlanPhase['name'], string> = {
+  base:
+    'Construire le moteur : du volume en endurance fondamentale, avec une seule ' +
+    'séance de qualité légère par semaine. C’est la phase la plus longue, et la ' +
+    'plus ingrate — c’est aussi celle qui rend les suivantes possibles.',
+  build:
+    'Ajouter de la vitesse sur la base construite : d’abord du seuil, puis du ' +
+    'travail plus court et plus vif. Deux séances de qualité par semaine au ' +
+    'maximum — au-delà, c’est la récupération qui casse, pas les jambes.',
+  peak:
+    'Courir à l’allure de l’objectif, pour que le jour J n’ait rien d’une ' +
+    'découverte. Le volume se maintient, l’intensité devient spécifique.',
+  taper:
+    'Baisser le volume de 40 à 60 % en gardant l’intensité. Tu ne gagnes plus de ' +
+    'forme ici : tu la laisses remonter à la surface pour le jour de course.',
+};
+
+/** Monday–Sunday range of a plan week, e.g. "22 – 28 juin". */
+export function weekRangeLabel(startDateIso: string, weekPosition: number): string {
+  const start = new Date(startDateIso);
+  start.setDate(start.getDate() + weekPosition * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const day = new Intl.DateTimeFormat('fr-FR', { day: 'numeric' });
+  const dayMonth = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
+  // Drop the month on the left side when both ends share it: "22 – 28 juin"
+  // rather than "22 juin – 28 juin".
+  const sameMonth = start.getMonth() === end.getMonth();
+  return `${sameMonth ? day.format(start) : dayMonth.format(start)} – ${dayMonth.format(end)}`;
 }
 
 /** The plan's phases with the weeks each one spans. */

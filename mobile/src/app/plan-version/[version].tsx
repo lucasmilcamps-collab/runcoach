@@ -80,9 +80,13 @@ export default function PlanVersionScreen() {
         ) : (
           <>
             <GoalCard plan={plan} response={planQuery.data} overview={overview} />
-            <RegularityCard overview={overview} isLoading={overviewQuery.isLoading} />
-            <VolumeCard plan={plan} overview={overview} />
-            <CyclesCard plan={plan} overview={overview} />
+            <RegularityCard
+              overview={overview}
+              isLoading={overviewQuery.isLoading}
+              version={versionNumber}
+            />
+            <VolumeCard plan={plan} overview={overview} version={versionNumber} />
+            <CyclesCard plan={plan} overview={overview} version={versionNumber} />
             <SettingsCard plan={plan} overview={overview} version={versionNumber} />
           </>
         )}
@@ -94,10 +98,15 @@ export default function PlanVersionScreen() {
 function Card({
   title,
   blurb,
+  detail,
   children,
 }: {
   title: string;
   blurb: string;
+  /** Where "Voir le détail" goes. A card that has more behind it says so in the
+   * same place every time, at the bottom, rather than hiding a tap target
+   * somewhere in its content. */
+  detail?: { pathname: string; version: number; label: string };
   children: React.ReactNode;
 }) {
   return (
@@ -111,6 +120,23 @@ function Card({
         </ThemedText>
       </View>
       {children}
+      {detail ? (
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: detail.pathname as never,
+              params: { version: String(detail.version) },
+            })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={detail.label}
+          style={pressable(styles.link)}>
+          <ThemedText type="link" themeColor="text">
+            Voir le détail
+          </ThemedText>
+          <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -184,9 +210,11 @@ function Chrono({ label, value, bright }: { label: string; value: string; bright
 function RegularityCard({
   overview,
   isLoading,
+  version,
 }: {
   overview: PlanOverview | null;
   isLoading: boolean;
+  version: number;
 }) {
   if (isLoading) {
     return (
@@ -205,7 +233,12 @@ function RegularityCard({
   return (
     <Card
       title="Régularité"
-      blurb="C’est la constance qui construit la forme, pas la séance parfaite.">
+      blurb="C’est la constance qui construit la forme, pas la séance parfaite."
+      detail={{
+        pathname: '/plan-regularity/[version]',
+        version,
+        label: 'Voir le détail de la régularité',
+      }}>
       {notStarted ? (
         <ThemedText type="default" themeColor="textSecondary">
           Aucune semaine terminée pour l’instant.
@@ -223,7 +256,15 @@ function RegularityCard({
   );
 }
 
-function VolumeCard({ plan, overview }: { plan: Plan; overview: PlanOverview | null }) {
+function VolumeCard({
+  plan,
+  overview,
+  version,
+}: {
+  plan: Plan;
+  overview: PlanOverview | null;
+  version: number;
+}) {
   const weeks = weeklyVolume(plan);
   const peak = Math.max(...weeks.map((w) => w.km), 0);
   // Every run in this plan is prescribed in minutes with no target pace, so
@@ -232,7 +273,10 @@ function VolumeCard({ plan, overview }: { plan: Plan; overview: PlanOverview | n
   if (peak <= 0) return null;
 
   return (
-    <Card title="Volume" blurb="Comment la charge de course monte au fil des semaines.">
+    <Card
+      title="Volume"
+      blurb="Comment la charge de course monte au fil des semaines."
+      detail={{ pathname: '/plan-volume/[version]', version, label: 'Voir le détail du volume' }}>
       <View style={styles.heroRow}>
         <Hero value={frKm(peak)} unit="km au pic hebdo" />
       </View>
@@ -241,12 +285,23 @@ function VolumeCard({ plan, overview }: { plan: Plan; overview: PlanOverview | n
   );
 }
 
-function CyclesCard({ plan, overview }: { plan: Plan; overview: PlanOverview | null }) {
+function CyclesCard({
+  plan,
+  overview,
+  version,
+}: {
+  plan: Plan;
+  overview: PlanOverview | null;
+  version: number;
+}) {
   const phases = phaseSpans(plan);
   if (phases.length === 0) return null;
 
   return (
-    <Card title="Cycles" blurb="Des blocs successifs, chacun avec un travail à lui.">
+    <Card
+      title="Cycles"
+      blurb="Des blocs successifs, chacun avec un travail à lui."
+      detail={{ pathname: '/plan-cycles/[version]', version, label: 'Voir le détail des cycles' }}>
       {overview?.week_current != null ? (
         <ThemedText type="default">
           Semaine {overview.week_current} sur {overview.weeks_total}
