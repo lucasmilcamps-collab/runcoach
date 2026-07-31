@@ -102,6 +102,9 @@ def apply_edits(plan: Plan, edits: dict[int, dict[tuple[str, str], dict]]) -> No
                 duration = edit.get("duration_min")
                 if duration:
                     session.duration_min = duration
+                # A skip keeps the session in the plan, flagged. Deleting it
+                # would hide the very decision the athlete wants to see.
+                session.skipped = bool(edit.get("skipped"))
                 kept.append(session)
             week.sessions = kept
 
@@ -189,6 +192,26 @@ async def delete_session(
     """Drop a non-run session for this week only. Raises CannotDeleteRunError
     for a run: the plan guarantees a run count, so removing one is a replan."""
     await _edit_session(db, user_id, week_index, day, slot, {"deleted": True})
+
+
+async def skip_session(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    week_index: int,
+    day: Weekday,
+    slot: Literal["primary", "addon"],
+    skipped: bool = True,
+) -> None:
+    """Declare a session skipped for this week only — reversible, and allowed on
+    runs, unlike deletion.
+
+    The distinction is the point. Deleting a run is refused because it silently
+    breaks the plan's guaranteed run count; skipping one says "not this week"
+    without pretending the plan changed. On a key session that makes the miss
+    count immediately (it feeds the replan trigger); on an optional one it costs
+    nothing, which is what optional was for. It never regenerates anything —
+    the suggestion is the athlete's to act on."""
+    await _edit_session(db, user_id, week_index, day, slot, {"skipped": skipped})
 
 
 async def move_session(

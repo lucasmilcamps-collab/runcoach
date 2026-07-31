@@ -69,13 +69,26 @@ _MIN_ATTEMPT_S = 25.0
 _MAX_TOKENS = 32000
 
 
+def _plan_tool_schema() -> dict:
+    """`Plan`'s JSON schema, minus the fields the model must never set.
+
+    `skipped` is a per-week user override applied on read, not something a
+    generated plan carries. Leaving it in the tool schema would invite the model
+    to emit sessions already marked skipped — and the athlete would be told they
+    had decided something they never did."""
+    schema = Plan.model_json_schema()
+    session = schema.get("$defs", {}).get("Session", {})
+    session.get("properties", {}).pop("skipped", None)
+    return schema
+
+
 _PLAN_TOOL = {
     "name": "submit_plan",
     "description": (
         "Soumets le plan d'entraînement complet et conforme au schéma. "
         "Appelle cet outil une seule fois avec le plan entier."
     ),
-    "input_schema": Plan.model_json_schema(),
+    "input_schema": _plan_tool_schema(),
 }
 
 

@@ -13,7 +13,7 @@ import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, listActivities } from '@/lib/api/activities';
 import { setSessionLink } from '@/lib/api/plans';
-import type { Weekday } from '@/lib/api/plans';
+import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 
 const WINDOW_DAYS = 10;
@@ -47,20 +47,24 @@ export default function LinkActivityScreen() {
   const params = useLocalSearchParams<{
     week?: string;
     day?: string;
+    slot?: string;
     sessionDate?: string;
   }>();
   const weekIndex = Number(params.week);
   const day = params.day as Weekday | undefined;
+  const slot = (params.slot === 'addon' ? 'addon' : 'primary') as PlanSession['slot'];
   const sessionDate = params.sessionDate;
 
   const queryClient = useQueryClient();
   const activitiesQuery = useQuery({ queryKey: ['activities'], queryFn: listActivities });
 
   const mutation = useMutation({
-    mutationFn: (activityId: string) => setSessionLink(weekIndex, day as Weekday, activityId),
+    mutationFn: (activityId: string) =>
+      setSessionLink(weekIndex, day as Weekday, activityId, slot),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['session-link', weekIndex, day] });
+      queryClient.invalidateQueries({ queryKey: ['session-link', weekIndex, day, slot] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
       router.back();
     },
   });

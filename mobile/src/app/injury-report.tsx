@@ -37,6 +37,7 @@ export default function InjuryReportScreen() {
       queryClient.setQueryData(['plan'], data);
       queryClient.invalidateQueries({ queryKey: ['plan-today'] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
       router.back();
     },
   });

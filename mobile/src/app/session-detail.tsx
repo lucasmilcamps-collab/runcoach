@@ -23,6 +23,7 @@ import {
   moveSession,
   setSessionDuration,
   setSessionLink,
+  skipSession,
 } from '@/lib/api/plans';
 import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
@@ -111,23 +112,29 @@ export default function SessionDetailScreen() {
   });
 
   const queryClient = useQueryClient();
-  /** Every per-week override changes the same three reads. */
+  /** Every per-week override changes the same reads. `plan-overview` is one of
+   * them: the detailed adherence screen is computed from the same completions
+   * and overrides, so leaving it out left it showing yesterday's answer. */
   const invalidatePlan = () => {
     queryClient.invalidateQueries({ queryKey: ['plan'] });
     queryClient.invalidateQueries({ queryKey: ['plan-today'] });
     queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+    queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
   };
   const linkQuery = useQuery({
-    queryKey: ['session-link', data?.weekNumber, data?.session.day],
-    queryFn: () => getSessionLink(data!.weekNumber, data!.session.day),
+    queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
+    queryFn: () => getSessionLink(data!.weekNumber, data!.session.day, data!.session.slot),
     enabled: !!data,
     retry: false,
   });
   const unlinkMutation = useMutation({
-    mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null),
+    mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null, data!.session.slot),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['session-link', data?.weekNumber, data?.session.day] });
+      queryClient.invalidateQueries({
+        queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
+      });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
     },
   });
   const [editingDuration, setEditingDuration] = useState(false);
@@ -147,6 +154,14 @@ export default function SessionDetailScreen() {
     onSuccess: () => {
       invalidatePlan();
       router.back(); // the session no longer exists
+    },
+  });
+  const skipMutation = useMutation({
+    mutationFn: (skipped: boolean) =>
+      skipSession(data!.weekNumber, data!.session.day, data!.session.slot, skipped),
+    onSuccess: () => {
+      invalidatePlan();
+      router.back(); // the detail param carries the old flag — it's stale now
     },
   });
   const [moving, setMoving] = useState(false);
@@ -211,6 +226,7 @@ export default function SessionDetailScreen() {
       params: {
         week: String(weekNumber),
         day: session.day,
+        slot: session.slot,
         ...(sessionDate ? { sessionDate } : {}),
       },
     });
@@ -424,6 +440,15 @@ export default function SessionDetailScreen() {
             label={moving ? 'Annuler' : 'Déplacer'}
             selected={moving}
             onPress={() => setMoving((v) => !v)}
+          />
+          {/* Offered on runs too, unlike deleting: skipping says "not this
+              week" without pretending the plan changed. On a key session it
+              counts as missed straight away and feeds the replan suggestion. */}
+          <UtilityAction
+            label={session.skipped ? 'Reprendre' : 'Passer'}
+            selected={session.skipped}
+            busy={skipMutation.isPending}
+            onPress={() => skipMutation.mutate(!session.skipped)}
           />
           {/* A run is never deletable: losing one breaks the plan's guaranteed
               run count, which is a replan decision. The backend refuses it too —

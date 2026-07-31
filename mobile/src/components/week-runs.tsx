@@ -110,8 +110,10 @@ function RunRow({
     <Pressable
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${DAY_LABELS[session.day]}, ${sessionTitle(session)}, ${meta}`}
-      style={pressable(styles.row)}>
+      accessibilityLabel={`${DAY_LABELS[session.day]}, ${sessionTitle(session)}, ${meta}${
+        session.skipped ? ', sautée' : ''
+      }`}
+      style={pressable([styles.row, session.skipped && styles.rowSkipped])}>
       <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.day}>
         {DAY_LABELS[session.day]}
       </ThemedText>
@@ -145,6 +147,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.half,
   },
+  rowSkipped: { opacity: 0.55 },
+
   row: {
     flexDirection: 'row',
     alignItems: 'center',

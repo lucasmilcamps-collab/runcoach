@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -15,6 +17,7 @@ from app.models.plan import (
     SessionLinkInfo,
     SessionLinkRequest,
     SessionMoveRequest,
+    SessionSkipRequest,
     TodaySession,
     Weekday,
 )
@@ -96,13 +99,17 @@ async def plan_progress_endpoint(
 async def get_session_link(
     week_index: int,
     day: Weekday,
+    slot: Literal["primary", "addon"] = "primary",
     db: AsyncIOMotorDatabase = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """The activity linked to a planned session (by week + weekday), plus the
-    session's real calendar date so the picker can surface nearby activities."""
+    """The activity linked to a planned session (by week + weekday + slot), plus
+    the session's real calendar date so the picker can surface nearby
+    activities."""
     try:
-        return await plan_completion_service.get_session_link(db, str(user["_id"]), week_index, day)
+        return await plan_completion_service.get_session_link(
+            db, str(user["_id"]), week_index, day, slot
+        )
     except plan_completion_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
 
@@ -117,7 +124,7 @@ async def set_session_link(
     planned session."""
     try:
         return await plan_completion_service.set_session_link(
-            db, str(user["_id"]), body.week_index, body.day, body.activity_id
+            db, str(user["_id"]), body.week_index, body.day, body.activity_id, body.slot
         )
     except plan_completion_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
@@ -125,6 +132,17 @@ async def set_session_link(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "ACTIVITY_NOT_FOUND", "message": "Activité introuvable."},
+        ) from exc
+    except plan_completion_service.SportMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SPORT_MISMATCH",
+                "message": (
+                    "Cette séance est une séance de course : une activité "
+                    f"{exc.activity_sport} ne peut pas la valider."
+                ),
+            },
         ) from exc
 
 
@@ -172,6 +190,28 @@ async def set_session_duration(
     if plan is None:
         raise _no_plan_error()
     return plan
+
+
+@router.post("/session/skip", response_model=PlanResponse)
+async def skip_session(
+    body: SessionSkipRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Mark a session skipped, or un-skip it, for one week only (per-week
+    override). Allowed on runs — unlike deletion — because it doesn't pretend
+    the plan changed. It never triggers a regeneration: a skipped key session
+    feeds `replan_suggested`, and acting on that stays the athlete's call."""
+    user_id = str(user["_id"])
+    try:
+        await plan_moves_service.skip_session(
+            db, user_id, body.week_index, body.day, body.slot, body.skipped
+        )
+    except plan_moves_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_moves_service.SessionNotFoundError as exc:
+        raise _session_not_found_error() from exc
+    return await plan_service.get_current_plan(db, user_id)
 
 
 @router.post("/session/delete", response_model=PlanResponse)

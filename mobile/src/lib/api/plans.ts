@@ -68,6 +68,9 @@ export type PlanSession = {
   priority: 'key' | 'optional';
   slot: 'primary' | 'addon';
   rationale: string;
+  /** Declared skipped for this week (a per-week override, reversible). The
+   * session stays in the plan — the decision is worth seeing. */
+  skipped: boolean;
 };
 
 export type PlanWeek = {
@@ -242,17 +245,25 @@ export type SessionLinkInfo = {
   linked: Activity | null;
 };
 
-export function getSessionLink(weekIndex: number, day: Weekday) {
+/** The slot is part of the identity: a day can hold a run and a strength addon,
+ * and a link on one must not mark the other done. */
+export function getSessionLink(weekIndex: number, day: Weekday, slot: PlanSession['slot'] = 'primary') {
   return apiClient.get<SessionLinkInfo>(
-    `/api/v1/plans/session/link?week_index=${weekIndex}&day=${day}`,
+    `/api/v1/plans/session/link?week_index=${weekIndex}&day=${day}&slot=${slot}`,
   );
 }
 
 /** Link (activityId) or unlink (null) a recorded activity to a planned session. */
-export function setSessionLink(weekIndex: number, day: Weekday, activityId: string | null) {
+export function setSessionLink(
+  weekIndex: number,
+  day: Weekday,
+  activityId: string | null,
+  slot: PlanSession['slot'] = 'primary',
+) {
   return apiClient.post<SessionLinkInfo>('/api/v1/plans/session/link', {
     week_index: weekIndex,
     day,
+    slot,
     activity_id: activityId,
   });
 }
@@ -281,6 +292,26 @@ export function setSessionDuration(
     day,
     slot,
     duration_min: durationMin,
+  });
+}
+
+/**
+ * Declare a session skipped for one week only, or take it back. Allowed on runs
+ * — unlike deleting one — because it says "not this week" rather than changing
+ * the plan. A skipped key session counts as missed straight away and feeds
+ * `replan_suggested`; it never regenerates anything on its own.
+ */
+export function skipSession(
+  weekIndex: number,
+  day: Weekday,
+  slot: PlanSession['slot'],
+  skipped: boolean,
+) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/session/skip', {
+    week_index: weekIndex,
+    day,
+    slot,
+    skipped,
   });
 }
 
