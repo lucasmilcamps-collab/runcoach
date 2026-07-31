@@ -318,22 +318,29 @@ def _check_strength_placement(weeks: list[Week]) -> list[str]:
     violations: list[str] = []
     hard_types = QUALITY_SESSION_TYPES | {"long_run"}
     strength_days: set[tuple[int, int]] = set()
-    hard_days: set[tuple[int, int]] = set()
+    hard_days: dict[tuple[int, int], str] = {}  # → the offending session's type
     for pos, week in enumerate(weeks):
         for session in week.sessions:
             if session.type == "strength":
                 strength_days.add((pos, _weekday_index(session.day)))
             if session.type in hard_types:
-                hard_days.add((pos, _weekday_index(session.day)))
+                hard_days[(pos, _weekday_index(session.day))] = session.type
 
-    for pos, di in strength_days:
+    for pos, di in sorted(strength_days):
         next_same = (pos, di + 1)
         next_cross = (pos + 1, 0)
-        if next_same in hard_days or (di == 6 and next_cross in hard_days):
-            violations.append(
-                f"Semaine {weeks[pos].index} : renforcement la veille d'une séance "
-                "clé (sortie longue ou qualité)."
-            )
+        clash = hard_days.get(next_same) or (hard_days.get(next_cross) if di == 6 else None)
+        if clash is None:
+            continue
+        # Name the day and what follows it. "renforcement la veille d'une séance
+        # clé" tells the model a rule it already knows and not where it broke it,
+        # so the retry had to re-derive the placement for every flagged week.
+        clash_day = WEEKDAY_ORDER[0] if di == 6 else WEEKDAY_ORDER[di + 1]
+        violations.append(
+            f"Semaine {weeks[pos].index} : renforcement le {WEEKDAY_ORDER[di].value} "
+            f"alors que le {clash_day.value} porte une séance {clash} — déplace le "
+            "renfo sur un jour dont le LENDEMAIN est facile ou repos."
+        )
 
     by_week: dict[int, list[int]] = defaultdict(list)
     for pos, di in strength_days:

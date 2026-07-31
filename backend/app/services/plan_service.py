@@ -273,14 +273,24 @@ def _strength_directive(request: PlanRequest) -> str:
     s = request.strength
     if not s.enabled:
         return "- Renforcement : NON demandé. N'ajoute aucune séance type='strength'.\n"
+    # The placement rule is stated as a test to run, not as two preferences to
+    # reconcile. "Same day as a quality session" and "never the day before a long
+    # run" collide on the most common layout there is — quality Friday, long run
+    # Saturday — and the model was left to notice the interaction week by week.
+    # It didn't, and each miss cost a full regeneration.
     return (
         f"- Renforcement : ajoute {s.sessions_per_week} séance(s) type='strength', "
-        f"slot='addon', ~{s.duration_min} min, le MÊME jour qu'une séance de qualité "
-        "(après la course) ou un jour facile, JAMAIS la veille d'une sortie longue "
-        "ou d'une séance de qualité ; si deux/semaine, au moins 48 h d'écart. Ne "
-        "prescris PAS d'exercices : indique seulement le créneau et l'intention "
-        "(ex. bas du corps + gainage, RPE 6-7). Une séance addon ne compte pas dans "
-        "le nombre de séances de course.\n"
+        f"slot='addon', ~{s.duration_min} min. PLACEMENT — applique ce test pour "
+        "chaque semaine, dans l'ordre : (1) choisis un jour J qui porte déjà une "
+        "séance (le renfo se fait après elle) ; (2) VÉRIFIE le lendemain J+1 : s'il "
+        "porte une sortie longue ou une séance de qualité, ce jour J est INTERDIT, "
+        "essaie-en un autre ; (3) pour le dimanche, J+1 est le lundi de la semaine "
+        "suivante — vérifie-le aussi. Le cas qui piège : qualité le vendredi et "
+        "sortie longue le samedi → le renfo NE VA PAS le vendredi. Si deux "
+        f"renfos/semaine, au moins 48 h entre eux. Ne prescris PAS d'exercices : "
+        "indique seulement le créneau et l'intention (ex. bas du corps + gainage, "
+        "RPE 6-7). Une séance addon ne compte pas dans le nombre de séances de "
+        "course.\n"
     )
 
 

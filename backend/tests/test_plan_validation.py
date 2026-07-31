@@ -348,7 +348,10 @@ def test_strength_day_before_long_run_flagged():
     plan = _valid_plan()  # long_run is Saturday
     plan.phases[0].weeks[0].sessions.append(_strength(Weekday.FRIDAY))
     violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
-    assert any("renforcement la veille" in v for v in violations)
+    # The message locates the clash instead of restating the rule: the retry
+    # otherwise had to re-derive the placement for every flagged week.
+    clash = next(v for v in violations if "renforcement" in v)
+    assert "FRIDAY" in clash and "SATURDAY" in clash and "long_run" in clash
 
 
 def test_strength_same_day_as_quality_ok():
@@ -451,3 +454,28 @@ def test_min_greater_than_max_is_rejected_by_the_model():
             max_run_sessions_per_week=2,
         )
     assert "minimum" in str(exc.value).lower()
+
+
+def test_strength_before_a_sunday_long_run_names_next_monday():
+    """The week boundary: a Sunday strength is judged against the next week's
+    Monday, and the message has to say so or it looks like a false positive."""
+    plan = _valid_plan()
+    plan.phases[0].weeks[0].sessions.append(_strength(Weekday.SUNDAY))
+    plan.phases[0].weeks[1].sessions.append(_s(Weekday.MONDAY, "intervals", 45))
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+    clash = next(v for v in violations if "renforcement" in v)
+    assert "SUNDAY" in clash and "MONDAY" in clash and "intervals" in clash
+
+
+def test_strength_directive_states_the_trap_case():
+    """The prompt used to hold two preferences that collide on the most common
+    layout there is — quality Friday, long run Saturday — and left the model to
+    notice. It didn't, and each miss cost a full regeneration."""
+    from app.models.plan import StrengthPref
+    from app.services import plan_service
+
+    request = _valid_request(strength=StrengthPref(enabled=True, sessions_per_week=1))
+    directive = plan_service._strength_directive(request)
+    assert "J+1" in directive
+    assert "INTERDIT" in directive
+    assert "lundi de la semaine" in directive  # the Sunday boundary
