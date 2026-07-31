@@ -6,9 +6,9 @@ import garminconnect
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.crypto import decrypt_token_blob
-from app.models.activity import map_garmin_sport
+from app.models.activity import SportType, map_garmin_sport
 from app.models.job import JobResponse, JobStatus
-from app.services import job_service
+from app.services import job_service, load_service
 
 SYNC_HISTORY_DAYS = 90  # needed to seed CTL — see training-science skill
 SYNC_MIN_INTERVAL = timedelta(minutes=15)  # garmin-sync skill: rate-limit guard
@@ -22,6 +22,21 @@ _RATE_LIMIT_DELAY_S = 1.0
 # steady-state sync only makes a couple of extra requests.
 _WELLNESS_HISTORY_DAYS = 30
 _WELLNESS_REFRESH_DAYS = 2
+
+# Time-in-zone is not in the activity list payload: it needs one extra request
+# per activity (`hrTimeInZones`). Three deliberate limits keep that affordable
+# against Garmin's informal ~1 req/s budget:
+#   - RUN only. The average-HR fallback understates interval work, and intervals
+#     are a running thing here; a padel match has no such structure to lose.
+#   - Only activities that don't have the field yet, newest first, so the days
+#     that drive today's ATL are enriched before older ones.
+#   - A per-sync cap. RETROACTIVE DECISION: rather than a one-shot backfill
+#     script, each sync enriches up to this many activities, so the 90-day
+#     window fills in over a handful of syncs. Chosen because a single 90-day
+#     backfill is ~90 extra requests in one burst — the surest way to get an
+#     account rate-limited — and because CTL is a 42-day EMA: filling in from
+#     the most recent backwards makes the curve converge rather than step.
+_ZONE_ENRICH_MAX_PER_SYNC = 25
 
 # Plausible human heart-rate bounds (bpm). Used to reject garbage when probing
 # Garmin's loosely-typed profile payloads for HRmax / HRrest.
@@ -110,6 +125,113 @@ def _fetch_activities_sync(client: garminconnect.Garmin, cutoff: datetime) -> li
             break
         time.sleep(_RATE_LIMIT_DELAY_S)
     return collected
+
+
+def _zone_bands(payload: object) -> list[tuple[float, float, float]]:
+    """Garmin's `hrTimeInZones` → [(low_bpm, high_bpm, seconds)] sorted by zone.
+
+    The payload is a list of per-zone dicts carrying `zoneNumber`, `secsInZone`
+    and `zoneLowBoundary`; only the LOW boundary is given, so each band's ceiling
+    is the next band's floor and the top band is left open (inf). Shapes vary by
+    watch model and activity type, so anything unparseable is skipped rather
+    than guessed."""
+    if not isinstance(payload, list):
+        return []
+    rows: list[tuple[int, float, float]] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        number = entry.get("zoneNumber")
+        low = entry.get("zoneLowBoundary")
+        seconds = entry.get("secsInZone")
+        if not isinstance(number, (int, float)) or isinstance(number, bool):
+            continue
+        if not isinstance(low, (int, float)) or isinstance(low, bool):
+            continue
+        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+            continue
+        rows.append((int(number), float(low), float(seconds)))
+    if not rows:
+        return []
+    rows.sort()
+    bands: list[tuple[float, float, float]] = []
+    for index, (_, low, seconds) in enumerate(rows):
+        high = rows[index + 1][1] if index + 1 < len(rows) else float("inf")
+        bands.append((low, high, seconds))
+    return bands
+
+
+def _fetch_zone_bands_sync(
+    client: garminconnect.Garmin, activity_ids: list[int]
+) -> dict[int, list[tuple[float, float, float]]]:
+    """Runs in a worker thread. One `hrTimeInZones` call per activity, spaced by
+    the rate-limit delay. Each call is guarded on its own: a single activity
+    without zone data (no HR strap that day, an old device) must not cost the
+    others."""
+    out: dict[int, list[tuple[float, float, float]]] = {}
+    for index, activity_id in enumerate(activity_ids):
+        try:
+            payload = client.get_activity_hr_in_timezones(str(activity_id))
+        except Exception:  # noqa: BLE001 — enrichment is best-effort, per activity
+            payload = None
+        bands = _zone_bands(payload)
+        if bands:
+            out[activity_id] = bands
+        if index < len(activity_ids) - 1:
+            time.sleep(_RATE_LIMIT_DELAY_S)
+    return out
+
+
+async def enrich_run_zone_seconds(
+    db: AsyncIOMotorDatabase, user_id: str, client: garminconnect.Garmin
+) -> int:
+    """Fill `hr_zone_seconds` on run activities that lack it, so their TRIMP uses
+    the true Edwards form instead of the average-HR fallback (training-science
+    skill). Needs the athlete's real HRmax/HRrest: Garmin's zone boundaries are
+    not ours, so the time is redistributed onto the project's Karvonen zones —
+    without a complete profile we store nothing rather than mismap it.
+
+    Best-effort and non-throwing: returns how many activities were enriched."""
+    profile = await db.fitness_profiles.find_one({"user_id": user_id})
+    hr_max = (profile or {}).get("hr_max")
+    hr_rest = (profile or {}).get("hr_rest")
+    if not hr_max or not hr_rest or hr_max <= hr_rest:
+        return 0
+
+    cursor = (
+        db.activities.find(
+            {
+                "user_id": user_id,
+                "sport": SportType.RUN.value,
+                "garmin_activity_id": {"$ne": None},
+                "hr_zone_seconds": None,
+            },
+            {"garmin_activity_id": 1},
+        )
+        .sort("start_time", -1)
+        .limit(_ZONE_ENRICH_MAX_PER_SYNC)
+    )
+    activity_ids = [
+        int(doc["garmin_activity_id"])
+        async for doc in cursor
+        if doc.get("garmin_activity_id") is not None
+    ]
+    if not activity_ids:
+        return 0
+
+    bands_by_id = await asyncio.to_thread(_fetch_zone_bands_sync, client, activity_ids)
+
+    enriched = 0
+    for activity_id, bands in bands_by_id.items():
+        zone_seconds = load_service.redistribute_zone_seconds(bands, hr_max, hr_rest)
+        if zone_seconds is None:
+            continue
+        await db.activities.update_one(
+            {"garmin_activity_id": activity_id, "user_id": user_id},
+            {"$set": {"hr_zone_seconds": zone_seconds}},
+        )
+        enriched += 1
+    return enriched
 
 
 def _search_hr_value(data: object, key_hints: tuple[str, ...]) -> int | None:
@@ -235,9 +357,7 @@ async def _update_fitness_profile(
     # Only touch the doc when we actually learned something, so a transient
     # upstream blank never wipes a previously good value.
     if hr_max is not None or hr_rest is not None:
-        await db.fitness_profiles.update_one(
-            {"user_id": user_id}, {"$set": update}, upsert=True
-        )
+        await db.fitness_profiles.update_one({"user_id": user_id}, {"$set": update}, upsert=True)
 
 
 def _extract_hrv(payload: object) -> int | None:
@@ -328,9 +448,7 @@ def _extract_body_battery_by_date(payload: object) -> dict[str, int]:
     return out
 
 
-def _fetch_wellness_range_sync(
-    client: garminconnect.Garmin, dates: list[str]
-) -> list[dict]:
+def _fetch_wellness_range_sync(client: garminconnect.Garmin, dates: list[str]) -> list[dict]:
     """Runs in a worker thread. One Body Battery range call plus per-day HRV /
     sleep / resting-HR calls, each guarded independently (a missing metric is
     normal). Sleeps between days to respect Garmin's informal rate limit. Returns
@@ -340,9 +458,7 @@ def _fetch_wellness_range_sync(
 
     body_battery: dict[str, int] = {}
     try:
-        body_battery = _extract_body_battery_by_date(
-            client.get_body_battery(dates[0], dates[-1])
-        )
+        body_battery = _extract_body_battery_by_date(client.get_body_battery(dates[0], dates[-1]))
     except Exception:  # noqa: BLE001 — Body Battery is display-only, never fatal
         body_battery = {}
 
@@ -467,6 +583,14 @@ async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str)
         upserted += 1
 
     await _update_fitness_profile(db, user_id, client, raw_activities)
+
+    # Time-in-zone for runs, now that the HR profile above is up to date (the
+    # redistribution needs it). Best-effort: without it the load engine still
+    # works, it just falls back to average HR.
+    try:
+        await enrich_run_zone_seconds(db, user_id, client)
+    except Exception:  # noqa: BLE001 — enrichment must never fail a sync
+        pass
 
     # Enrich with overnight recovery data. Best-effort: never let a wellness
     # hiccup fail an otherwise-successful activity sync.

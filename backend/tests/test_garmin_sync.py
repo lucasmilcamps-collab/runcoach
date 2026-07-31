@@ -428,3 +428,141 @@ async def test_job_endpoint_requires_ownership(client, db):
     )
 
     assert response.status_code == 404
+
+
+# --- Time in zone (lot 7.1): the field fitness_service reads must be written ---
+
+# Garmin's shape: only the LOW boundary per zone, so a band's ceiling is the
+# next one's floor and the top zone is open-ended.
+HR_TIME_IN_ZONES = [
+    {"zoneNumber": 1, "secsInZone": 600.0, "zoneLowBoundary": 100},
+    {"zoneNumber": 2, "secsInZone": 300.0, "zoneLowBoundary": 134},
+    {"zoneNumber": 3, "secsInZone": 300.0, "zoneLowBoundary": 148},
+    {"zoneNumber": 4, "secsInZone": 600.0, "zoneLowBoundary": 162},
+    {"zoneNumber": 5, "secsInZone": 900.0, "zoneLowBoundary": 176},
+]
+
+
+def test_zone_bands_close_each_band_on_the_next_floor():
+    bands = garmin_sync_service._zone_bands(HR_TIME_IN_ZONES)
+    assert bands[0] == (100.0, 134.0, 600.0)
+    assert bands[3] == (162.0, 176.0, 600.0)
+    assert bands[4][1] == float("inf")  # top zone left open
+
+
+def test_zone_bands_tolerates_garbage():
+    assert garmin_sync_service._zone_bands(None) == []
+    assert garmin_sync_service._zone_bands([{"zoneNumber": 1}]) == []
+
+
+async def _seed_profile(db, user_id: str) -> None:
+    await db.fitness_profiles.insert_one(
+        {"user_id": user_id, "hr_max": 190, "hr_rest": 50, "manual": True}
+    )
+
+
+async def test_sync_stores_hr_zone_seconds_for_runs(db):
+    """The gap lot 6.1 left: the field was read by fitness_service and written by
+    nobody, so every activity fell back to average HR."""
+    user_id = await _seed_user_and_credentials(db)
+    await _seed_profile(db, user_id)
+    job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY, PADEL_ACTIVITY], []]
+    mock_instance.get_activity_hr_in_timezones.return_value = HR_TIME_IN_ZONES
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    run = await db.activities.find_one({"garmin_activity_id": 111})
+    zone_seconds = run["hr_zone_seconds"]
+    assert len(zone_seconds) == 5
+    # Redistribution conserves time: the 2700s Garmin reported across its zones
+    # come back out spread over ours.
+    assert sum(zone_seconds) == pytest.approx(2700.0)
+
+    # Only runs pay the extra request: the padel session is left alone.
+    padel = await db.activities.find_one({"garmin_activity_id": 222})
+    assert padel.get("hr_zone_seconds") is None
+    mock_instance.get_activity_hr_in_timezones.assert_called_once_with("111")
+
+
+async def test_stored_zone_seconds_reach_the_fitness_engine(db):
+    """End to end: sync → stored field → CTL built on the true Edwards TRIMP,
+    which for an interval session is higher than the average-HR fallback."""
+    from app.services import fitness_service
+
+    user_id = await _seed_user_and_credentials(db)
+    await _seed_profile(db, user_id)
+    job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_activity_hr_in_timezones.return_value = HR_TIME_IN_ZONES
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    with_zones = await fitness_service.compute_fitness(db, user_id)
+
+    # Same activity without the field: the average-HR path the app used before.
+    await db.activities.update_one({"garmin_activity_id": 111}, {"$unset": {"hr_zone_seconds": ""}})
+    without_zones = await fitness_service.compute_fitness(db, user_id)
+
+    assert with_zones.ctl > without_zones.ctl
+
+
+async def test_zone_enrichment_skipped_without_a_complete_hr_profile(db):
+    """No HRmax/HRrest → Garmin's zones can't be mapped onto ours, and we store
+    nothing rather than a wrong distribution."""
+    user_id = await _seed_user_and_credentials(db)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": "RUN",
+            "garmin_activity_id": 999,
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+        }
+    )
+    mock_instance = MagicMock()
+
+    enriched = await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance)
+
+    assert enriched == 0
+    mock_instance.get_activity_hr_in_timezones.assert_not_called()
+
+
+async def test_zone_enrichment_only_fetches_activities_missing_the_field(db):
+    """A re-sync must not re-buy zone data it already has: the per-sync request
+    budget is the reason the backfill is progressive."""
+    user_id = await _seed_user_and_credentials(db)
+    await _seed_profile(db, user_id)
+    now = datetime.now(UTC)
+    await db.activities.insert_many(
+        [
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 1,
+                "start_time": now,
+                "duration_s": 1800,
+                "hr_zone_seconds": [60.0, 60.0, 60.0, 60.0, 60.0],
+            },
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 2,
+                "start_time": now - timedelta(days=1),
+                "duration_s": 1800,
+            },
+        ]
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_hr_in_timezones.return_value = HR_TIME_IN_ZONES
+
+    enriched = await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance)
+
+    assert enriched == 1
+    mock_instance.get_activity_hr_in_timezones.assert_called_once_with("2")

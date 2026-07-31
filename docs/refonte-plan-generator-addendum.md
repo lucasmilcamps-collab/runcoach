@@ -290,3 +290,84 @@ d'exploration de l'API.
   skills.
 - `grep -rn "hr_zone_seconds" backend/` renvoie au moins une écriture, pas seulement
   une lecture.
+
+---
+
+## État du lot 7 — 31/07/2026
+
+Les cinq points sont implémentés. Ce que l'audit annonçait était exact sur 7.1,
+7.2 et 7.5 ; deux constats étaient partiellement périmés au moment où il a été
+écrit, et sont notés ci-dessous pour que la prochaine session ne reparte pas
+d'un état faux.
+
+### 7.1 — Temps par zone
+
+- `garmin_sync_service.enrich_run_zone_seconds` remplit `hr_zone_seconds` après
+  la mise à jour du profil FC, via `get_activity_hr_in_timezones`.
+- **Arbitrage coût de synchro** : course uniquement, seulement les activités où
+  le champ manque, les plus récentes d'abord, plafonné à
+  `_ZONE_ENRICH_MAX_PER_SYNC` (25) par synchro.
+- **Normalisation** : la seconde approche a été retenue (pas de dette).
+  `load_service.redistribute_zone_seconds` reventile le temps des bandes Garmin
+  sur les zones Karvonen du projet **au prorata du recouvrement des plages de
+  FC** — un mapping Z_garmin_n → Z_projet_n serait faux d'un facteur de zone
+  entier pour qui a une FC de repos éloignée de la moyenne. Sans profil FC
+  complet, on n'écrit rien.
+- **Décision sur le rétroactif** : *pas* de script de backfill one-shot. Le
+  plafond par synchro fait que la fenêtre de 90 jours se remplit sur quelques
+  synchros. Raison : 90 requêtes en rafale est le meilleur moyen de faire
+  limiter un compte Garmin ; et comme le CTL est une EMA à 42 jours remplie du
+  plus récent vers le plus ancien, la courbe converge au lieu de faire une
+  marche au basculement.
+- Script d'exploration du payload réel :
+  `backend/scripts/inspect_activity_zones.py` (n'écrit rien, à lancer sur un
+  compte réel avant de faire confiance au parsing).
+
+### 7.2 — Deadline
+
+Option A. `_ANTHROPIC_TIMEOUT_S = 75.0`, `_TOTAL_DEADLINE_S = 150.0`, et chaque
+tentative est en plus bornée par le budget restant, donc le total ne dépasse
+jamais 150 s. Vérification demandée par la spec : Render autorise une réponse
+HTTP jusqu'à 100 minutes — la marge est large, rien n'oblige à passer en job.
+`plan-generator/SKILL.md` porte les valeurs réelles, et
+`test_skill_documents_the_real_timeouts` échoue si le skill et le code divergent.
+
+### 7.3 — `training-science/SKILL.md`
+
+Les six règles y figurent. **Correction au tableau de l'audit** : deux lignes y
+étaient marquées « non » à tort — le TRIMP d'Edwards était documenté (avec
+`edwards_trimp` et l'exemple 6×800 m) et la formule de Riegel aussi ; seul le
+plafond de progression manquait. Les valeurs numériques des règles ne vivent
+plus que dans `training-science` ; `plan-generator` cite les noms de constantes.
+
+### 7.4 — Défauts « séance clé »
+
+Défaut `2 → 3`, `@model_validator` sur `PlanRequest`, et un handler
+`RequestValidationError` qui rend les 422 conformes à `{code, message}` (sans
+lui, le mobile n'affichait que « Unprocessable Entity »).
+
+**Correction à l'audit** : deux des quatre sous-points étaient déjà faits avant
+qu'il soit écrit (28/07) — l'écran expliquait déjà la distinction min/max, et
+les curseurs empêchaient déjà `min > max`. La pastille « Clé » existait aussi ;
+ce qui manquait vraiment, c'est qu'avec 3/3 *toutes* les séances la portaient.
+Les séances optionnelles sont désormais étiquetées explicitement (liste et
+détail), plutôt que signalées par l'absence de pastille.
+
+### 7.5 — Garde-fou Riegel
+
+Piste court terme retenue : `is_source_pace_implausible` compare l'allure de la
+performance source à la médiane des courses récentes et dégrade la `confidence`
+d'un cran (`downgrade_confidence`) sans jeter l'estimation. Le recoupement
+VO2max (moyen terme) reste à faire : la donnée Garmin n'est toujours pas
+stockée.
+
+### Definition of done
+
+`pytest` 256 verts · `ruff check` et `ruff format --check` propres (le dépôt ne
+l'était pas : 12 fichiers ont été reformatés, sans changement de comportement) ·
+`tsc --noEmit` sans régression (une erreur préexistante sur le typage de
+`@/global.css`, indépendante du lot) · `grep -rn "hr_zone_seconds" backend/`
+renvoie bien une écriture.
+
+À noter : `npm test` documenté dans `CLAUDE.md` n'existe pas — il n'y a pas de
+script `test` dans `mobile/package.json`.

@@ -78,3 +78,36 @@ def test_feasibility_ok_for_modest_goal():
 
 def test_feasibility_none_when_goal_slower_than_current():
     assert ps.feasibility_warning(100 * 60, 90 * 60, weeks=8) is None
+
+
+# --- Lot 7.5: Riegel has no sanity check of its own ---
+
+
+def test_a_source_far_faster_than_usual_is_flagged():
+    """5:00/km typical, and one run at 3:30/km — a 30% gap no athlete produces
+    between two ordinary weeks. Probably GPS drift or a short-measured run."""
+    typical = [300.0, 305.0, 295.0, 310.0, 300.0]
+    assert ps.is_source_pace_implausible(210.0, typical) is True
+
+
+def test_a_good_day_is_not_flagged():
+    """A genuine 10% faster effort — a race, or simply a good day — must pass:
+    the guard is for artefacts, not for progress."""
+    typical = [300.0, 305.0, 295.0, 310.0, 300.0]
+    assert ps.is_source_pace_implausible(270.0, typical) is False
+
+
+def test_no_flag_without_enough_history():
+    """Fewer than a handful of runs gives no meaningful median to compare to —
+    better no verdict than one built on two data points."""
+    assert ps.is_source_pace_implausible(210.0, [300.0, 305.0]) is False
+
+
+def test_downgrade_confidence_steps_down_and_floors_at_low():
+    high = ps.TimeEstimate(seconds=5000.0, confidence="high")
+    stepped = ps.downgrade_confidence(high)
+    assert stepped.confidence == "medium"
+    assert stepped.seconds == high.seconds  # the estimate itself is kept
+    assert ps.downgrade_confidence(stepped).confidence == "low"
+    low = ps.TimeEstimate(seconds=5000.0, confidence="low")
+    assert ps.downgrade_confidence(low).confidence == "low"
