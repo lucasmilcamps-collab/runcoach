@@ -160,10 +160,15 @@ export function getCurrentPlan() {
   return apiClient.get<PlanResponse>('/api/v1/plans/current');
 }
 
-/** One entry in the read-only plan history. */
+/** One stored plan version, read-only. */
 export type PlanVersionSummary = {
   version: number;
   created_at: string;
+  status: 'ready' | 'cancelled';
+  /** Whether this version is the plan currently driving the app. Comes from the
+   * server: "the newest one" stopped being the rule once a plan could be
+   * stopped, and re-deriving it here would just be a second place to get wrong. */
+  is_active: boolean;
   goal_description: string | null;
   race_date: string | null;
   weeks_total: number | null;

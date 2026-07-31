@@ -9,13 +9,13 @@ import { ThemedText } from '@/components/themed-text';
 import { Icon } from '@/components/icon';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
+import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
 
 function fmtTime(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m} min`;
 }
-import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('fr-FR', {
@@ -29,6 +29,13 @@ export default function PlanHistoryScreen() {
   const query = useQuery({ queryKey: ['plan-versions'], queryFn: getPlanVersions, retry: false });
   const versions = query.data ?? [];
 
+  // The split the athlete actually thinks in: the plan they're running now, and
+  // the ones they're not. `is_active` comes from the server — after stopping a
+  // plan there is no active one at all, and picking "the first row" here would
+  // quietly label a stopped plan as the live one.
+  const active = versions.filter((v) => v.is_active);
+  const past = versions.filter((v) => !v.is_active);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -37,13 +44,13 @@ export default function PlanHistoryScreen() {
           <BackButton />
         </View>
         <View style={styles.header}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            Mon plan
-          </ThemedText>
-          <ThemedText type="title">Historique des versions</ThemedText>
+          <ThemedText type="title">Mes plans</ThemedText>
+          {/* Phrased to hold in both states: after stopping a plan there is no
+              active one, and a line promising "the one running right now" would
+              point at a section that isn't there. */}
           <ThemedText type="default" themeColor="textSecondary">
-            Chaque régénération crée une version. La plus récente est ton plan actif ; les
-            précédentes restent consultables.
+            Chaque régénération crée un nouveau plan. Les précédents restent consultables : rien
+            n’est perdu quand tu replanifies.
           </ThemedText>
         </View>
 
@@ -53,31 +60,58 @@ export default function PlanHistoryScreen() {
           </View>
         ) : query.isError ? (
           <ThemedText type="default" themeColor="flare">
-            Impossible de charger l’historique. Réessayez.
+            Impossible de charger tes plans. Réessayez.
           </ThemedText>
         ) : versions.length === 0 ? (
           <ThemedText type="small" themeColor="textSecondary">
-            Aucune version pour l’instant.
+            Aucun plan pour l’instant.
           </ThemedText>
         ) : (
-          versions.map((v, index) => (
-            <VersionRow key={v.version} version={v} isActive={index === 0} />
-          ))
+          <>
+            {/* No "Actif" section when nothing is running — an empty heading
+                would state the opposite of the truth. */}
+            {active.length > 0 ? (
+              <Section title="Actif">
+                {active.map((v) => (
+                  <VersionRow key={v.version} version={v} />
+                ))}
+              </Section>
+            ) : null}
+            {past.length > 0 ? (
+              <Section title="Passés">
+                {past.map((v) => (
+                  <VersionRow key={v.version} version={v} />
+                ))}
+              </Section>
+            ) : null}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function VersionRow({ version, isActive }: { version: PlanVersionSummary; isActive: boolean }) {
-  const subtitle = [version.goal_description, version.injury_area]
-    .filter(Boolean)
-    .join(' · ');
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <ThemedText type="waypointLabel" themeColor="textSecondary">
+        {title}
+      </ThemedText>
+      {/* The heading sits closer to its list than the cards sit to each other,
+          so a section reads as one group rather than n loose cards. */}
+      <View style={styles.sectionList}>{children}</View>
+    </View>
+  );
+}
+
+function VersionRow({ version }: { version: PlanVersionSummary }) {
+  const subtitle = [version.goal_description, version.injury_area].filter(Boolean).join(' · ');
 
   return (
     <Pressable
       style={pressable(styles.card)}
       accessibilityRole="button"
+      accessibilityLabel={`Plan ${version.version}, ${version.reason}`}
       onPress={() =>
         router.push({
           pathname: '/plan-version/[version]',
@@ -86,12 +120,14 @@ function VersionRow({ version, isActive }: { version: PlanVersionSummary; isActi
       }>
       <View style={styles.rowTop}>
         <View style={styles.versionLabel}>
-          <ThemedText type="default">Version {version.version}</ThemedText>
+          <ThemedText type="default">Plan {version.version}</ThemedText>
           <Icon name="chevron-right" size={16} color={Colors.textSecondary} />
         </View>
-        {isActive ? (
-          <ThemedText type="waypointLabel" themeColor="blaze">
-            Actif
+        {/* A stopped plan says so: without it, "Passés" reads as "replaced by a
+            newer one", which is a different story from "you ended it". */}
+        {version.status === 'cancelled' ? (
+          <ThemedText type="waypointLabel" themeColor="textSecondary">
+            Arrêté · {formatDate(version.created_at)}
           </ThemedText>
         ) : (
           <ThemedText type="waypointLabel" themeColor="textSecondary">
@@ -125,7 +161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   content: {
-    gap: Spacing.three,
+    gap: Spacing.four,
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     width: '100%',
@@ -133,7 +169,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.four,
   },
   topbar: { flexDirection: 'row' },
-  header: { gap: Spacing.two, marginBottom: Spacing.one },
+  header: { gap: Spacing.two },
+  section: { gap: Spacing.two },
+  sectionList: { gap: Spacing.three },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   card: {
     backgroundColor: Colors.backgroundElement,

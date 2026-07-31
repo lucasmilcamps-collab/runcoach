@@ -146,10 +146,10 @@ export default function PlanScreen() {
               <Pressable
                 onPress={() => router.push('/plan-history')}
                 accessibilityRole="button"
-                accessibilityLabel="Historique des versions du plan"
+                accessibilityLabel="Mes plans — le plan actif et les précédents"
                 style={pressable(styles.historyLink)}>
                 <ThemedText type="waypointLabel" themeColor="blaze">
-                  Historique
+                  Mes plans
                 </ThemedText>
                 <Icon name="chevron-right" size={16} color={Colors.blaze} />
               </Pressable>

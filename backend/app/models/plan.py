@@ -211,11 +211,17 @@ class PlanResponse(BaseModel):
 
 
 class PlanVersionSummary(BaseModel):
-    """One entry in the read-only plan history. Versions are immutable (never
-    mutated in place); the newest is always the active plan."""
+    """One entry in the read-only list of plan versions. Versions are immutable
+    (never mutated in place)."""
 
     version: int
     created_at: datetime.datetime
+    status: Literal["ready", "cancelled"] = "ready"
+    # Whether this version IS the plan currently driving the app. Derived here
+    # rather than in the client: "the newest one" stopped being true once a plan
+    # could be stopped, and a client re-deriving the rule gets it wrong the day
+    # the rule changes again.
+    is_active: bool = False
     goal_description: str | None = None
     race_date: date | None = None
     weeks_total: int | None = None

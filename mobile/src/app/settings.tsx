@@ -85,7 +85,7 @@ export default function SettingsScreen() {
                   }
                   hint={
                     confirmStop
-                      ? 'Il quittera l’Accueil et les Séances, mais restera dans l’historique.'
+                      ? 'Il quittera l’Accueil et les Séances, mais restera dans Mes plans.'
                       : 'Repartir sans plan — tu pourras en générer un nouveau quand tu veux'
                   }
                   onPress={() => (confirmStop ? stopMutation.mutate() : setConfirmStop(true))}

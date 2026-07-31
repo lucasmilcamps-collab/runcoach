@@ -73,7 +73,7 @@ async def test_cancel_leaves_today_and_progress_empty(db):
     assert progress.has_plan is False
 
 
-async def test_cancelled_plan_stays_in_the_history(db):
+async def test_cancelled_plan_stays_in_the_list(db):
     """The version is retired, not deleted — that's the point of keeping it."""
     user_id = await _seed(db)
     await plan_service.cancel_current_plan(db, user_id)
@@ -84,6 +84,28 @@ async def test_cancelled_plan_stays_in_the_history(db):
     detail = await plan_service.get_plan_version(db, user_id, 1)
     assert detail is not None
     assert detail.plan is not None
+
+
+async def test_newest_ready_version_is_flagged_active(db):
+    """The app groups versions by this flag — "the newest one" is not the rule."""
+    user_id = await _seed(db, versions=3)
+
+    versions = await plan_service.list_plan_versions(db, user_id)
+
+    assert [(v.version, v.is_active) for v in versions] == [(3, True), (2, False), (1, False)]
+
+
+async def test_stopping_leaves_no_active_version(db):
+    """Stopping doesn't promote the previous version back — nothing is active,
+    which is exactly what the app must show."""
+    user_id = await _seed(db, versions=3)
+    await plan_service.cancel_current_plan(db, user_id)
+
+    versions = await plan_service.list_plan_versions(db, user_id)
+
+    assert not any(v.is_active for v in versions)
+    assert versions[0].status == "cancelled"
+    assert versions[1].status == "ready"
 
 
 async def test_per_week_overrides_refuse_a_cancelled_plan(db):

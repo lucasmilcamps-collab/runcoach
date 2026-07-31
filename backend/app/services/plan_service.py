@@ -814,7 +814,8 @@ def _version_reason(doc: dict, prev_request: dict | None) -> str:
 
 
 async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[PlanVersionSummary]:
-    """Read-only history of successful plan versions, newest first."""
+    """Read-only list of successful plan versions, newest first, with the active
+    one flagged."""
     cursor = db.plans.find({"user_id": user_id, "status": {"$in": ["ready", "cancelled"]}}).sort(
         "version", 1
     )
@@ -831,6 +832,7 @@ async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[Pla
             PlanVersionSummary(
                 version=doc["version"],
                 created_at=doc["created_at"],
+                status=doc.get("status", "ready"),
                 goal_description=goal.get("description"),
                 race_date=goal.get("race_date"),
                 weeks_total=weeks or None,
@@ -841,6 +843,12 @@ async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[Pla
             )
         )
         prev_request = doc.get("request")
+
+    # Same rule as `get_current_plan`: the newest version drives the app, unless
+    # it was stopped — in which case nothing is active, and an older "ready"
+    # version does NOT get promoted back.
+    if summaries and summaries[-1].status == "ready":
+        summaries[-1].is_active = True
 
     summaries.reverse()  # newest first
     return summaries

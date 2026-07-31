@@ -30,9 +30,9 @@ export default function PlanVersionScreen() {
         </View>
         <View style={styles.header}>
           <ThemedText type="waypointLabel" themeColor="textSecondary">
-            Historique
+            Mes plans
           </ThemedText>
-          <ThemedText type="title">Version {version}</ThemedText>
+          <ThemedText type="title">Plan {version}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             Lecture seule — cette version n’est pas modifiable.
           </ThemedText>
