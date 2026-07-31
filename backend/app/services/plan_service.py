@@ -255,14 +255,23 @@ def _strength_directive(request: PlanRequest) -> str:
 
 
 def _cross_training_directive(request: PlanRequest) -> str:
+    """The ban has to be scoped, or it swallows the fixed sports.
+
+    A declared commitment (basket every Saturday) is emitted as a session with
+    `type='cross_training'` — there is no other type for it. Saying "add no
+    cross_training session" without that distinction leaves the model choosing
+    between two rules it was told were both absolute, and it drops the fixed
+    sport: three attempts, three identical violations, budget gone."""
     if request.include_cross_training:
         return (
             "- Cross-training prescrit : autorisé (type='cross_training') pour "
             "ajouter du volume sans impact.\n"
         )
     return (
-        "- Cross-training : NON demandé. N'ajoute aucune séance type='cross_training'. "
-        "(Les sports fixes déclarés par l'athlète restent des contraintes dures.)\n"
+        "- Cross-training : n'AJOUTE aucune séance de cross-training de ta propre "
+        "initiative. Cette interdiction ne concerne PAS les sports fixes déclarés "
+        "par l'athlète : ceux-là sont obligatoires et s'écrivent eux aussi avec "
+        "type='cross_training' (avec leur `sport`). Tu dois donc les inclure.\n"
     )
 
 
@@ -298,8 +307,11 @@ def _system_prompt(request: PlanRequest) -> str:
         "qui partage la journée d'une séance principale. S'il y a une date de course, "
         "la séance du jour J est type='race'.\n"
         "- Les sports fixes de l'utilisateur apparaissent sur l'un de leurs jours "
-        "déclarés à CHAQUE semaine, sans exception (deload et taper compris) ; "
-        "aucune séance de qualité le lendemain d'un sport à impacts (padel, basket).\n"
+        "déclarés à CHAQUE semaine, sans exception (deload et taper compris). "
+        "Chacun s'écrit comme une séance à part entière, avec sport = le sport "
+        "déclaré et type='cross_training'. Ils ne comptent pas dans le nombre de "
+        "séances de course. Aucune séance de qualité le lendemain d'un sport à "
+        "impacts (padel, basket).\n"
         "- Toutes les séances tombent sur les jours disponibles indiqués.\n"
         "- Zones cardiaques via la FC max/repos fournies (Karvonen), jamais "
         "220−âge. Aucune recommandation médicale.\n"
@@ -392,7 +404,9 @@ def _counts_directive(request: PlanRequest) -> str:
             parts.append(f"{sport} : " + " + ".join(segs))
         lines.append(
             "- Sports fixes présents CHAQUE semaine, SANS EXCEPTION (deload et taper "
-            "compris) : " + " ; ".join(parts) + "."
+            "compris), chacun en séance sport=<le sport> et type='cross_training' : "
+            + " ; ".join(parts)
+            + "."
         )
     return "\n".join(lines) + "\n"
 

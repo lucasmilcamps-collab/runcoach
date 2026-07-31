@@ -135,18 +135,24 @@ def _check_fixed_sports(weeks: list[Week], request: PlanRequest) -> list[str]:
         present: dict[SportType, set[Weekday]] = defaultdict(set)
         for session in week.sessions:
             present[session.sport].add(session.day)
+        # Say what to ADD, not just what is missing: this feedback is replayed to
+        # the model as the retry instruction, and "BASKETBALL absent" left it to
+        # guess which sport/type encoding the schema expects.
         for sport, days in fixed_days.items():
             for day in days:
                 if day not in present[sport]:
                     violations.append(
-                        f"Semaine {week.index} : {sport} manquant le {day} (contrainte fixe)."
+                        f"Semaine {week.index} : {sport} manquant le {day} "
+                        f"(contrainte fixe) — ajoute une séance sport='{sport}', "
+                        f"type='cross_training', day='{day}'."
                     )
         for sport, days in flexible_days.items():
             if not (present[sport] & days):
                 expected = ", ".join(sorted(d.value for d in days))
                 violations.append(
                     f"Semaine {week.index} : {sport} absent (attendu l'un de "
-                    f"{expected}, contrainte fixe)."
+                    f"{expected}, contrainte fixe) — ajoute une séance "
+                    f"sport='{sport}', type='cross_training' sur l'un de ces jours."
                 )
     return violations
 
