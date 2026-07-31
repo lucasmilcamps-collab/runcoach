@@ -1004,3 +1004,49 @@ async def test_a_json_string_tool_input_is_still_accepted(db):
         result = await plan_service.generate_plan(db, user_id, _request())
 
     assert result.status == "ready", result.error_message
+
+
+async def test_a_plan_wrapped_in_an_extra_key_is_accepted(db):
+    """Asked for an object with `goal` and `phases`, the model sometimes wraps it
+    — `{"plan": {...}}`. Validation then failed on both required fields at once,
+    which reads exactly like an empty call and told the retry nothing useful."""
+    user_id = await _seed_user(db)
+    wrapped = _mock_response({"plan": _valid_plan_dict()})
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(wrapped),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert result.plan is not None
+
+
+def test_unwrap_leaves_real_payloads_and_real_errors_alone():
+    plan = _valid_plan_dict()
+    assert plan_service._unwrapped(plan) is plan  # already at the root
+    # A genuinely wrong payload must stay wrong rather than be massaged.
+    junk = {"weeks": [1, 2, 3]}
+    assert plan_service._unwrapped(junk) is junk
+    # A wrapper whose contents aren't a plan is not unwrapped either.
+    not_a_plan = {"data": {"foo": 1}}
+    assert plan_service._unwrapped(not_a_plan) is not_a_plan
+
+
+async def test_schema_error_reports_the_keys_that_did_arrive(db):
+    """ "goal → Field required" says what is missing and nothing about what came
+    instead — the half that identifies the mistake."""
+    user_id = await _seed_user(db)
+    wrong_shape = _mock_response({"semaines": [], "objectif": "semi"})
+    create_mock = _create_mock(*[wrong_shape] * plan_service._MAX_ATTEMPTS)
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "failed"
+    assert "clés reçues : objectif, semaines" in (result.error_message or "")
+    feedback = create_mock.call_args_list[1].kwargs["messages"][2]["content"][0]["content"]
+    assert "pas enveloppé" in feedback

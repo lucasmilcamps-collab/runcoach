@@ -595,6 +595,26 @@ async def _call_anthropic(
     return plan_input, tool_block.id, assistant_content
 
 
+_PLAN_TOP_LEVEL_KEYS = frozenset({"goal", "phases"})
+
+
+def _unwrapped(plan_input: dict) -> dict:
+    """Accept a plan the model wrapped in an extra key.
+
+    Asked for an object with `goal` and `phases`, a model will sometimes hand
+    back `{"plan": {...}}` — the tool's own name, or the word from the prompt,
+    used as an envelope. Validation then fails on both required fields at once,
+    which reads exactly like an empty call and gives the retry nothing to work
+    with. Unwrap a single-key envelope whose contents are recognisably the plan;
+    anything else is passed through untouched so real errors stay real."""
+    if _PLAN_TOP_LEVEL_KEYS & plan_input.keys():
+        return plan_input
+    for value in plan_input.values():
+        if isinstance(value, dict) and _PLAN_TOP_LEVEL_KEYS <= value.keys():
+            return value
+    return plan_input
+
+
 async def _generate_valid_plan(
     request: PlanRequest, context: dict, start: date, injury: InjuryReport | None = None
 ) -> Plan:
@@ -652,16 +672,24 @@ async def _generate_valid_plan(
             )
             continue
         try:
-            plan = Plan.model_validate(plan_input)
+            plan = Plan.model_validate(_unwrapped(plan_input))
         except ValidationError as exc:
             errors = exc.errors()[:3]
             last_problem = "Schéma non respecté : " + "; ".join(
                 f"{'.'.join(str(p) for p in e['loc'])} → {e['msg']}" for e in errors
             )
+            # Name the keys that DID arrive. "goal → Field required" says what is
+            # missing and nothing about what was sent instead, which is the half
+            # that identifies the mistake — a wrapped or renamed payload looks
+            # identical to an empty one in that message.
+            got = ", ".join(sorted(plan_input)[:8]) or "(objet vide)"
+            last_problem += f" [clés reçues : {got}]"
             _record(
                 assistant_content,
                 tool_use_id,
-                last_problem + ". Corrige et renvoie un plan conforme.",
+                last_problem + ". L'argument de submit_plan doit être l'objet plan LUI-MÊME, "
+                "avec `goal` et `phases` à la racine — pas enveloppé dans une "
+                "autre clé. Corrige et renvoie un plan conforme.",
             )
             continue
         violations = plan_validation.validate_plan(plan, request, start, context)
