@@ -169,6 +169,11 @@ class Session(BaseModel):
     # session and don't count as a run day; "primary" own the day.
     slot: Literal["primary", "addon"] = "primary"
     rationale: str  # one sentence — feeds UI transparency
+    # Runtime-only: set by the per-week override on read (plan_moves_service),
+    # never by the generator — it is stripped from the tool schema. A skipped
+    # session stays in the plan, visibly struck through, because "I'm not doing
+    # this one" is information the athlete wants to keep seeing.
+    skipped: bool = False
 
     @field_validator("sport", mode="before")
     @classmethod
@@ -379,6 +384,21 @@ class SessionDurationRequest(BaseModel):
     day: Weekday  # the session's currently-shown day
     slot: Literal["primary", "addon"] = "primary"
     duration_min: int = Field(ge=5, le=300)
+
+
+class SessionSkipRequest(BaseModel):
+    """Declare a session skipped (or un-skipped) for one week only.
+
+    Unlike a deletion, this is allowed on runs and is reversible: deleting a run
+    silently breaks the plan's guaranteed run count, whereas skipping says "not
+    this week" and leaves the session visible, flagged. On a key session the miss
+    counts immediately and feeds the replan trigger; it never regenerates
+    anything on its own."""
+
+    week_index: int
+    day: Weekday  # the session's currently-shown day
+    slot: Literal["primary", "addon"] = "primary"
+    skipped: bool = True
 
 
 class SessionDeleteRequest(BaseModel):

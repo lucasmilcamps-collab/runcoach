@@ -68,6 +68,9 @@ export type PlanSession = {
   priority: 'key' | 'optional';
   slot: 'primary' | 'addon';
   rationale: string;
+  /** Declared skipped for this week (a per-week override, reversible). The
+   * session stays in the plan — the decision is worth seeing. */
+  skipped: boolean;
 };
 
 export type PlanWeek = {
@@ -289,6 +292,26 @@ export function setSessionDuration(
     day,
     slot,
     duration_min: durationMin,
+  });
+}
+
+/**
+ * Declare a session skipped for one week only, or take it back. Allowed on runs
+ * — unlike deleting one — because it says "not this week" rather than changing
+ * the plan. A skipped key session counts as missed straight away and feeds
+ * `replan_suggested`; it never regenerates anything on its own.
+ */
+export function skipSession(
+  weekIndex: number,
+  day: Weekday,
+  slot: PlanSession['slot'],
+  skipped: boolean,
+) {
+  return apiClient.post<PlanResponse>('/api/v1/plans/session/skip', {
+    week_index: weekIndex,
+    day,
+    slot,
+    skipped,
   });
 }
 

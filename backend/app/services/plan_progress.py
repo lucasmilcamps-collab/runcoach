@@ -116,6 +116,24 @@ def _make_run_done(
     return _run_done
 
 
+def _counts_in_window(
+    session: Session, session_date: date, window_start: date, today: date
+) -> bool:
+    """Whether a key session belongs in the adherence numbers yet.
+
+    Normally a session only counts once its day has passed — judging a run at
+    08:00 on the day it's planned would report a miss the athlete hasn't made.
+    A skip is different: it's a decision, already taken, so it counts from the
+    day it applies to rather than the day after. A skip dated further ahead
+    still waits for its day — the two-week window is about recent history, and
+    letting a skip three weeks out fire the replan trigger today would suggest
+    replanning a plan the athlete hasn't started living yet.
+    """
+    if session_date < window_start:
+        return False
+    return session_date <= today if session.skipped else session_date < today
+
+
 async def compute_overview(
     db: AsyncIOMotorDatabase, user_id: str, version: int
 ) -> PlanOverview | None:
@@ -162,7 +180,11 @@ async def compute_overview(
                 continue
             planned += 1
             session_date = week_start + timedelta(days=WEEKDAY_ORDER.index(session.day))
-            if session_date < today and _run_done(session_date, session.duration_min):
+            if (
+                not session.skipped
+                and session_date < today
+                and _run_done(session_date, session.duration_min)
+            ):
                 completed += 1
         rows.append(
             WeekAdherence(
@@ -219,10 +241,13 @@ async def compute_progress(
             if not _is_key_run(session):
                 continue
             session_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
-            if window_start <= session_date < today:  # only past days in the window
-                planned += 1
-                if _run_done(session_date, session.duration_min):
-                    completed += 1
+            if not _counts_in_window(session, session_date, window_start, today):
+                continue
+            planned += 1
+            # A declared skip is a miss by definition — no activity can redeem
+            # it, and it needn't wait for the day to pass.
+            if not session.skipped and _run_done(session_date, session.duration_min):
+                completed += 1
     missed = planned - completed
 
     week_pos_today = (today - start).days // 7

@@ -17,6 +17,7 @@ from app.models.plan import (
     SessionLinkInfo,
     SessionLinkRequest,
     SessionMoveRequest,
+    SessionSkipRequest,
     TodaySession,
     Weekday,
 )
@@ -189,6 +190,28 @@ async def set_session_duration(
     if plan is None:
         raise _no_plan_error()
     return plan
+
+
+@router.post("/session/skip", response_model=PlanResponse)
+async def skip_session(
+    body: SessionSkipRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Mark a session skipped, or un-skip it, for one week only (per-week
+    override). Allowed on runs — unlike deletion — because it doesn't pretend
+    the plan changed. It never triggers a regeneration: a skipped key session
+    feeds `replan_suggested`, and acting on that stays the athlete's call."""
+    user_id = str(user["_id"])
+    try:
+        await plan_moves_service.skip_session(
+            db, user_id, body.week_index, body.day, body.slot, body.skipped
+        )
+    except plan_moves_service.NoActivePlanError as exc:
+        raise _no_plan_error() from exc
+    except plan_moves_service.SessionNotFoundError as exc:
+        raise _session_not_found_error() from exc
+    return await plan_service.get_current_plan(db, user_id)
 
 
 @router.post("/session/delete", response_model=PlanResponse)

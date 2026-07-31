@@ -198,6 +198,7 @@ function SessionCard({
 }) {
   const isKey = session.priority === 'key';
   const isAddon = session.slot === 'addon';
+  const isSkipped = session.skipped;
 
   if (session.type === 'rest') {
     return (
@@ -228,19 +229,25 @@ function SessionCard({
 
   return (
     <Pressable
-      style={pressable(styles.sessionCard)}
+      style={pressable([styles.sessionCard, isSkipped && styles.sessionCardSkipped])}
       onPress={open}
       accessibilityRole="button"
       accessibilityLabel={`${sessionTitle(session)}, ${meta}, séance ${position} sur ${total}${
         isAddon ? '' : isKey ? ', séance clé' : ', séance optionnelle'
-      }`}>
+      }${isSkipped ? ', sautée' : ''}`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
           {/* Key vs optional is the one thing to read off a week that turned out
               busier than planned, so both states are labelled: an unlabelled
               card would only say "not key" by the absence of a pill, which is
               not something you notice while scanning. */}
-          {!isAddon ? (
+          {isSkipped ? (
+            <View style={styles.optionalPill}>
+              <ThemedText type="waypointLabel" themeColor="textSecondary">
+                Sautée
+              </ThemedText>
+            </View>
+          ) : !isAddon ? (
             <View style={isKey ? styles.keyPill : styles.optionalPill}>
               <ThemedText type="waypointLabel" themeColor={isKey ? 'blaze' : 'textSecondary'}>
                 {isKey ? 'Clé' : 'Optionnelle'}
@@ -357,6 +364,10 @@ const styles = StyleSheet.create({
     borderColor: '#E8792C66',
     backgroundColor: '#E8792C1f',
   },
+
+  // A skipped session stays in the week — hiding it would hide the decision —
+  // but recedes: it is no longer something to act on.
+  sessionCardSkipped: { opacity: 0.55 },
 
   // Same shape as the key pill so the two read as one control, but outlined and
   // unaccented: optional is the quieter of the two states, not a second alarm.
