@@ -11,7 +11,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.activity import ActivityResponse, SportType
 
@@ -91,15 +91,30 @@ class PlanRequest(BaseModel):
     # a week that is already five-sevenths spent is not a plan, it's a backlog.
     start_date: date | None = None
     available_days: list[Weekday]
-    # The athlete commits to `min` key run sessions per week and can do up to `max`.
-    min_run_sessions_per_week: int = 3
-    max_run_sessions_per_week: int = 3
+    # The athlete commits to `min` key run sessions per week and can do up to
+    # `max`. They must differ by default: `_check_session_counts` marks exactly
+    # `min` sessions `key`, so min == max leaves no `optional` session at all —
+    # and "which one do I drop this week?" is the whole point of the field.
+    min_run_sessions_per_week: int = Field(default=2, ge=1, le=7)
+    max_run_sessions_per_week: int = Field(default=3, ge=1, le=7)
     fixed_sports: list[FixedSport] = Field(default_factory=list)
     # Whether the plan PRESCRIBES cross-training sessions. This only steers the
     # prompt — it NEVER touches load/fitness: the athlete's real other sports
     # (padel, basket…) always count toward CTL/ATL via fitness_service.
     include_cross_training: bool = False
     strength: StrengthPref = Field(default_factory=StrengthPref)
+
+    @model_validator(mode="after")
+    def _check_session_bounds(self) -> "PlanRequest":
+        """Reject min > max here rather than at generation time: the validator
+        would refuse every candidate plan, so the athlete would wait through
+        three model calls only to get "plan invalide" with no usable cause."""
+        if self.min_run_sessions_per_week > self.max_run_sessions_per_week:
+            raise ValueError(
+                "Le minimum de séances de course ne peut pas dépasser le maximum "
+                f"({self.min_run_sessions_per_week} > {self.max_run_sessions_per_week})."
+            )
+        return self
 
 
 class InjuryReport(BaseModel):

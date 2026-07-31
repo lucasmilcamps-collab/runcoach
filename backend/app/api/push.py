@@ -45,9 +45,7 @@ async def send_test(
     sent = await push_service.send_to_user(
         db,
         str(user["_id"]),
-        push_service.Notification(
-            title="RunCoach", body="Notifications activées ✔", url="/"
-        ),
+        push_service.Notification(title="RunCoach", body="Notifications activées ✔", url="/"),
     )
     return {"sent": sent}
 

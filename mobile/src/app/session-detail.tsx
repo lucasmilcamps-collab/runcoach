@@ -234,14 +234,15 @@ export default function SessionDetailScreen() {
               {sessionTitle(session)}
             </ThemedText>
           </View>
-          {isKey ? (
-            <View style={styles.pill}>
-              <View style={styles.pin} />
-              <ThemedText type="waypointLabel" themeColor="blaze">
-                Séance clé
-              </ThemedText>
-            </View>
-          ) : null}
+          {/* Both states are stated, not just the key one: on a week that got
+              away from you, "which of these can I drop?" is the question this
+              screen has to answer without you counting pills across the plan. */}
+          <View style={isKey ? styles.pill : styles.pillMuted}>
+            <View style={isKey ? styles.pin : styles.pinMuted} />
+            <ThemedText type="waypointLabel" themeColor={isKey ? 'blaze' : 'textSecondary'}>
+              {isKey ? 'Séance clé' : 'Séance optionnelle'}
+            </ThemedText>
+          </View>
         </View>
 
         {/* Stats — the duration is editable in place, so the footer doesn't
@@ -579,7 +580,21 @@ const styles = StyleSheet.create({
     borderColor: '#E8792C66',
     backgroundColor: '#E8792C1f',
   },
+  pillMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    alignSelf: 'flex-start',
+    marginTop: Spacing.three,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: Colors.contourFaint,
+    backgroundColor: 'transparent',
+  },
   pin: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.blaze },
+  pinMuted: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textSecondary },
 
   stats: {
     flexDirection: 'row',

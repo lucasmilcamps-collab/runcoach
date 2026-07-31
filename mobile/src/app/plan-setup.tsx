@@ -150,7 +150,9 @@ export default function PlanSetupScreen() {
   const [days, setDays] = useState<Set<Weekday>>(
     new Set<Weekday>(prefill?.available_days ?? ['TUESDAY', 'THURSDAY', 'SATURDAY']),
   );
-  const [minRuns, setMinRuns] = useState(prefill?.min_run_sessions_per_week ?? 3);
+  // 2 → 3, not 3 → 3: with min == max every run is a key session and none is
+  // ever optional, which is exactly what the key/optional split exists for.
+  const [minRuns, setMinRuns] = useState(prefill?.min_run_sessions_per_week ?? 2);
   const [maxRuns, setMaxRuns] = useState(prefill?.max_run_sessions_per_week ?? 3);
   const [crossTraining, setCrossTraining] = useState(prefill?.include_cross_training ?? false);
   const [strengthOn, setStrengthOn] = useState(prefill?.strength?.enabled ?? false);
@@ -311,15 +313,15 @@ export default function PlanSetupScreen() {
             </View>
           </Field>
 
-          <Field label="Séances de course par semaine (min → max)">
+          <Field label="Séances de course par semaine">
             <ThemedText type="small" themeColor="textSecondary">
-              Minimum : les séances « clés » que tu t’engages à faire. Maximum : le plafond si la
-              semaine le permet.
+              Je m’engage sur {minRuns} séance{minRuns > 1 ? 's' : ''} par semaine — elles seront
+              marquées « clés » — et je peux en faire jusqu’à {maxRuns} si la semaine le permet.
             </ThemedText>
             <View style={styles.dualRow}>
               <View style={styles.dualCol}>
                 <ThemedText type="waypointLabel" themeColor="textSecondary">
-                  Min
+                  Je m’engage sur
                 </ThemedText>
                 <View style={styles.chipRow}>
                   {RUN_COUNTS.map((n) => (
@@ -329,7 +331,7 @@ export default function PlanSetupScreen() {
               </View>
               <View style={styles.dualCol}>
                 <ThemedText type="waypointLabel" themeColor="textSecondary">
-                  Max
+                  Jusqu’à
                 </ThemedText>
                 <View style={styles.chipRow}>
                   {RUN_COUNTS.map((n) => (

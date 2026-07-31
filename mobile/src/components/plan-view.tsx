@@ -231,13 +231,19 @@ function SessionCard({
       style={pressable(styles.sessionCard)}
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${sessionTitle(session)}, ${meta}, séance ${position} sur ${total}`}>
+      accessibilityLabel={`${sessionTitle(session)}, ${meta}, séance ${position} sur ${total}${
+        isAddon ? '' : isKey ? ', séance clé' : ', séance optionnelle'
+      }`}>
       <View style={styles.sessionHead}>
         <View style={styles.sessionHeadLeft}>
-          {isKey && !isAddon ? (
-            <View style={styles.keyPill}>
-              <ThemedText type="waypointLabel" themeColor="blaze">
-                Clé
+          {/* Key vs optional is the one thing to read off a week that turned out
+              busier than planned, so both states are labelled: an unlabelled
+              card would only say "not key" by the absence of a pill, which is
+              not something you notice while scanning. */}
+          {!isAddon ? (
+            <View style={isKey ? styles.keyPill : styles.optionalPill}>
+              <ThemedText type="waypointLabel" themeColor={isKey ? 'blaze' : 'textSecondary'}>
+                {isKey ? 'Clé' : 'Optionnelle'}
               </ThemedText>
             </View>
           ) : null}
@@ -350,6 +356,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8792C66',
     backgroundColor: '#E8792C1f',
+  },
+
+  // Same shape as the key pill so the two read as one control, but outlined and
+  // unaccented: optional is the quieter of the two states, not a second alarm.
+  optionalPill: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: Colors.contourFaint,
+    backgroundColor: 'transparent',
   },
 
   restCard: {

@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import activities, auth, fitness, garmin, jobs, plans, push
 from app.core.config import settings
@@ -23,6 +25,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's default 422 body is a list of pydantic errors, which the mobile
+    client (expecting `detail={code, message}`, api-conventions) can only render
+    as "Unprocessable Entity". Surface the first error's message instead, so a
+    rejected request says what is wrong — e.g. min > max run sessions."""
+    errors = exc.errors()
+    message = "Requête invalide."
+    if errors:
+        raw = str(errors[0].get("msg") or message)
+        # Pydantic prefixes messages raised from a validator with "Value error, ".
+        message = raw.removeprefix("Value error, ")
+    # 422 as a literal: starlette deprecated its own name for this status.
+    return JSONResponse(
+        status_code=422,
+        content={"detail": {"code": "VALIDATION_ERROR", "message": message}},
+    )
+
 
 app.include_router(auth.router)
 app.include_router(garmin.router)

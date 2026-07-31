@@ -4,6 +4,7 @@ covered by reference-value tests; nothing in this module touches Garmin, the
 DB, or HTTP.
 """
 
+import math
 from datetime import date, timedelta
 
 # Lower bound of each zone as a fraction of heart-rate reserve (Karvonen).
@@ -27,6 +28,66 @@ def zone_for_hr(avg_hr: float, hr_max: int, hr_rest: int) -> int:
         if pct >= _ZONE_LOWER_BOUNDS[zone - 1]:
             return zone
     return 1  # below Z2's floor is still Z1 (recovery), never zero
+
+
+def zone_bounds_bpm(hr_max: int, hr_rest: int) -> list[tuple[float, float]]:
+    """The five Karvonen zones as [low, high) heart rates in bpm. Z1 starts at
+    resting HR and Z5 has no ceiling (a max effort overshoots HRmax by a beat or
+    two often enough that clipping it would drop real time in Z5)."""
+    hrr = hr_max - hr_rest
+    if hrr <= 0:
+        raise ValueError("hr_max must be greater than hr_rest")
+    floors = [hr_rest + pct * hrr for pct in _ZONE_LOWER_BOUNDS]
+    # Z1 reaches down to resting HR, mirroring `zone_for_hr`: anything under
+    # Z2's floor is Z1 (recovery), never zone zero.
+    floors[0] = float(hr_rest)
+    highs = floors[1:] + [float("inf")]
+    return list(zip(floors, highs, strict=True))
+
+
+def redistribute_zone_seconds(
+    bands: list[tuple[float, float, float]], hr_max: int, hr_rest: int
+) -> list[float] | None:
+    """Map time-in-zone measured against SOMEONE ELSE'S zone boundaries onto our
+    five Karvonen zones.
+
+    Garmin reports time per zone using its own boundaries (its default zones are
+    %HRmax-based, and the athlete may have edited them), which is not what
+    `edwards_trimp` weights. Rather than assume Garmin's zone 4 is our Z4 — the
+    quick mapping, wrong by a whole zone factor for anyone whose resting HR is
+    far from average — each source band is split across our zones in proportion
+    to how much of its bpm range overlaps each of ours. The topmost band has no
+    upper bound; it is closed at HRmax so its time spreads like any other rather
+    than collapsing onto a single zone.
+
+    `bands` are (low_bpm, high_bpm, seconds); returns 5 values Z1..Z5, or None
+    when there's nothing usable — never a fabricated distribution.
+    """
+    ours = zone_bounds_bpm(hr_max, hr_rest)
+    out = [0.0] * 5
+    total = 0.0
+    for low, high, seconds in bands:
+        if seconds <= 0:
+            continue
+        total += seconds
+        # The top band is reported open-ended: close it at HRmax (or just above
+        # its own floor if the profile says otherwise) so it has a width to
+        # split on. Anything degenerate falls back to the zone of its floor.
+        if not math.isfinite(high):
+            high = max(float(hr_max), low + 1.0)
+        if high <= low:
+            out[zone_for_hr(low, hr_max, hr_rest) - 1] += seconds
+            continue
+        overlaps = [max(0.0, min(high, zh) - max(low, zl)) for zl, zh in ours]
+        covered = sum(overlaps)
+        if covered <= 0:  # entirely below Z1's floor — recovery time, still Z1
+            out[0] += seconds
+            continue
+        for index, overlap in enumerate(overlaps):
+            # Normalise on the covered part, not the band's own span: a band
+            # reaching below resting HR would otherwise silently lose time.
+            out[index] += seconds * overlap / covered
+    return out if total > 0 else None
 
 
 def edwards_trimp(zone_seconds: list[float] | tuple[float, ...]) -> float:
@@ -81,9 +142,7 @@ class FitnessPoint:
         self.tsb = tsb
 
 
-def compute_fitness_series(
-    daily_loads: dict[date, float], today: date
-) -> list[FitnessPoint]:
+def compute_fitness_series(daily_loads: dict[date, float], today: date) -> list[FitnessPoint]:
     """Exponentially-weighted CTL/ATL/TSB over a continuous day series.
 
     daily_loads maps a day to that day's summed TRIMP (missing days = 0).

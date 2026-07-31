@@ -335,9 +335,7 @@ def _check_strength_placement(weeks: list[Week]) -> list[str]:
     for pos, days in by_week.items():
         days.sort()
         if any(b - a < 2 for a, b in zip(days, days[1:], strict=False)):
-            violations.append(
-                f"Semaine {weeks[pos].index} : deux renforcements à moins de 48 h."
-            )
+            violations.append(f"Semaine {weeks[pos].index} : deux renforcements à moins de 48 h.")
     return violations
 
 

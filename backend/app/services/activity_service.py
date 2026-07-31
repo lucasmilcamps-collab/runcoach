@@ -73,16 +73,12 @@ async def create_manual_activity(
     return _to_response(doc)
 
 
-async def delete_manual_activity(
-    db: AsyncIOMotorDatabase, user_id: str, activity_id: str
-) -> bool:
+async def delete_manual_activity(db: AsyncIOMotorDatabase, user_id: str, activity_id: str) -> bool:
     """Delete a manually-logged activity. Garmin-synced activities are never
     deletable here (they'd reappear on the next sync); only `manual` ones are."""
     try:
         oid = ObjectId(activity_id)
     except (InvalidId, TypeError):
         return False
-    result = await db.activities.delete_one(
-        {"_id": oid, "user_id": user_id, "manual": True}
-    )
+    result = await db.activities.delete_one({"_id": oid, "user_id": user_id, "manual": True})
     return result.deleted_count == 1

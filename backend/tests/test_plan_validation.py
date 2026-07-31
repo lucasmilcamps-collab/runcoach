@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+import pytest
+
 from app.models.activity import SportType
 from app.models.plan import (
     FixedSport,
@@ -16,8 +18,16 @@ from app.services import plan_validation
 TODAY = date(2026, 7, 24)
 
 
-def _s(day: Weekday, stype: str, duration: int, sport: SportType = SportType.RUN) -> Session:
-    return Session(day=day, sport=sport, type=stype, duration_min=duration, rationale="x")
+def _s(
+    day: Weekday,
+    stype: str,
+    duration: int,
+    sport: SportType = SportType.RUN,
+    priority: str = "key",
+) -> Session:
+    return Session(
+        day=day, sport=sport, type=stype, duration_min=duration, rationale="x", priority=priority
+    )
 
 
 def _valid_request(**overrides) -> PlanRequest:
@@ -34,14 +44,18 @@ def _valid_request(**overrides) -> PlanRequest:
 
 
 def _valid_plan() -> Plan:
-    """3 normal ascending weeks (+≤10%) plus a deload — satisfies every rule."""
+    """3 normal ascending weeks (+≤10%) plus a deload — satisfies every rule.
+
+    Two key runs and one optional per normal week: that's what the default
+    request (min 2, max 3) asks for, and what a plan the athlete can trim on a
+    bad week looks like."""
     weeks = [
         Week(
             index=1,
             is_deload=False,
             target_load=100.0,
             sessions=[
-                _s(Weekday.TUESDAY, "easy", 40),
+                _s(Weekday.TUESDAY, "easy", 40, priority="optional"),
                 _s(Weekday.THURSDAY, "tempo", 45),
                 _s(Weekday.SATURDAY, "long_run", 60),
             ],
@@ -51,7 +65,7 @@ def _valid_plan() -> Plan:
             is_deload=False,
             target_load=108.0,
             sessions=[
-                _s(Weekday.TUESDAY, "easy", 40),
+                _s(Weekday.TUESDAY, "easy", 40, priority="optional"),
                 _s(Weekday.THURSDAY, "tempo", 45),
                 _s(Weekday.SATURDAY, "long_run", 75),
             ],
@@ -61,7 +75,7 @@ def _valid_plan() -> Plan:
             is_deload=False,
             target_load=116.0,
             sessions=[
-                _s(Weekday.TUESDAY, "easy", 40),
+                _s(Weekday.TUESDAY, "easy", 40, priority="optional"),
                 _s(Weekday.THURSDAY, "tempo", 45),
                 _s(Weekday.SATURDAY, "long_run", 85),
             ],
@@ -324,8 +338,8 @@ def _strength(day: Weekday) -> Session:
 
 
 def test_not_enough_key_runs_flagged():
-    plan = _valid_plan()  # 3 key runs/week, min defaults to 3
-    plan.phases[0].weeks[0].sessions[0].priority = "optional"  # now only 2 key
+    plan = _valid_plan()  # 2 key runs/week, min defaults to 2
+    plan.phases[0].weeks[0].sessions[1].priority = "optional"  # now only 1 key
     violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
     assert any("'key'" in v for v in violations)
 
@@ -400,3 +414,40 @@ def test_fixed_and_flexible_days_same_sport():
     for week in no_match.phases[0].weeks:
         week.sessions.append(basket(Weekday.WEDNESDAY))
     assert any("absent" in v for v in plan_validation.validate_plan(no_match, request, TODAY))
+
+
+# --- Lot 7.4: the defaults must leave room for an optional session ---
+
+
+def test_default_request_forces_an_optional_session():
+    """With the old 3/3 defaults every run had to be `key`, so no session was
+    ever droppable and the whole key/optional split was inert. The default
+    request now asks for exactly 2 key runs out of up to 3."""
+    request = PlanRequest(goal_type="distance", distance_km=21.1, available_days=list(Weekday))
+    assert request.min_run_sessions_per_week < request.max_run_sessions_per_week
+
+    plan = _valid_plan()
+    for week in plan.phases[0].weeks:
+        if not week.is_deload:
+            assert any(s.priority == "optional" for s in week.sessions)
+    assert plan_validation.validate_plan(plan, request, TODAY) == []
+
+    # And an all-key week (what 3/3 used to produce) is now a violation.
+    all_key = _valid_plan()
+    for week in all_key.phases[0].weeks:
+        for session in week.sessions:
+            session.priority = "key"
+    assert any("'key'" in v for v in plan_validation.validate_plan(all_key, request, TODAY))
+
+
+def test_min_greater_than_max_is_rejected_by_the_model():
+    """Caught at the request boundary, not after three doomed generations."""
+    with pytest.raises(ValueError) as exc:
+        PlanRequest(
+            goal_type="distance",
+            distance_km=21.1,
+            available_days=list(Weekday),
+            min_run_sessions_per_week=4,
+            max_run_sessions_per_week=2,
+        )
+    assert "minimum" in str(exc.value).lower()

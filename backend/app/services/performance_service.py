@@ -5,11 +5,14 @@ contract as load_service). Two deterministic models:
   target distance. Primary predictor.
 - Daniels VDOT: a fitness score from a race, used as a cross-check / paces basis.
 
-No AI. Garmin VO2max isn't stored, so there's no VO2max cross-check yet.
+No AI. Garmin VO2max isn't stored, so there's no VO2max cross-check yet; the
+sanity check on a source effort is the athlete's own median recent pace
+(`is_source_pace_implausible`).
 """
 
 import math
 from dataclasses import dataclass
+from statistics import median
 from typing import Literal
 
 RIEGEL_EXPONENT = 1.06
@@ -22,7 +25,16 @@ _MAX_PROJECTED_IMPROVEMENT = 0.08  # 8%
 _IMPROVEMENT_PER_WEEK = 0.008
 _MAX_REALISTIC_IMPROVEMENT = 0.12
 
+# A source effort this much faster than the athlete's typical recent pace is
+# more likely a measurement artefact (GPS drift, a run cut short, a downhill
+# point-to-point) than a breakthrough. 20% is deliberately wide: real progress
+# and a good day should pass, only the implausible should trip it.
+_OUTLIER_PACE_RATIO = 0.80
+# Below this many recent runs there's no meaningful "typical pace" to compare to.
+_MIN_RUNS_FOR_PACE_MEDIAN = 4
+
 Confidence = Literal["high", "medium", "low"]
+_CONFIDENCE_ORDER: tuple[Confidence, ...] = ("high", "medium", "low")
 
 
 @dataclass(frozen=True)
@@ -64,6 +76,33 @@ def _confidence(recent_distance_km: float, target_distance_km: float, days_ago: 
     if days_ago <= 45 and ratio <= 4.0:
         return "medium"
     return "low"
+
+
+def is_source_pace_implausible(
+    source_pace_s_per_km: float, recent_paces_s_per_km: list[float]
+) -> bool:
+    """True when the effort an estimate is built on is too fast to be believed
+    against the athlete's own recent runs.
+
+    Riegel extrapolates whatever it is given: one GPS-mangled or short-measured
+    run becomes a fast "current time", which then drives both the prescribed
+    paces and the feasibility warning. There is no VO2max cross-check to catch
+    it (Garmin's value isn't stored), so the athlete's own median pace stands in
+    — a comparison that needs no extra data and no model."""
+    if source_pace_s_per_km <= 0 or len(recent_paces_s_per_km) < _MIN_RUNS_FOR_PACE_MEDIAN:
+        return False
+    return source_pace_s_per_km < median(recent_paces_s_per_km) * _OUTLIER_PACE_RATIO
+
+
+def downgrade_confidence(estimate: TimeEstimate) -> TimeEstimate:
+    """One notch down, never up, and never below `low`. The estimate itself is
+    kept: discarding it would leave no anchor at all, which is worse than a
+    flagged one — the caller and the UI decide how much to lean on it."""
+    index = _CONFIDENCE_ORDER.index(estimate.confidence)
+    return TimeEstimate(
+        seconds=estimate.seconds,
+        confidence=_CONFIDENCE_ORDER[min(index + 1, len(_CONFIDENCE_ORDER) - 1)],
+    )
 
 
 def estimate_current_time(

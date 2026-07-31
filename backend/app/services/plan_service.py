@@ -42,11 +42,22 @@ from app.services import (
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
-_ANTHROPIC_TIMEOUT_S = 160.0
-# Global wall-clock budget across all attempts. A full multi-week plan is a big
-# tool call (~40-60 sessions), so a single attempt can take ~45-60s: leave room
-# for a couple of correction rounds while still stopping before a doomed one.
-_TOTAL_DEADLINE_S = 160.0
+# Ceiling for ONE attempt. A full multi-week plan is a big tool call (~40-60
+# sessions) and usually lands in 45-60s; 75s absorbs a slow one without letting
+# a single stuck call swallow the whole budget.
+_ANTHROPIC_TIMEOUT_S = 75.0
+# Global wall-clock budget across all attempts, and the reason the two constants
+# differ: at 160/160 a first attempt that burned its own ceiling left nothing,
+# so the retry the validator exists for never happened. Keeping the total at
+# 2× one attempt means a maxed-out first pass still leaves a full correction
+# round, and each attempt is additionally capped to whatever is left (see
+# `_generate_valid_plan`) so the sum never overruns this. Generation is called
+# inside the HTTP request, but Render allows responses to take up to 100
+# minutes, so 150s is nowhere near the platform ceiling.
+_TOTAL_DEADLINE_S = 150.0
+# Below this, what's left of the budget can't produce a plan — don't burn tokens
+# on an attempt that will be cut off mid-generation.
+_MIN_ATTEMPT_S = 25.0
 # A full multi-week plan JSON (rationale + structure + paces per session) is
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
@@ -135,6 +146,7 @@ async def build_context(
     latest: dict | None = None  # most recent run overall, ignoring the 8-week window
     best_pace_s: float | None = None  # fastest ≥3km run in the window (for Riegel)
     best_effort: dict | None = None
+    recent_paces_s: list[float] = []  # every measurable run's pace, for the median
 
     cursor = db.activities.find({"user_id": user_id, "sport": SportType.RUN})
     async for doc in cursor:
@@ -162,6 +174,7 @@ async def build_context(
 
         if distance_m and distance_m >= 1500 and duration_s > 0:
             pace = duration_s / (distance_m / 1000)  # s/km — faster is better
+            recent_paces_s.append(pace)
             if best_pace_s is None or pace < best_pace_s:
                 best_pace_s = pace
                 best_effort = {
@@ -169,6 +182,15 @@ async def build_context(
                     "time_s": duration_s,
                     "days_ago": (today - act_date).days,
                 }
+
+    # Riegel takes the fastest run at face value, so a mismeasured one (GPS
+    # drift, a run cut short) would set the paces for the whole plan. Flag it
+    # against the athlete's own median pace; the estimate is kept, its
+    # confidence is not (performance_service).
+    if best_effort is not None and best_pace_s is not None:
+        best_effort["pace_implausible"] = performance_service.is_source_pace_implausible(
+            best_pace_s, recent_paces_s
+        )
 
     days_since_last_run = (today - latest["date"]).days if latest else None
     last_run = None
@@ -413,6 +435,7 @@ async def _call_anthropic(
     system: str,
     user: str,
     history: list[tuple[list, list]],
+    timeout_s: float,
 ) -> tuple[dict, str, list]:
     """Call the model, forcing it to emit the plan through the `submit_plan`
     tool (input_schema = the Plan schema), which removes the whole "JSON not
@@ -429,8 +452,9 @@ async def _call_anthropic(
     try:
         # Non-streaming: with a forced tool_choice, the streaming helper
         # intermittently returned an empty tool input; create() reliably gives
-        # the fully-formed `.input`. The 160s client timeout still caps a slow
-        # generation.
+        # the fully-formed `.input`. `timeout_s` is this attempt's share of the
+        # global budget, so a slow call is cut off while a retry is still
+        # affordable rather than after the budget is gone.
         response = await client.messages.create(
             model=settings.plan_model,
             max_tokens=_MAX_TOKENS,
@@ -438,6 +462,7 @@ async def _call_anthropic(
             messages=messages,
             tools=[_PLAN_TOOL],
             tool_choice={"type": "tool", "name": _PLAN_TOOL["name"]},
+            timeout=timeout_s,
         )
     except anthropic.APITimeoutError as exc:
         raise PlanGenerationError(
@@ -535,13 +560,14 @@ async def _generate_valid_plan(
         )
 
     for attempt in range(_MAX_ATTEMPTS):
-        if attempt > 0 and time.monotonic() >= deadline:
+        remaining = deadline - time.monotonic()
+        if attempt > 0 and remaining < _MIN_ATTEMPT_S:
             raise PlanGenerationError(
                 f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
                 f"après {attempt} tentative(s). Dernier problème : {last_problem[:300]}"
             )
         plan_input, tool_use_id, assistant_content = await _call_anthropic(
-            client, system, user, history
+            client, system, user, history, min(_ANTHROPIC_TIMEOUT_S, remaining)
         )
         try:
             plan = Plan.model_validate(plan_input)
@@ -692,6 +718,8 @@ async def generate_plan(
         current_estimate = performance_service.estimate_current_time(
             source["distance_km"], source["time_s"], source["days_ago"], request.distance_km
         )
+        if source.get("pace_implausible"):
+            current_estimate = performance_service.downgrade_confidence(current_estimate)
         context["chrono_actuel_estime"] = {
             "distance_km": request.distance_km,
             "temps_estime_min": round(current_estimate.seconds / 60),

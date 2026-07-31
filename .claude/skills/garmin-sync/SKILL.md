@@ -39,6 +39,7 @@ Règles :
 |---|---|---|
 | Activités | `get_activities(start, limit)` | Paginer par 20 ; filtrer par `activityType` |
 | Détail activité | `get_activity(activity_id)` | Splits, FC moyenne/max, cadence, allure |
+| Temps par zone FC | `get_activity_hr_in_timezones(activity_id)` | **Absent de la liste d'activités** : un appel par activité. Zones Garmin, pas les nôtres |
 | FC repos & max | `get_heart_rates(date)` | `restingHeartRate` quotidien |
 | HRV | `get_hrv_data(date)` | `lastNightAvg`, statut (balanced/unbalanced/low) |
 | Sommeil | `get_sleep_data(date)` | durée, phases, score |
@@ -53,6 +54,13 @@ Règles :
 - **Idempotence** : upsert par `garmin_activity_id` (index unique). Une resync ne duplique jamais.
 - **Rate limiting** : max ~1 requête/seconde, sync globale par utilisateur max 1×/15 min. Utiliser un semaphore asyncio ; `python-garminconnect` est synchrone → l'appeler via `asyncio.to_thread`.
 - Les métriques quotidiennes (HRV, sommeil, Body Battery) se synchronisent en un batch quotidien, pas à la demande.
+- **Temps par zone FC (`hr_zone_seconds`)** — `enrich_run_zone_seconds`, après la mise à jour du profil FC (dont il dépend) :
+  - **Course uniquement** : c'est là que le repli FC moyenne fausse la charge (fractionnés), et ça divise d'autant le coût en requêtes.
+  - **Uniquement les activités où le champ manque**, les plus récentes d'abord, **plafonné à `_ZONE_ENRICH_MAX_PER_SYNC` par synchro**.
+  - **Décision sur le rétroactif** : pas de script de backfill one-shot. L'historique se remplit progressivement sur quelques synchros — 90 jours d'un coup, c'est ~90 requêtes en rafale, le meilleur moyen de faire limiter le compte. Comme le CTL est une EMA à 42 jours et qu'on remplit du plus récent vers le plus ancien, la courbe converge au lieu de faire une marche.
+  - **Zones Garmin ≠ zones du projet** : `load_service.redistribute_zone_seconds` reventile au prorata du recouvrement des plages de FC. Sans profil FC complet on n'écrit rien (jamais de zones inventées).
+  - Le mapping d'activité (`_map_activity`) ne contient pas ce champ : le `$set` d'une resync ne l'écrase donc pas.
+  - Script d'exploration du payload réel : `backend/scripts/inspect_activity_zones.py`.
 
 ## Mapping vers les modèles du projet
 
@@ -68,6 +76,7 @@ class Activity(BaseModel):
     distance_m: float | None
     avg_hr: int | None
     max_hr: int | None
+    hr_zone_seconds: list[float] | None  # 5 valeurs Z1..Z5, rempli après coup
     training_load: float | None   # calculé par load_service, pas par Garmin
     raw: dict                 # payload Garmin brut, pour ne rien perdre
 ```

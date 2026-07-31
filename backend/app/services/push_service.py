@@ -72,9 +72,7 @@ async def save_subscription(
     )
 
 
-async def delete_subscription(
-    db: AsyncIOMotorDatabase, user_id: str, endpoint: str
-) -> None:
+async def delete_subscription(db: AsyncIOMotorDatabase, user_id: str, endpoint: str) -> None:
     await db.push_subscriptions.delete_one({"user_id": user_id, "endpoint": endpoint})
 
 
@@ -98,9 +96,7 @@ def _send_sync(sub_doc: dict, payload: str) -> bool:
         raise
 
 
-async def send_to_user(
-    db: AsyncIOMotorDatabase, user_id: str, notification: Notification
-) -> int:
+async def send_to_user(db: AsyncIOMotorDatabase, user_id: str, notification: Notification) -> int:
     """Deliver one notification to every browser the user has subscribed. Prunes
     dead subscriptions; a transient upstream error just skips that browser."""
     payload = json.dumps(
@@ -120,9 +116,7 @@ async def send_to_user(
     return sent
 
 
-async def _notifications_for_user(
-    db: AsyncIOMotorDatabase, user_id: str
-) -> list[Notification]:
+async def _notifications_for_user(db: AsyncIOMotorDatabase, user_id: str) -> list[Notification]:
     out: list[Notification] = []
 
     today = await plan_service.get_today_session(db, user_id)

@@ -1,6 +1,10 @@
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.models.activity import SportType
 from app.models.fitness import FitnessDay, FitnessResponse
@@ -170,6 +174,64 @@ async def test_generation_stops_when_deadline_exceeded(db):
     assert result.status == "failed"
     assert create_mock.call_count == 1  # never launched the doomed second attempt
     assert "temps" in (result.error_message or "").lower()
+
+
+async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
+    """The regression the 160/160 pair caused: a first attempt that burned its
+    whole per-call timeout left nothing for the correction round the validator
+    exists to trigger."""
+    user_id = await _seed_user(db)
+    create_mock = _create_mock(
+        _mock_response(_bad_plan_dict()),  # attempt 1: violates, and is slow
+        _mock_response(_valid_plan_dict()),  # attempt 2: corrected
+    )
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    # Clock: deadline set at 0, attempt 1 starts at 0 and the first call burns a
+    # full _ANTHROPIC_TIMEOUT_S before attempt 2 is considered.
+    ticks = iter([0.0, 0.0, plan_service._ANTHROPIC_TIMEOUT_S])
+
+    def _clock() -> float:
+        return next(ticks, plan_service._ANTHROPIC_TIMEOUT_S)
+
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.time.monotonic", _clock),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 2
+    # Each attempt is capped by what's left of the global budget, so the total
+    # never overruns _TOTAL_DEADLINE_S.
+    timeouts = [call.kwargs["timeout"] for call in create_mock.call_args_list]
+    assert timeouts[0] == plan_service._ANTHROPIC_TIMEOUT_S
+    assert timeouts[1] == pytest.approx(
+        plan_service._TOTAL_DEADLINE_S - plan_service._ANTHROPIC_TIMEOUT_S
+    )
+    assert sum(timeouts) <= plan_service._TOTAL_DEADLINE_S
+
+
+def test_generation_budget_allows_more_than_one_attempt():
+    """Guards the invariant, not the values: whatever they become, one attempt
+    must not be able to swallow the whole budget."""
+    assert plan_service._TOTAL_DEADLINE_S > plan_service._ANTHROPIC_TIMEOUT_S
+    assert plan_service._MIN_ATTEMPT_S < (
+        plan_service._TOTAL_DEADLINE_S - plan_service._ANTHROPIC_TIMEOUT_S
+    )
+
+
+def test_skill_documents_the_real_timeouts():
+    """The plan-generator skill is what the next session reads as ground truth,
+    so a constant changed here must not leave stale seconds documented there."""
+    skill = (
+        Path(__file__).resolve().parents[2] / ".claude" / "skills" / "plan-generator" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    line = next(line for line in skill.splitlines() if "deadline globale" in line)
+    announced = [float(n) for n in re.findall(r"(\d+(?:\.\d+)?)\s*s\b", line)]
+    assert plan_service._TOTAL_DEADLINE_S in announced
+    assert plan_service._ANTHROPIC_TIMEOUT_S in announced
 
 
 async def test_generate_plan_with_injury_passes_comeback_directive(db):
@@ -741,3 +803,79 @@ async def test_unlogged_strength_reminder(db):
         }
     )
     assert await plan_service.unlogged_strength(db, user_id) is False  # now logged
+
+
+async def test_incoherent_session_bounds_return_a_readable_message(client):
+    """min > max used to reach the model, fail validation three times, and come
+    back as "plan invalide" — the athlete could not tell what to change."""
+    register = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "password123"}
+    )
+    token = register.json()["access_token"]
+
+    response = await client.post(
+        "/api/v1/plans",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "goal_type": "distance",
+            "distance_km": 21.1,
+            "available_days": ["TUESDAY", "THURSDAY", "SATURDAY"],
+            "min_run_sessions_per_week": 4,
+            "max_run_sessions_per_week": 2,
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "VALIDATION_ERROR"
+    assert "minimum" in detail["message"].lower()
+
+
+async def test_implausible_source_effort_lowers_the_estimate_confidence(db):
+    """A GPS-mangled run would otherwise set the paces for the whole plan with
+    no signal that it is suspect (lot 7.5)."""
+    user_id = await _seed_user(db)
+    base = datetime.now(UTC) - timedelta(days=3)
+    # Five ordinary 10k at ~50:00 (5:00/km) and one "10k" at 30:00 (3:00/km).
+    for index in range(5):
+        await db.activities.insert_one(
+            {
+                "user_id": user_id,
+                "sport": SportType.RUN,
+                "start_time": base - timedelta(days=index * 3),
+                "duration_s": 3000,
+                "distance_m": 10000,
+            }
+        )
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": base,
+            "duration_s": 1800,
+            "distance_m": 10000,
+        }
+    )
+
+    context = await plan_service.build_context(db, user_id)
+    assert context["best_recent_effort"]["pace_implausible"] is True
+
+    from datetime import date
+
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=21.1,
+        race_date=date.today() + timedelta(weeks=4),
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        result = await plan_service.generate_plan(db, user_id, req)
+
+    assert result.status == "ready", result.error_message
+    # The estimate still exists — it is flagged, not discarded.
+    assert result.estimated_time_min is not None

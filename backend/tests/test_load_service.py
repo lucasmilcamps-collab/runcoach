@@ -134,3 +134,64 @@ def test_low_confidence_flag():
 
 def test_empty_series():
     assert load_service.compute_fitness_series({}, date(2026, 7, 23)) == []
+
+
+# --- Time in zone: Garmin's zones are not ours ---
+
+
+def test_zone_bounds_reach_from_resting_hr_to_open_top():
+    bounds = load_service.zone_bounds_bpm(HR_MAX, HR_REST)
+    assert [low for low, _ in bounds] == [50.0, 134.0, 148.0, 162.0, 176.0]
+    assert bounds[0][1] == 134.0  # Z1 ends where Z2 starts
+    assert bounds[-1][1] == math.inf  # a max effort is never clipped out of Z5
+
+
+def test_redistribute_splits_a_band_across_our_zones():
+    """A Garmin band spanning 140-160 bpm covers 8 bpm of our Z2 (134-148) and
+    12 of our Z3 (148-162): its time is split in that proportion, not dumped
+    into whichever of our zones has the same number."""
+    seconds = load_service.redistribute_zone_seconds([(140.0, 160.0, 1000.0)], HR_MAX, HR_REST)
+    assert seconds is not None
+    assert seconds[1] == pytest.approx(400.0)
+    assert seconds[2] == pytest.approx(600.0)
+    assert sum(seconds) == pytest.approx(1000.0)
+
+
+def test_redistribute_preserves_total_time():
+    bands = [(100.0, 130.0, 600.0), (130.0, 155.0, 900.0), (155.0, math.inf, 300.0)]
+    seconds = load_service.redistribute_zone_seconds(bands, HR_MAX, HR_REST)
+    assert seconds is not None
+    assert sum(seconds) == pytest.approx(1800.0)
+
+
+def test_redistribute_attributes_an_open_top_band_whole():
+    seconds = load_service.redistribute_zone_seconds(
+        [(180.0, float("inf"), 500.0)], HR_MAX, HR_REST
+    )
+    assert seconds is not None
+    assert seconds[4] == pytest.approx(500.0)  # 180 bpm is above Z5's 176 floor
+
+
+def test_redistribute_returns_none_without_usable_time():
+    assert load_service.redistribute_zone_seconds([], HR_MAX, HR_REST) is None
+    assert load_service.redistribute_zone_seconds([(140.0, 160.0, 0.0)], HR_MAX, HR_REST) is None
+
+
+def test_zone_times_score_an_interval_session_well_above_its_average_hr():
+    """The reference case the whole feature exists for: a 45-min interval session
+    that averages Z3 but spends a third of itself in Z5."""
+    bands = [
+        (100.0, 134.0, 600.0),  # 10 min warm-up in Z1
+        (134.0, 148.0, 300.0),  # 5 min Z2
+        (148.0, 162.0, 300.0),  # 5 min Z3
+        (162.0, 176.0, 600.0),  # 10 min Z4
+        (176.0, float("inf"), 900.0),  # 15 min Z5
+    ]
+    zone_seconds = load_service.redistribute_zone_seconds(bands, HR_MAX, HR_REST)
+    by_zones = load_service.compute_trimp(2700, 150, HR_MAX, HR_REST, zone_seconds=zone_seconds)
+    by_avg_hr = load_service.compute_trimp(2700, 150, HR_MAX, HR_REST)
+
+    # 1·10 + 2·5 + 3·5 + 4·10 + 5·15 = 150 vs 45 min × zone 3 = 135.
+    assert by_zones == pytest.approx(150.0)
+    assert by_avg_hr == 135.0
+    assert by_zones > by_avg_hr * 1.1  # the understatement the fallback causes

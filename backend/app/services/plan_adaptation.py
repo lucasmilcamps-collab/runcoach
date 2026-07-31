@@ -112,11 +112,13 @@ def adjust_session(
         triggers.append((_DOWNGRADE.get(session_type, "easy"), f"forme basse (TSB {tsb:+.0f})"))
 
     if _autonomic_stress(s):
-        triggers.append((
-            _DOWNGRADE.get(session_type, "easy"),
-            f"récupération incomplète (HRV {s.hrv:.0f} vs base {s.hrv_baseline:.0f}, "
-            f"FC repos {s.resting_hr:.0f} vs {s.resting_hr_baseline:.0f})",
-        ))
+        triggers.append(
+            (
+                _DOWNGRADE.get(session_type, "easy"),
+                f"récupération incomplète (HRV {s.hrv:.0f} vs base {s.hrv_baseline:.0f}, "
+                f"FC repos {s.resting_hr:.0f} vs {s.resting_hr_baseline:.0f})",
+            )
+        )
 
     if s.short_nights_streak >= SHORT_NIGHTS_FOR_NO_INTENSITY and session_type in _HIGH_INTENSITY:
         triggers.append(("easy", f"{s.short_nights_streak} nuits courtes (< 6 h)"))

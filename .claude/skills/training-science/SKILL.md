@@ -30,7 +30,9 @@ Pour être **sport-agnostique** (indispensable pour le cross-training), on utili
 TRIMP = 1×t(Z1) + 2×t(Z2) + 3×t(Z3) + 4×t(Z4) + 5×t(Z5)   (t en minutes)
 ```
 
-- Implémentation : `load_service.edwards_trimp(zone_seconds)` calcule la vraie somme par zone quand `Activity.hr_zone_seconds` est présent (5 valeurs Z1..Z5). `compute_trimp(..., zone_seconds=...)` la préfère automatiquement (une séance 6×800m qui moyenne en Z3 mais passe 20 min en Z5 est comptée sur le Z5, plus sous-estimée). *Capture Garmin du temps par zone différée (endpoint séparé par activité = coût rate-limit) ; le champ est consommé dès qu'il est peuplé.*
+- Implémentation : `load_service.edwards_trimp(zone_seconds)` calcule la vraie somme par zone quand le champ `hr_zone_seconds` de l'activité est présent (5 valeurs Z1..Z5). `compute_trimp(..., zone_seconds=...)` la préfère automatiquement (une séance 6×800 m qui moyenne en Z3 mais passe 20 min en Z5 est comptée sur le Z5, plus sous-estimée).
+- **Pourquoi c'est la forme juste, et pas un raffinement** : le repli FC moyenne sous-estime *systématiquement* les séances de qualité — exactement celles qui fatiguent le plus. Un CTL/ATL construit dessus rend l'athlète plus chargé qu'il ne paraît, dans une app dont l'argument est la sécurité. Le temps par zone est donc rempli à la synchro pour les activités `RUN` (`garmin_sync_service._enrich_run_zone_seconds`), depuis l'endpoint Garmin dédié.
+- Les bornes de zones de Garmin ne sont pas les nôtres (Karvonen sur FC réelles). `load_service.redistribute_zone_seconds` reventile donc le temps des zones Garmin sur nos 5 zones au prorata du recouvrement des plages de FC, plutôt que de mapper Z_garmin_n → Z_projet_n. Sans profil FC complet, on ne mappe rien : on garde le repli FC moyenne (jamais de zones inventées).
 - Si les données par zone manquent : fallback `TRIMP ≈ durée_min × facteur_zone_moyenne` estimé depuis la FC moyenne.
 - Si pas de FC du tout (séance déclarée manuellement) : RPE de l'utilisateur (1–10) × durée_min / 10 (session-RPE de Foster).
 - Le TRIMP calculé est stocké dans `Activity.training_load`. **Jamais** utiliser le "Training Load" propriétaire Garmin dans les calculs (non reproductible) ; on peut l'afficher à titre indicatif.
@@ -69,13 +71,26 @@ Structure standard (adapter la durée totale à la date de course) :
 3. **Peak** (2–3 sem) : intensité spécifique à l'allure objectif, volume maintenu.
 4. **Taper** (1–2 sem) : volume −40 à −60 %, intensité maintenue, TSB remonte vers +10/+15 le jour J.
 
-- **Deload obligatoire** toutes les 3–4 semaines : volume −30 à −40 %.
-- Sortie longue hebdomadaire : progression max +10–15 min/sem, plafonnée à ~2h (semi) / 2h45 (marathon).
-- 3 séances course/sem est le minimum viable pour un objectif chrono ; compléter par le cross-training existant plutôt que d'ajouter de la course.
+- **Deload obligatoire** toutes les 3–4 semaines (`MAX_CONSECUTIVE_NORMAL_WEEKS`, ≥ 1 deload par bloc de 4). L'adaptation se produit pendant la baisse de charge, pas pendant la charge : une semaine « allégée » qui ne baisse pas est une semaine normale déguisée, et le cycle ne rend rien. D'où le plafond dur `DELOAD_MAX_RATIO = 0.85` — au plus 85 % de la dernière semaine **normale** (pas de la précédente, qui peut déjà être un deload). Viser −30 à −40 % de volume ; 85 % est la limite au-delà de laquelle le validateur refuse, pas la cible.
+- **Ancrage de la semaine 1 sur la charge réelle** (`INITIAL_RAMP_MAX_RATIO`, même ratio que la rampe interne) : le saut le plus dangereux d'un plan n'est pas entre ses semaines mais entre la charge réellement portée par l'athlète les 4 dernières semaines et la semaine 1. C'est un **plafond seulement** — démarrer sous sa charge réelle est légitime (retour de blessure). Sans historique fiable, aucun ancrage n'est appliqué.
+- Sortie longue hebdomadaire : progression max +10–15 min/sem (`LONG_RUN_WEEKLY_STEP_MAX_MIN`), plafonnée à ~2h (semi) / 2h45 (marathon) — le risque tendineux d'une sortie longue croît avec la durée passée sur les jambes, pas avec la distance.
+- **Séances clés vs optionnelles** (`_check_session_counts`) : sur une semaine normale, **exactement** `min_run_sessions_per_week` séances de course sont marquées `key`, et le total ne dépasse jamais `max_run_sessions_per_week`. Les semaines de deload sont exemptées du plancher de clés. Défaut : 2 clés pour 3 séances possibles — l'engagement porte sur ce qui tient dans une mauvaise semaine, le reste est du bonus. À min = max, tout devient clé et l'athlète n'a plus rien à sacrifier quand la semaine dérape : c'est la configuration à éviter.
+- **Placement du renfo — *hard days hard*** (`_check_strength_placement`) : jamais de renforcement la veille d'une sortie longue ou d'une séance de qualité, et ≥ 48 h entre deux renfos. Concentrer le stress sur les jours durs et protéger les jours faciles ; un renfo la veille arrive sur des jambes déjà entamées et dégrade la séance clé sans apporter d'adaptation. Le même jour qu'une séance dure est en revanche autorisé (c'est le principe).
+
+## Estimation de chrono et plafond de progression
+
+`performance_service` (module pur, testé sur valeurs de référence) :
+
+- **Riegel** `T2 = T1 × (D2/D1)^1.06` (`RIEGEL_EXPONENT`) : extrapole une performance récente vers la distance objectif. L'exposant traduit le fait qu'on ralentit quand la distance monte ; il dérive de données de course, pas d'un modèle physiologique — d'où sa dérive quand le rapport des distances devient grand.
+- **`confidence`** en conséquence : une performance récente et proche en distance donne `high`, une vieille ou très éloignée donne `low`. Un chrono estimé n'est jamais présenté comme une mesure.
+- **Chrono projeté** : la progression est adossée au gain de CTL projeté, avec seulement une fraction du gain relatif converti en gain de temps (`_CTL_TO_TIME_GAIN`) et un plafond absolu (`_MAX_PROJECTED_IMPROVEMENT`). L'endurance progresse lentement ; une projection optimiste produit des allures prescrites trop rapides, donc des séances ratées.
+- **Plafond de progression réaliste** (`_IMPROVEMENT_PER_WEEK`, `_MAX_REALISTIC_IMPROVEMENT`) : au-delà, `feasibility_warning` prévient que l'objectif est ambitieux. **Un avertissement, jamais un blocage** — l'objectif reste celui de l'athlète.
+- **Garde-fou sur la performance source** (`is_source_pace_implausible`) : Riegel extrapole ce qu'on lui donne. Une course mal mesurée (GPS erratique, sortie interrompue, point-à-point en descente) devient un « chrono actuel » rapide qui contamine ensuite les allures prescrites **et** l'avertissement de faisabilité. Faute de recoupement VO2max, la référence est l'athlète lui-même : une allure source nettement plus rapide que la médiane de ses courses récentes dégrade la `confidence` d'un cran (`downgrade_confidence`). L'estimation est conservée — la retirer laisserait le plan sans ancrage du tout.
+- Daniels VDOT (`daniels_vdot`) est disponible comme base d'allures ; le recoupement VO2max n'existe pas encore (donnée Garmin non stockée) — c'est la piste moyen terme, une fois la VO2max Garmin persistée.
 
 ## Allures cibles
 
-À partir d'un chrono récent ou objectif, via l'équivalence de Riegel (`T2 = T1 × (D2/D1)^1.06`) puis dérivation des allures d'entraînement (style VDOT) :
+À partir du chrono estimé ci-dessus, dérivation des allures d'entraînement (style VDOT) :
 
 - Easy/long run : allure course +45 s à +75 s/km
 - Tempo (Z3/Z4 bas) : allure semi à +10 s/km
