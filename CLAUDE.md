@@ -1,4 +1,4 @@
-# RunCoach — App de coaching course à pied multi-sports
+# Mosa — App de coaching course à pied multi-sports
 
 ## Vision produit
 
