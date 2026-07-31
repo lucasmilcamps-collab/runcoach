@@ -149,11 +149,15 @@ Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, neve
 Every control reserves **44×44 in the layout** — padding, or a transparent frame around a deliberately small visual. `hitSlop` is not an option here: it has no effect on react-native-web, and the web build *is* the product (an installed iOS PWA), so a control that leans on it is only as big as it looks. Measured before this rule existed: the plan's "Historique" link was 97×16, the week dots 28×28, the back buttons 36×36.
 
 ### Screen Crest (the signature, everywhere)
-Two topographic contour lines bleed off the **top-right corner of every screen**, behind the header — the app's letterhead. One component (`screen-crest.tsx`), one drawing, one placement: the welcome screen used to build its own out of bordered `View` ellipses while the session detail drew real contours in SVG, so the same intent read as two unrelated ornaments rather than an identity.
+**The Mosa mark at large scale**, set into the top-right corner of every screen behind the header — the app's letterhead. One component (`screen-crest.tsx`), one drawing, one placement.
 
-**Near-subliminal by design** (contour at 7–10% opacity). You should have to look for it. A motif at full strength on every screen stops signifying anything and becomes wallpaper, and texture behind numbers costs legibility — so it lives in the header band and never under data or a list.
+It was two topographic contour blobs: a motif from the design world rather than from the brand, so the thing on every screen and the thing on the app icon had nothing to do with each other. Same two tiles now, same diagonal, same corner radius ratio — the crest and the icon are one shape at two scales.
 
-It sits inside the content column, not against the viewport edge, so it holds the same alignment axis as everything else on wide screens. The frame clips its own bleed: hanging the drawing on negative offsets added up to 36px of horizontal scroll on every screen.
+**The overlap is filled.** It is what makes the drawing read as the mark rather than as two loose squares, and it is the only solid area on a page outside a card — so it sits below the strokes in strength, never level with them.
+
+**Restrained, not invisible** (strokes at 24–34%, overlap at 14%). It should read as the app's paper, not as content: behind everything, never intercepting touches, and carrying no Blaze — an accent repeated on every screen stops meaning "act here".
+
+**Both tiles fit, or it isn't the mark.** A frame too small for the diagonal reduces one tile to an L-shaped offcut; the frame is sized for the whole motif and clips only enough of each corner to seat it. It scales down on phones, where a full-size crest ran behind the name and the week range in the header. It sits inside the content column, not against the viewport edge, so it holds the same alignment axis as everything else on wide screens, and the frame clips its own bleed — hanging the drawing on negative offsets added up to 36px of horizontal scroll on every screen.
 
 **Considered and rejected:** making the motif *encode* something (contour density by plan phase). Invisible in practice, and it would break the constancy that makes a signature readable as one. The crest is identity, not information.
 
