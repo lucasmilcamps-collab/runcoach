@@ -13,6 +13,7 @@ import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
+import { weekRangeLabel } from '@/lib/plan-overview';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
 // Per sport: day → isFlexible. Flexibility is per DAY (e.g. basket Wed fixed +
@@ -45,6 +46,46 @@ const DAYS: { label: string; value: Weekday }[] = [
 const RUN_COUNTS = [2, 3, 4, 5];
 const STRENGTH_COUNTS = [1, 2];
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** How many upcoming Mondays the athlete can choose from. Four covers "next
+ * week" through "after my holiday" without turning a choice into a calendar. */
+const START_CHOICES = 4;
+// Latest weekday (Mon=0) on which starting this week still leaves room to
+// train — mirrors the server's default, so the preselected chip is the one it
+// would have picked anyway.
+const LAST_DAY_TO_START_THIS_WEEK = 2; // Wednesday
+
+function mondayOf(d: Date): Date {
+  const monday = new Date(d);
+  monday.setHours(0, 0, 0, 0);
+  // JS weeks start on Sunday; ours start on Monday.
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return monday;
+}
+
+function toIsoDate(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/** The next `START_CHOICES` Mondays, this week's included. */
+function upcomingMondays(today: Date): Date[] {
+  const first = mondayOf(today);
+  return Array.from({ length: START_CHOICES }, (_, i) => {
+    const monday = new Date(first);
+    monday.setDate(first.getDate() + i * 7);
+    return monday;
+  });
+}
+
+const SHORT_DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
+
+function startChoiceLabel(index: number, monday: Date): string {
+  if (index === 0) return 'Cette semaine';
+  if (index === 1) return 'Lundi prochain';
+  return SHORT_DATE.format(monday);
+}
 
 /** A weekday in the fixed-sport grid: off → fixed → flexible. "Flexible" takes
  * the hydro tone and an "≈" prefix so the two selected states never differ by
@@ -94,6 +135,18 @@ export default function PlanSetupScreen() {
 
   const [objectiveIndex, setObjectiveIndex] = useState(objectiveIndexFor(prefill));
   const [raceDate, setRaceDate] = useState(prefill?.race_date ?? '');
+
+  // Computed once per mount: the list must not shift under the athlete's
+  // selection if the app sits open across midnight.
+  const [startChoices] = useState(() => upcomingMondays(new Date()));
+  const [startIndex, setStartIndex] = useState(() => {
+    // A previous plan's start is only meaningful if it's still on offer — a
+    // regenerated plan can't start in a week that has already gone by.
+    const previous = startChoices.findIndex((m) => toIsoDate(m) === prefill?.start_date);
+    if (previous !== -1) return previous;
+    // Same rule as the server: this week while it still has room, else the next.
+    return (new Date().getDay() + 6) % 7 <= LAST_DAY_TO_START_THIS_WEEK ? 0 : 1;
+  });
   const [days, setDays] = useState<Set<Weekday>>(
     new Set<Weekday>(prefill?.available_days ?? ['TUESDAY', 'THURSDAY', 'SATURDAY']),
   );
@@ -167,6 +220,7 @@ export default function PlanSetupScreen() {
       distance_km: objective.distanceKm,
       race_date: hasDate ? trimmedDate : null,
       target_time_min: null,
+      start_date: toIsoDate(startChoices[startIndex]),
       available_days: DAYS.map((d) => d.value).filter((v) => days.has(v)),
       min_run_sessions_per_week: minRuns,
       max_run_sessions_per_week: maxRuns,
@@ -225,6 +279,29 @@ export default function PlanSetupScreen() {
               autoCapitalize="none"
             />
           ) : null}
+
+          <Field label="Début du plan">
+            <ThemedText type="small" themeColor="textSecondary">
+              La semaine 1 commence toujours un lundi. Générer en fin de semaine et démarrer tout
+              de suite, c’est hériter d’une semaine déjà passée aux trois quarts.
+            </ThemedText>
+            <View style={styles.chipRow}>
+              {startChoices.map((monday, i) => (
+                <Chip
+                  key={toIsoDate(monday)}
+                  label={startChoiceLabel(i, monday)}
+                  selected={i === startIndex}
+                  onPress={() => setStartIndex(i)}
+                  accessibilityLabel={`Commencer le lundi ${SHORT_DATE.format(monday)}`}
+                />
+              ))}
+            </View>
+            {/* The chips say "next Monday"; this says which days that actually
+                covers, so the choice is never made on a guess. */}
+            <ThemedText type="small" themeColor="textSecondary">
+              Semaine 1 : {weekRangeLabel(toIsoDate(startChoices[startIndex]), 0)}
+            </ThemedText>
+          </Field>
 
           <Field label="Jours disponibles">
             <View style={styles.chipRow}>
