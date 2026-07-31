@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import type { LayoutChangeEvent } from 'react-native';
+import type { LayoutChangeEvent, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
@@ -17,15 +17,18 @@ function openProfileEntry() {
 export function FitnessCard({
   fitness,
   isLoading,
+  style,
 }: {
   fitness: Fitness | undefined;
   isLoading: boolean;
+  // Set by CardColumns on wide viewports so the card fills its column.
+  style?: StyleProp<ViewStyle>;
 }) {
   const [showHelp, setShowHelp] = useState(false);
 
   if (isLoading && !fitness) {
     return (
-      <View style={[styles.card, styles.centered]}>
+      <View style={[styles.card, styles.centered, style]}>
         <ActivityIndicator color={Colors.contour} />
       </View>
     );
@@ -34,7 +37,7 @@ export function FitnessCard({
   if (!fitness || !fitness.has_profile || fitness.series.length === 0) {
     const missingProfile = fitness ? !fitness.has_profile : false;
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, style]}>
         <ThemedText type="waypointLabel" themeColor="textSecondary">
           Forme
         </ThemedText>
@@ -56,7 +59,7 @@ export function FitnessCard({
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, style]}>
       <View style={styles.headerRow}>
         <ThemedText type="waypointLabel" themeColor="textSecondary">
           Forme
@@ -132,7 +135,9 @@ function trendSentence(series: Fitness['series']): string {
   return delta > 0 ? `En hausse · +${delta} sur 90 jours` : `En baisse · −${-delta} sur 90 jours`;
 }
 
-const ChartHeight = 60;
+// The curve's floor, not its height: side by side with a taller card the plot
+// grows into whatever the column has left over (see `chart` in the styles).
+const MinChartHeight = 60;
 // Room for the endpoint marker, which the viewport would otherwise clip on the
 // right and at the top when the series peaks on its last day.
 const MarkerRadius = 4;
@@ -143,13 +148,15 @@ const ChartPad = MarkerRadius + 1;
 const MinRange = 6;
 
 function FitnessTrend({ series }: { series: Fitness['series'] }) {
-  // Width comes from layout: the card stretches from a phone column to the
-  // content cap, and the geometry has to be in real pixels for the stroke to
-  // stay 2px (a viewBox scaled to fit would stretch it along with the chart).
-  const [width, setWidth] = useState(0);
+  // Both dimensions come from layout: the card stretches from a phone column to
+  // the content cap and grows to match its neighbour on desktop, and the
+  // geometry has to be in real pixels for the stroke to stay 2px (a viewBox
+  // scaled to fit would stretch it along with the chart).
+  const [size, setSize] = useState({ width: 0, height: MinChartHeight });
 
   function onLayout(event: LayoutChangeEvent) {
-    setWidth(event.nativeEvent.layout.width);
+    const { width, height } = event.nativeEvent.layout;
+    setSize({ width, height: Math.max(height, MinChartHeight) });
   }
 
   // CTL is a 42-day exponential average — already smooth, and continuous from
@@ -170,11 +177,11 @@ function FitnessTrend({ series }: { series: Fitness['series'] }) {
   const floor = (low + high) / 2 - range / 2;
 
   const lastIndex = series.length - 1;
-  const plotWidth = Math.max(width - ChartPad, 1);
+  const plotWidth = Math.max(size.width - ChartPad, 1);
 
   const x = (index: number) => (lastIndex === 0 ? plotWidth : (index / lastIndex) * plotWidth);
   const y = (ctl: number) =>
-    ChartPad + (1 - (ctl - floor) / range) * (ChartHeight - 2 * ChartPad);
+    ChartPad + (1 - (ctl - floor) / range) * (size.height - 2 * ChartPad);
 
   const points = series.map((day, index) => `${x(index).toFixed(1)},${y(day.ctl).toFixed(1)}`);
   const line = `M${points.join('L')}`;
@@ -185,8 +192,8 @@ function FitnessTrend({ series }: { series: Fitness['series'] }) {
       onLayout={onLayout}
       accessibilityRole="image"
       accessibilityLabel={`Caisse de fond sur 90 jours. ${trendSentence(series)}.`}>
-      {width > 0 ? (
-        <Svg width={width} height={ChartHeight}>
+      {size.width > 0 ? (
+        <Svg width={size.width} height={size.height}>
           <Path
             d={line}
             stroke={Colors.contour}
@@ -235,12 +242,17 @@ const styles = StyleSheet.create({
     // The caption belongs to the chart, so it sits closer to it than the card's
     // section gap — one block, not two neighbours.
     gap: Spacing.two,
+    // Of everything in this card, the curve is what a bigger box actually
+    // improves — so it, and not a strip of padding, takes the extra height the
+    // column hands down on desktop.
+    flexGrow: 1,
   },
   chartHeader: {
     gap: Spacing.half,
   },
   chart: {
-    height: ChartHeight,
+    minHeight: MinChartHeight,
+    flexGrow: 1,
   },
   statsRow: {
     flexDirection: 'row',

@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { ThemedText } from '@/components/themed-text';
@@ -11,10 +12,13 @@ export function WeekProgressCard({
   progress,
   weekCurrent,
   weeksTotal,
+  style,
 }: {
   progress: WeekProgress;
   weekCurrent: number | null;
   weeksTotal: number | null;
+  // Set by CardColumns on wide viewports so the card fills its column.
+  style?: StyleProp<ViewStyle>;
 }) {
   // The current plan week can carry no distance target (sessions without a
   // pace range → estimateDistanceKm returns 0). A km ring would then read
@@ -53,7 +57,7 @@ export function WeekProgressCard({
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, style]}>
       {/* The card fills its column, but its three elements don't: past ~420px
           the two stats drift to the far edges and the ring floats alone in the
           middle. Cap the row and centre it so the group stays readable as one
@@ -141,6 +145,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundElement,
     borderRadius: Rounded.md,
     padding: Spacing.four,
+    // When the column hands this card extra height (side by side with a taller
+    // neighbour), the ring re-centres in it instead of sitting on top of a void.
+    justifyContent: 'center',
   },
   row: {
     flexDirection: 'row',

@@ -112,6 +112,8 @@ Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bo
 
 **Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
 
+**Side by side means the same height.** Both columns end on one line: a card that stops a hundred pixels short of its neighbour reads as a layout that gave up, not as a deliberate pair. Each card takes a share of its column's leftover height and absorbs it *in kind* — the fitness curve grows into it, the week ring re-centres in it, the load bars settle around theirs. A card that swallows the space as a strip of empty padding under its content has not solved the problem, it has moved it.
+
 Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
 
 ## Elevation & Depth
