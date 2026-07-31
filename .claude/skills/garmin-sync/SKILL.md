@@ -64,21 +64,26 @@ Règles :
 
 ## Mapping vers les modèles du projet
 
-Toute activité Garmin devient un document `Activity` :
+Toute activité Garmin devient un document de la collection `activities`. Il n'y a
+**pas** de classe `Activity` : le document est un dict écrit par
+`garmin_sync_service._map_activity`, et le modèle Pydantic `ActivityResponse`
+(`app/models/activity.py`) n'est que la forme publique renvoyée par l'API — elle
+n'expose ni `raw` ni `user_id`. Forme du document stocké :
 
 ```python
-class Activity(BaseModel):
-    garmin_activity_id: int
-    user_id: str
-    sport: SportType          # mapper activityTypeDTO.typeKey -> enum interne
-    start_time: datetime      # toujours en UTC, timezone d'affichage côté client
-    duration_s: int
-    distance_m: float | None
-    avg_hr: int | None
-    max_hr: int | None
-    hr_zone_seconds: list[float] | None  # 5 valeurs Z1..Z5, rempli après coup
-    training_load: float | None   # calculé par load_service, pas par Garmin
-    raw: dict                 # payload Garmin brut, pour ne rien perdre
+{
+    "garmin_activity_id": int,
+    "user_id": str,
+    "sport": SportType,          # mapper activityTypeDTO.typeKey -> enum interne
+    "start_time": datetime,      # toujours en UTC, timezone d'affichage côté client
+    "duration_s": int,
+    "distance_m": float | None,
+    "avg_hr": int | None,
+    "max_hr": int | None,
+    "hr_zone_seconds": list[float] | None,  # 5 valeurs Z1..Z5, rempli après coup
+    "training_load": float | None,   # calculé par load_service, pas par Garmin
+    "raw": dict,                 # payload Garmin brut, pour ne rien perdre
+}
 ```
 
 Mapping des sports : `running`/`treadmill_running` → RUN ; `tennis`/`padel` → PADEL ; `basketball` → BASKETBALL ; `cycling` → BIKE ; `strength_training` → STRENGTH ; tout le reste → OTHER (mais toujours ingéré — voir la règle métier : tout compte dans la charge).
