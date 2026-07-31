@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -96,13 +98,17 @@ async def plan_progress_endpoint(
 async def get_session_link(
     week_index: int,
     day: Weekday,
+    slot: Literal["primary", "addon"] = "primary",
     db: AsyncIOMotorDatabase = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """The activity linked to a planned session (by week + weekday), plus the
-    session's real calendar date so the picker can surface nearby activities."""
+    """The activity linked to a planned session (by week + weekday + slot), plus
+    the session's real calendar date so the picker can surface nearby
+    activities."""
     try:
-        return await plan_completion_service.get_session_link(db, str(user["_id"]), week_index, day)
+        return await plan_completion_service.get_session_link(
+            db, str(user["_id"]), week_index, day, slot
+        )
     except plan_completion_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
 
@@ -117,7 +123,7 @@ async def set_session_link(
     planned session."""
     try:
         return await plan_completion_service.set_session_link(
-            db, str(user["_id"]), body.week_index, body.day, body.activity_id
+            db, str(user["_id"]), body.week_index, body.day, body.activity_id, body.slot
         )
     except plan_completion_service.NoActivePlanError as exc:
         raise _no_plan_error() from exc
@@ -125,6 +131,17 @@ async def set_session_link(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "ACTIVITY_NOT_FOUND", "message": "Activité introuvable."},
+        ) from exc
+    except plan_completion_service.SportMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "SPORT_MISMATCH",
+                "message": (
+                    "Cette séance est une séance de course : une activité "
+                    f"{exc.activity_sport} ne peut pas la valider."
+                ),
+            },
         ) from exc
 
 

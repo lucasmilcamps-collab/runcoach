@@ -242,17 +242,25 @@ export type SessionLinkInfo = {
   linked: Activity | null;
 };
 
-export function getSessionLink(weekIndex: number, day: Weekday) {
+/** The slot is part of the identity: a day can hold a run and a strength addon,
+ * and a link on one must not mark the other done. */
+export function getSessionLink(weekIndex: number, day: Weekday, slot: PlanSession['slot'] = 'primary') {
   return apiClient.get<SessionLinkInfo>(
-    `/api/v1/plans/session/link?week_index=${weekIndex}&day=${day}`,
+    `/api/v1/plans/session/link?week_index=${weekIndex}&day=${day}&slot=${slot}`,
   );
 }
 
 /** Link (activityId) or unlink (null) a recorded activity to a planned session. */
-export function setSessionLink(weekIndex: number, day: Weekday, activityId: string | null) {
+export function setSessionLink(
+  weekIndex: number,
+  day: Weekday,
+  activityId: string | null,
+  slot: PlanSession['slot'] = 'primary',
+) {
   return apiClient.post<SessionLinkInfo>('/api/v1/plans/session/link', {
     week_index: weekIndex,
     day,
+    slot,
     activity_id: activityId,
   });
 }

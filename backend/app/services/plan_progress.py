@@ -74,24 +74,29 @@ async def _load_run_days(db: AsyncIOMotorDatabase, user_id: str, since: date) ->
     return run_minutes_by_date
 
 
-async def _load_linked_dates(db: AsyncIOMotorDatabase, user_id: str) -> set[date]:
-    """Sessions the athlete explicitly linked to an activity — those count as
-    done even when the activity lands on a different day than planned."""
-    linked_dates: set[date] = set()
+async def _load_linked_dates(db: AsyncIOMotorDatabase, user_id: str) -> set[tuple[date, str]]:
+    """Sessions the athlete explicitly linked to an activity, as (date, slot) —
+    those count as done even when the activity lands on a different day than
+    planned.
+
+    The slot has to come along: a day can hold a key run and a strength addon,
+    and a link on the addon says nothing about the run. Documents written before
+    the slot existed default to `primary`, which is what they were."""
+    linked: set[tuple[date, str]] = set()
     async for comp in db.session_completions.find(
         {"user_id": user_id, "activity_id": {"$ne": None}}
     ):
         stored = comp.get("session_date")
         if isinstance(stored, str):
             try:
-                linked_dates.add(date.fromisoformat(stored))
+                linked.add((date.fromisoformat(stored), comp.get("slot") or "primary"))
             except ValueError:
                 pass
-    return linked_dates
+    return linked
 
 
 def _make_run_done(
-    run_minutes_by_date: dict[date, float], linked_dates: set[date]
+    run_minutes_by_date: dict[date, float], linked: set[tuple[date, str]]
 ) -> Callable[[date, int], bool]:
     """The one rule for "was this planned run actually done?".
 
@@ -101,7 +106,9 @@ def _make_run_done(
     """
 
     def _run_done(session_date: date, planned_min: int) -> bool:
-        if session_date in linked_dates:  # explicit link always counts
+        # Only a link on the PRIMARY slot validates a run — every caller here
+        # filters on `_is_key_run`, which is primary by definition.
+        if (session_date, "primary") in linked:
             return True
         done_min = run_minutes_by_date.get(session_date)
         return done_min is not None and done_min >= 0.6 * planned_min
@@ -236,7 +243,7 @@ async def compute_progress(
                 continue
             test_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
             if test_date < today and (
-                test_date in run_minutes_by_date or test_date in linked_dates
+                test_date in run_minutes_by_date or (test_date, session.slot) in linked_dates
             ):
                 replan_suggested = True
                 reason = "Séance de test réalisée — réestime ton chrono et réajuste le plan."

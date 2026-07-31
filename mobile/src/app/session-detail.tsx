@@ -118,15 +118,17 @@ export default function SessionDetailScreen() {
     queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
   };
   const linkQuery = useQuery({
-    queryKey: ['session-link', data?.weekNumber, data?.session.day],
-    queryFn: () => getSessionLink(data!.weekNumber, data!.session.day),
+    queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
+    queryFn: () => getSessionLink(data!.weekNumber, data!.session.day, data!.session.slot),
     enabled: !!data,
     retry: false,
   });
   const unlinkMutation = useMutation({
-    mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null),
+    mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null, data!.session.slot),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['session-link', data?.weekNumber, data?.session.day] });
+      queryClient.invalidateQueries({
+        queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
+      });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
     },
   });
@@ -211,6 +213,7 @@ export default function SessionDetailScreen() {
       params: {
         week: String(weekNumber),
         day: session.day,
+        slot: session.slot,
         ...(sessionDate ? { sessionDate } : {}),
       },
     });

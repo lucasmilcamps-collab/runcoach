@@ -346,10 +346,14 @@ class PlanOverview(BaseModel):
 
 class SessionLinkRequest(BaseModel):
     """Attach (or detach, when activity_id is null) a recorded activity to a
-    planned session, identified by its week index and weekday."""
+    planned session, identified by its week index, weekday AND slot.
+
+    The slot matters: a day can hold a run and a strength addon, and linking an
+    activity to one must not mark the other done."""
 
     week_index: int
     day: Weekday
+    slot: Literal["primary", "addon"] = "primary"
     activity_id: str | None = None
 
 
