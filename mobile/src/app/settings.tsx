@@ -32,6 +32,7 @@ export default function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ['plan'] });
       queryClient.invalidateQueries({ queryKey: ['plan-today'] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
       queryClient.invalidateQueries({ queryKey: ['plan-versions'] });
       setConfirmStop(false);
     },

@@ -64,6 +64,7 @@ export default function LinkActivityScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['session-link', weekIndex, day, slot] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
       router.back();
     },
   });

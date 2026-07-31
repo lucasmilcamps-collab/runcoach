@@ -112,11 +112,14 @@ export default function SessionDetailScreen() {
   });
 
   const queryClient = useQueryClient();
-  /** Every per-week override changes the same three reads. */
+  /** Every per-week override changes the same reads. `plan-overview` is one of
+   * them: the detailed adherence screen is computed from the same completions
+   * and overrides, so leaving it out left it showing yesterday's answer. */
   const invalidatePlan = () => {
     queryClient.invalidateQueries({ queryKey: ['plan'] });
     queryClient.invalidateQueries({ queryKey: ['plan-today'] });
     queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+    queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
   };
   const linkQuery = useQuery({
     queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
@@ -131,6 +134,7 @@ export default function SessionDetailScreen() {
         queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
       });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
     },
   });
   const [editingDuration, setEditingDuration] = useState(false);

@@ -122,6 +122,7 @@ export default function PlanScreen() {
       queryClient.setQueryData(['plan'], data);
       queryClient.invalidateQueries({ queryKey: ['plan-today'] });
       queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
     },
   });
 
