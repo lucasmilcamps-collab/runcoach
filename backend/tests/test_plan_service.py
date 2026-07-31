@@ -879,3 +879,53 @@ async def test_implausible_source_effort_lowers_the_estimate_confidence(db):
     assert result.status == "ready", result.error_message
     # The estimate still exists — it is flagged, not discarded.
     assert result.estimated_time_min is not None
+
+
+def test_fixed_sports_survive_the_cross_training_ban():
+    """The failure this guards against: with cross-training off, the prompt said
+    "add no cross_training session" while also demanding the athlete's basketball
+    every week — and a fixed sport has no other type to be written as. The model
+    dropped basketball, every attempt, until the time budget ran out."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        include_cross_training=False,
+        fixed_sports=[
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY, flexible=True),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.SATURDAY, flexible=True),
+        ],
+    )
+    system = plan_service._system_prompt(req)
+    counts = plan_service._counts_directive(req)
+
+    # The ban is scoped to sessions the model would add on its own…
+    assert "n'AJOUTE aucune séance de cross-training de ta propre initiative" in system
+    # …and both places that mention fixed sports say how to encode one.
+    assert system.count("type='cross_training'") >= 2
+    assert "BASKETBALL" in counts
+    assert "type='cross_training'" in counts
+
+
+def test_missing_fixed_sport_violation_says_what_to_add():
+    """The violations are replayed to the model as the retry instruction, so they
+    have to be executable, not just descriptive."""
+    from app.models.plan import FixedSport
+
+    plan = _valid_plan()
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+        fixed_sports=[FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY)],
+    )
+    violations = plan_service.plan_validation.validate_plan(plan, req, datetime.now(UTC).date())
+
+    missing = [v for v in violations if "BASKETBALL" in v]
+    assert missing
+    assert "type='cross_training'" in missing[0]
+    assert "sport='SportType.BASKETBALL'" in missing[0] or "BASKETBALL'" in missing[0]
