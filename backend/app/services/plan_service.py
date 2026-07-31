@@ -295,9 +295,9 @@ def _system_prompt(request: PlanRequest) -> str:
     )
 
 
-def _weeks_directive(request: PlanRequest, today: date) -> str:
+def _weeks_directive(request: PlanRequest, start: date) -> str:
     if request.race_date is not None:
-        weeks = max(1, math.ceil((request.race_date - today).days / 7))
+        weeks = max(1, math.ceil((request.race_date - start).days / 7))
         return (
             f"Le plan doit compter EXACTEMENT {weeks} semaines (il reste {weeks} "
             "semaines avant la course), la dernière étant la semaine de course "
@@ -386,13 +386,13 @@ def _test_directive(context: dict) -> str:
 
 
 def _user_prompt(
-    request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
+    request: PlanRequest, context: dict, start: date, injury: InjuryReport | None = None
 ) -> str:
     req = request.model_dump(mode="json")
     return (
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
-        f"{_weeks_directive(request, today)}\n"
+        f"{_weeks_directive(request, start)}\n"
         f"{_counts_directive(request)}"
         f"{_injury_directive(injury)}"
         f"{_detraining_directive(context)}"
@@ -501,13 +501,13 @@ async def _call_anthropic(
 
 
 async def _generate_valid_plan(
-    request: PlanRequest, context: dict, today: date, injury: InjuryReport | None = None
+    request: PlanRequest, context: dict, start: date, injury: InjuryReport | None = None
 ) -> Plan:
     if not settings.anthropic_api_key:
         raise PlanGenerationError("Génération IA non configurée (clé API absente).")
 
     system = _system_prompt(request)
-    user = _user_prompt(request, context, today, injury)
+    user = _user_prompt(request, context, start, injury)
 
     # One client per generation (reused across attempts), not one per attempt.
     client = anthropic.AsyncAnthropic(
@@ -556,7 +556,7 @@ async def _generate_valid_plan(
                 last_problem + ". Corrige et renvoie un plan conforme.",
             )
             continue
-        violations = plan_validation.validate_plan(plan, request, today, context)
+        violations = plan_validation.validate_plan(plan, request, start, context)
         if not violations:
             return plan
         last_problem = " ; ".join(violations)
@@ -603,10 +603,43 @@ def _project_ctl(ctl_now: float, weekly_loads: list[float]) -> float:
     return ctl
 
 
-def _weeks_until(request: PlanRequest, today: date) -> int:
+def _weeks_until(request: PlanRequest, start: date) -> int:
     if request.race_date is not None:
-        return max(1, math.ceil((request.race_date - today).days / 7))
+        return max(1, math.ceil((request.race_date - start).days / 7))
     return 10  # midpoint of the default 8-12 week range
+
+
+# Latest weekday (Mon=0) on which starting the current week still leaves enough
+# of it to train: with three runs a week, the back half usually still holds two
+# of them. From Thursday on, the week is a write-off.
+_LAST_DAY_TO_START_THIS_WEEK = 2  # Wednesday
+
+
+def resolve_start_date(request: PlanRequest, today: date) -> date:
+    """The Monday that the plan's week 1 begins on.
+
+    Weeks are the unit a plan is built and read in — every session carries a
+    weekday, and "today's session" is found by counting weeks from this date —
+    so a plan always starts on a Monday, whatever the athlete picked.
+
+    Without an explicit choice, starting the current week is only sensible while
+    the week still has room: generate on a Friday and week 1 arrives with five
+    of its seven days already gone, so the athlete opens the app to a week they
+    have already failed. Past that point the plan starts next Monday.
+
+    A chosen date is never allowed to land before the current week: a plan
+    starting in the past would put the athlete mid-plan on day one, with
+    sessions they never had the chance to run already counted as missed.
+    """
+    this_monday = today - timedelta(days=today.weekday())
+    if request.start_date is not None:
+        chosen_monday = request.start_date - timedelta(days=request.start_date.weekday())
+        return max(chosen_monday, this_monday)
+    return (
+        this_monday
+        if today.weekday() <= _LAST_DAY_TO_START_THIS_WEEK
+        else this_monday + timedelta(days=7)
+    )
 
 
 async def generate_plan(
@@ -622,6 +655,11 @@ async def generate_plan(
     `injury`, when set, makes it a comeback replan: the prompt steers the early
     weeks toward recovery and a gradual ramp (plan-generator skill)."""
     today = datetime.now(UTC).date()
+    # The plan's own calendar starts here, and not necessarily today: the week
+    # count, the prompt, the validator and the stored anchor all reason from
+    # this date, so a plan asked for on a Friday to start next Monday gets the
+    # right number of weeks rather than one week too many.
+    start = resolve_start_date(request, today)
     # Compute the CTL/ATL curve once and share it: both build_context and
     # compute_progress need it, and it scans every activity.
     fitness = await fitness_service.compute_fitness(db, user_id)
@@ -661,13 +699,13 @@ async def generate_plan(
         }
         if request.target_time_min:
             feasibility = performance_service.feasibility_warning(
-                request.target_time_min * 60, current_estimate.seconds, _weeks_until(request, today)
+                request.target_time_min * 60, current_estimate.seconds, _weeks_until(request, start)
             )
 
     version = await _next_version(db, user_id)
 
     try:
-        plan = await _generate_valid_plan(request, context, today, injury)
+        plan = await _generate_valid_plan(request, context, start, injury)
     except PlanGenerationError as exc:
         doc = {
             "user_id": user_id,
@@ -697,16 +735,13 @@ async def generate_plan(
         )
         projected_min = round(projected_s / 60)
 
-    # Anchor the plan to the Monday of the generation week so "today's session"
-    # maps cleanly onto weekday-labelled sessions.
-    start_date = today - timedelta(days=today.weekday())
     doc = {
         "user_id": user_id,
         "version": version,
         "status": "ready",
         "request": request.model_dump(mode="json"),
         "plan": plan.model_dump(mode="json"),
-        "start_date": start_date.isoformat(),
+        "start_date": start.isoformat(),
         "injury": injury.model_dump(mode="json") if injury else None,
         "estimated_time_min": estimated_min,
         "projected_time_min": projected_min,
@@ -915,7 +950,20 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
     start = _plan_start_date(doc, today)
     week_pos = (today - start).days // 7  # 0-based position
 
-    if week_pos < 0 or week_pos >= len(weeks):
+    if week_pos < 0:
+        # A plan can now be dated forward (start next Monday rather than
+        # mid-week). Saying "plan terminé" here would be the exact opposite of
+        # the truth.
+        days = (start - today).days
+        when = "demain" if days == 1 else f"dans {days} jours"
+        return TodaySession(
+            date=today,
+            has_plan=True,
+            has_session=False,
+            tsb=tsb,
+            message=f"Ton plan démarre lundi, {when}. Profite-en pour récupérer.",
+        )
+    if week_pos >= len(weeks):
         return TodaySession(
             date=today,
             has_plan=True,

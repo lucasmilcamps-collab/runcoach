@@ -86,6 +86,10 @@ class PlanRequest(BaseModel):
     distance_km: float | None = None  # required for race/distance, None for fitness
     race_date: date | None = None
     target_time_min: int | None = None  # optional — "finishing" is a valid goal
+    # Monday the plan's week 1 begins on. None lets the service choose (see
+    # `plan_service.resolve_start_date`): generating on a Friday and being handed
+    # a week that is already five-sevenths spent is not a plan, it's a backlog.
+    start_date: date | None = None
     available_days: list[Weekday]
     # The athlete commits to `min` key run sessions per week and can do up to `max`.
     min_run_sessions_per_week: int = 3

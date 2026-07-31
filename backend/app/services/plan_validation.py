@@ -341,7 +341,7 @@ def _check_strength_placement(weeks: list[Week]) -> list[str]:
     return violations
 
 
-def _check_calendar(weeks: list[Week], request: PlanRequest, today: date) -> list[str]:
+def _check_calendar(weeks: list[Week], request: PlanRequest, start: date) -> list[str]:
     violations: list[str] = []
     allowed_days = set(request.available_days) | {fs.day for fs in request.fixed_sports}
     for week in weeks:
@@ -353,7 +353,7 @@ def _check_calendar(weeks: list[Week], request: PlanRequest, today: date) -> lis
                     f"Semaine {week.index} : séance {session.day} hors des jours disponibles."
                 )
     if request.race_date is not None and weeks:
-        weeks_until = max(1, math.ceil((request.race_date - today).days / 7))
+        weeks_until = max(1, math.ceil((request.race_date - start).days / 7))
         if abs(len(weeks) - weeks_until) > 1:
             violations.append(
                 f"Le plan compte {len(weeks)} semaines mais il reste ~{weeks_until} "
@@ -363,7 +363,7 @@ def _check_calendar(weeks: list[Week], request: PlanRequest, today: date) -> lis
 
 
 def validate_plan(
-    plan: Plan, request: PlanRequest, today: date, context: dict | None = None
+    plan: Plan, request: PlanRequest, start: date, context: dict | None = None
 ) -> list[str]:
     """Return every rule violation (empty list = the plan may be persisted).
 
@@ -385,5 +385,5 @@ def validate_plan(
     violations += _check_taper(weeks, request)
     violations += _check_long_run(weeks, request)
     violations += _check_quality_spacing(weeks)
-    violations += _check_calendar(weeks, request, today)
+    violations += _check_calendar(weeks, request, start)
     return violations
