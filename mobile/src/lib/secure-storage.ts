@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 /**
- * expo-secure-store has no web implementation. Native keeps the RunCoach
+ * expo-secure-store has no web implementation. Native keeps the Mosa
  * session JWTs in the platform keychain/keystore; web falls back to
  * localStorage, which is readable by any script on the page (XSS-exposed).
  * This is a real, disclosed tradeoff, not a PRODUCT.md-approved one: it's

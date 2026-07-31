@@ -183,7 +183,7 @@ export default function DashboardScreen() {
           {!garminConnected ? (
             <EmptyState
               title="Reliez votre Garmin"
-              description="RunCoach lit vos activités, votre fréquence cardiaque, votre sommeil et votre récupération pour calculer votre forme et adapter votre plan."
+              description="Mosa lit vos activités, votre fréquence cardiaque, votre sommeil et votre récupération pour calculer votre forme et adapter votre plan."
               pin="summit">
               <Button label="Connecter Garmin" onPress={() => router.push('/garmin-connect')} />
               <Button

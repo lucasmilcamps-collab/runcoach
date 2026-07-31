@@ -23,7 +23,7 @@ import { displayNameFromEmail, getMe } from '@/lib/api/auth';
 export function TopBar({ subtitle, compact = false }: { subtitle?: string; compact?: boolean }) {
   // Shares the cache with AvatarButton — same key, so this costs no request.
   const { data } = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: Infinity });
-  const name = displayNameFromEmail(data?.email) ?? 'RunCoach';
+  const name = displayNameFromEmail(data?.email) ?? 'Mosa';
 
   return (
     <View style={[styles.row, compact && styles.rowCompact]}>

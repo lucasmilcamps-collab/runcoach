@@ -1,4 +1,4 @@
-/* RunCoach service worker — Web Push only (no offline caching yet).
+/* Mosa service worker — Web Push only (no offline caching yet).
    Receives pushes from the backend (VAPID) and shows the notification; a tap
    focuses the app on the right screen. */
 
@@ -9,7 +9,7 @@ self.addEventListener('push', (event) => {
   } catch (e) {
     data = {};
   }
-  const title = data.title || 'RunCoach';
+  const title = data.title || 'Mosa';
   const options = {
     body: data.body || '',
     icon: '/icons/icon-192.png',

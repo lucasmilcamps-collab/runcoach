@@ -20,7 +20,7 @@ export default function Root({ children }: PropsWithChildren) {
           content="width=device-width, initial-scale=1, viewport-fit=cover"
         />
 
-        <title>RunCoach</title>
+        <title>Mosa</title>
         <meta
           name="description"
           content="Coach de course adaptatif : des plans IA qui s'ajustent à votre récupération réelle (Garmin)."
@@ -34,7 +34,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="RunCoach" />
+        <meta name="apple-mobile-web-app-title" content="Mosa" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" href="/icons/favicon-32.png" />
 
