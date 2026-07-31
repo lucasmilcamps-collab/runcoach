@@ -14,6 +14,7 @@ import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
+import { WeekRuns } from '@/components/week-runs';
 import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
 import { Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
@@ -69,7 +70,8 @@ export default function DashboardScreen() {
   const weekCurrent = progressQuery.data?.week_current ?? null;
   const weeksTotal = progressQuery.data?.weeks_total ?? null;
   const hasPlan = plan != null;
-  const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
+  const currentWeek = findWeek(plan, weekCurrent);
+  const weekProgress = computeWeekProgress(activities, currentWeek);
 
   // Every dashboard block below the hero goes through the same two-column grid
   // on wide viewports. Blocks left outside it ended up orphaned against one
@@ -161,6 +163,9 @@ export default function DashboardScreen() {
                 weekCurrent={weekCurrent}
                 onPick={() => router.push('/plan')}
               />
+              {/* The trail says where you are in the plan; this says what the
+                  week asks of you, without a trip to Séances. */}
+              {currentWeek ? <WeekRuns week={currentWeek} /> : null}
             </View>
           ) : null}
 

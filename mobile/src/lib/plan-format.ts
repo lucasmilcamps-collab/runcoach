@@ -78,6 +78,11 @@ export const DAY_LABELS: Record<Weekday, string> = {
   SUNDAY: 'Dim',
 };
 
+/** A distance the French way: one decimal, comma separator. */
+export function frKm(km: number): string {
+  return km.toFixed(1).replace('.', ',');
+}
+
 export function formatDuration(min: number): string {
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);

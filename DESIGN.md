@@ -175,6 +175,11 @@ The Accueil screen opens with the one question a Home tab exists to answer: **"s
 
 **The verdict lives in exactly one place.** `formBand()` (`lib/fitness-format.ts`) is the single source of the band, its wording and its color; the hero states it and the Forme card never repeats it. A screen that says "Forme +14 · Frais" twice reads as unfinished.
 
+### Week Runs (what this week asks of you)
+Under the week trail on Accueil: the current week's running sessions, one 44pt row each — day, name, duration and estimated distance — opening straight onto the session. The trail says *where* you are in the plan and the hero says what to do *today*; between them, "what does this week ask of me?" had no answer short of opening Séances.
+
+**Runs only, and that is the point.** It sits a few blocks below "Ta charge cette semaine", which lists every sport with the same bar treatment because cross-training *is* load. These two are not in tension: one answers "what has my body absorbed this week?", the other "what does the running plan ask of me?". Folding padel into the second would blur both. A deload week wears a Décharge chip — without it, a light week reads as falling behind rather than as planned recovery.
+
 ### Load Breakdown (the thesis, made literal)
 "Ta charge cette semaine" lists every sport logged this week — running *and* padel/basket/bike — with the **same bar treatment**, because the product's whole thesis is that cross-training is load, not noise. Bars are sienna Contour, never a second accent: this is a read-out, not a call to act. Cross-training is never visually subordinated to running, and never collapsed into a single "activities" total.
 
