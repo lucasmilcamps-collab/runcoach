@@ -207,6 +207,13 @@ The 90-day fitness trend is a **line**, not bars. Bars and filled areas state th
 
 **A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
 
+### Tab header (who you are, and when)
+The three main tabs share one header: the avatar (60pt, → Réglages), then the athlete's name and the current week range, as a **left-aligned group**. It replaced a centred "RUNCOACH" wordmark with the avatar floating alone in the far corner — a small circle adrift in a wide empty band, above an app announcing daily which app you had opened. The wordmark is gone from the tabs; the tab bar already says where you are.
+
+**The header is pinned, and collapses.** It sits outside the scroll view — pinned by layout, not by `position: sticky`, so native and the installed PWA behave identically. Past ~20px of scroll it drops to a 49pt strip: a 40pt avatar and the week range on one line, closed by a hairline. Full height is 76pt; permanently reserving that on a phone, on top of the 62pt tab bar, would hand ~18% of the screen to chrome. The collapse buys back 27pt and keeps the only route into Réglages reachable from anywhere in a long list. The threshold has hysteresis (collapse at 20, expand at 6) — a single threshold flickers while a finger rests on it.
+
+**No gauge on the avatar.** It is identity, not a read-out: every figure it could carry (week position, form, adherence) is already stated on Accueil, twice in some cases. A ring there would be a third telling.
+
 ### Navigation
 No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.
 

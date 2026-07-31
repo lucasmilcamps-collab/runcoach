@@ -11,12 +11,14 @@ import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
+import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 
 export default function ActivitiesScreen() {
   const bottomPad = useTabScrollPadding();
+  const { compact, onScroll } = useCompactHeader();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const { sync, isSyncing, errorMessage } = useGarminSync();
 
@@ -39,9 +41,13 @@ export default function ActivitiesScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
+        <TopBar subtitle={subtitle} compact={compact} />
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <TopBar title="ACTIVITÉS" subtitle={subtitle} />
             {errorMessage ? (
               <ThemedText type="small" themeColor="flare" style={styles.centerText}>
                 {errorMessage}

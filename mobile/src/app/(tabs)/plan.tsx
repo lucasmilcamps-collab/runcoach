@@ -29,6 +29,7 @@ import {
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
+import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
@@ -106,6 +107,7 @@ export default function PlanScreen() {
     retry: false,
   });
   const bottomPad = useTabScrollPadding();
+  const { compact, onScroll } = useCompactHeader();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const activitiesQuery = useQuery({
     queryKey: ['activities'],
@@ -138,8 +140,12 @@ export default function PlanScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
-          <TopBar title="SÉANCES" subtitle={ready ? currentWeekRangeLabel() : undefined} />
+        <TopBar subtitle={ready ? currentWeekRangeLabel() : undefined} compact={compact} />
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}>
 
           {ready ? (
             <View style={styles.historyRow}>

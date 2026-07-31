@@ -23,6 +23,7 @@ import { getFitness } from '@/lib/api/fitness';
 import { getCurrentPlan, getPlanProgress, getTodaySession } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
+import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
@@ -30,6 +31,7 @@ import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week
 
 export default function DashboardScreen() {
   const bottomPad = useTabScrollPadding();
+  const { compact, onScroll } = useCompactHeader();
   const garminConnected = useAuthStore((state) => state.garminConnected);
   const { isSyncing, errorMessage } = useGarminSync();
 
@@ -113,9 +115,16 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
+        {/* Outside the ScrollView: the header stays put and the body scrolls
+            under it. Pinning by layout rather than by position:sticky keeps it
+            identical on native and on the installed PWA. */}
+        <TopBar subtitle={currentWeekRangeLabel()} compact={compact} />
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <TopBar title="RUNCOACH" subtitle={currentWeekRangeLabel()} />
             {errorMessage ? (
               <ThemedText type="small" themeColor="flare" style={styles.centerText}>
                 {errorMessage}
