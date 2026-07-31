@@ -14,6 +14,7 @@ import {
   PHASE_LABELS,
   estimateDistanceKm,
   formatDuration,
+  frKm,
   sessionDifficulty,
   sessionTitle,
   sortSessionsByDay,
@@ -182,10 +183,6 @@ function WeekSessions({ week }: { week: PlanWeek }) {
       })}
     </View>
   );
-}
-
-function frKm(km: number): string {
-  return km.toFixed(1).replace('.', ',');
 }
 
 function SessionCard({

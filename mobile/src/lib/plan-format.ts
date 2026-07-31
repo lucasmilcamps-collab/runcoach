@@ -78,11 +78,18 @@ export const DAY_LABELS: Record<Weekday, string> = {
   SUNDAY: 'Dim',
 };
 
+/** A distance the French way: one decimal, comma separator. */
+export function frKm(km: number): string {
+  return km.toFixed(1).replace('.', ',');
+}
+
 export function formatDuration(min: number): string {
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);
   const rest = min % 60;
-  return rest === 0 ? `${h} h` : `${h} h ${rest}`;
+  // Zero-padded: "3 h 9" reads as nine of something, or as a typo. Only visible
+  // once totals stopped landing on round quarter-hours.
+  return rest === 0 ? `${h} h` : `${h} h ${rest.toString().padStart(2, '0')}`;
 }
 
 // --- Intensity: the Night-Trail "thermal" ramp (contour → blaze). One accent

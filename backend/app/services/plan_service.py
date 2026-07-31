@@ -63,6 +63,10 @@ _PLAN_TOOL = {
 }
 
 
+class NoActivePlanError(Exception):
+    """No plan is currently active for this user."""
+
+
 class PlanGenerationError(Exception):
     """Raised when generation can't produce a valid plan (bad key, upstream
     failure, or 3 failed validation attempts). Carries a user-safe message."""
@@ -757,9 +761,29 @@ async def unlogged_strength(
     return logged is None
 
 
+async def cancel_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> None:
+    """Stop the active plan: it is no longer current, but stays in the history.
+
+    Every other read already filters on `status == "ready"` (today's session,
+    progress, per-week overrides), so flipping the status is enough to retire
+    the plan everywhere without touching those call sites.
+    """
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
+    if doc is None:
+        raise NoActivePlanError
+    await db.plans.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": "cancelled", "cancelled_at": datetime.now(UTC)}},
+    )
+
+
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
     doc = await db.plans.find_one({"user_id": user_id}, sort=[("version", -1)])
     if doc is None:
+        return None
+    # A stopped plan is not a current plan: return None so the API answers 404
+    # and the app shows its "create a plan" state rather than an in-between one.
+    if doc.get("status") == "cancelled":
         return None
     plan = Plan.model_validate(doc["plan"]) if doc.get("plan") else None
     if plan is not None and doc.get("status") == "ready":
@@ -790,8 +814,11 @@ def _version_reason(doc: dict, prev_request: dict | None) -> str:
 
 
 async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[PlanVersionSummary]:
-    """Read-only history of successful plan versions, newest first."""
-    cursor = db.plans.find({"user_id": user_id, "status": "ready"}).sort("version", 1)
+    """Read-only list of successful plan versions, newest first, with the active
+    one flagged."""
+    cursor = db.plans.find({"user_id": user_id, "status": {"$in": ["ready", "cancelled"]}}).sort(
+        "version", 1
+    )
     docs = [doc async for doc in cursor]
 
     summaries: list[PlanVersionSummary] = []
@@ -805,6 +832,7 @@ async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[Pla
             PlanVersionSummary(
                 version=doc["version"],
                 created_at=doc["created_at"],
+                status=doc.get("status", "ready"),
                 goal_description=goal.get("description"),
                 race_date=goal.get("race_date"),
                 weeks_total=weeks or None,
@@ -816,6 +844,12 @@ async def list_plan_versions(db: AsyncIOMotorDatabase, user_id: str) -> list[Pla
         )
         prev_request = doc.get("request")
 
+    # Same rule as `get_current_plan`: the newest version drives the app, unless
+    # it was stopped — in which case nothing is active, and an older "ready"
+    # version does NOT get promoted back.
+    if summaries and summaries[-1].status == "ready":
+        summaries[-1].is_active = True
+
     summaries.reverse()  # newest first
     return summaries
 
@@ -824,7 +858,9 @@ async def get_plan_version(
     db: AsyncIOMotorDatabase, user_id: str, version: int
 ) -> PlanResponse | None:
     """A single stored version, read-only (versions are never mutated)."""
-    doc = await db.plans.find_one({"user_id": user_id, "version": version, "status": "ready"})
+    doc = await db.plans.find_one(
+        {"user_id": user_id, "version": version, "status": {"$in": ["ready", "cancelled"]}}
+    )
     if doc is None:
         return None
     return PlanResponse(

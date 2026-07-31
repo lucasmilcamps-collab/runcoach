@@ -1,5 +1,6 @@
-import { Children, type ReactNode } from 'react';
+import { Children, cloneElement, isValidElement, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { useIsWide } from '@/hooks/use-breakpoint';
@@ -27,8 +28,8 @@ export function CardColumns({
     return <View style={{ gap }}>{items}</View>;
   }
 
-  const left = items.filter((_, i) => i % 2 === 0);
-  const right = items.filter((_, i) => i % 2 === 1);
+  const left = items.filter((_, i) => i % 2 === 0).map(grow);
+  const right = items.filter((_, i) => i % 2 === 1).map(grow);
 
   return (
     <View style={[styles.row, { gap }]}>
@@ -38,12 +39,33 @@ export function CardColumns({
   );
 }
 
+/**
+ * Both columns end flush. Read side by side, a card that stops a hundred pixels
+ * short of its neighbour looks like a layout that gave up rather than a pair —
+ * so each card takes a share of whatever height its column has left over. Cards
+ * absorb that space in their own way (the fitness curve grows into it, the week
+ * ring re-centres in it); this only hands it to them.
+ *
+ * `flexGrow`, never `flex: 1`: the shorthand sets a zero flex-basis, which
+ * would throw away the cards' content heights and split a column evenly between
+ * them — a two-line strip stretched to match a chart.
+ */
+function grow(item: ReactNode): ReactNode {
+  if (!isValidElement<{ style?: StyleProp<ViewStyle> }>(item)) return item;
+  return cloneElement(item, { style: [item.props.style, styles.grow] });
+}
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    // `stretch`, so a short column still spans the row and its cards have
+    // leftover height to grow into.
+    alignItems: 'stretch',
   },
   col: {
     flex: 1,
+  },
+  grow: {
+    flexGrow: 1,
   },
 });

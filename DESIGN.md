@@ -112,6 +112,8 @@ Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bo
 
 **Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
 
+**Side by side means the same height.** Both columns end on one line: a card that stops a hundred pixels short of its neighbour reads as a layout that gave up, not as a deliberate pair. Each card takes a share of its column's leftover height and absorbs it *in kind* — the fitness curve grows into it, the week ring re-centres in it, the load bars settle around theirs. A card that swallows the space as a strip of empty padding under its content has not solved the problem, it has moved it.
+
 Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
 
 ## Elevation & Depth
@@ -173,8 +175,29 @@ The Accueil screen opens with the one question a Home tab exists to answer: **"s
 
 **The verdict lives in exactly one place.** `formBand()` (`lib/fitness-format.ts`) is the single source of the band, its wording and its color; the hero states it and the Forme card never repeats it. A screen that says "Forme +14 · Frais" twice reads as unfinished.
 
+### Plan summary (what opening a plan lands on)
+Opening a plan from Mes plans lands on a summary, not on its 60 sessions: **Objectif** (goal, chrono départ → projeté), **Régularité**, **Volume**, **Cycles**, **Le plan**. The full week-by-week list is one tap behind "Voir toutes les séances" — it answers a question you only ask after the ones the summary answers.
+
+Each card leads with the one figure it exists to give (80%, 34,3 km au pic) and a plain-French line saying what it's for. Three read-outs, three deliberately different forms:
+
+- **Régularité** — one cell per committed run, one column per week. Done / manquée / à venir differ by fill *and* outline, never by colour alone, with a legend naming all three. Missed sessions are drawn in contour, never in Flare Red: skipping a run is a fact the plan adapts to, not an error to flag. A week is only scored once it is over — shading an unfinished week as "missed" would be a lie, and it stays out of the percentage's denominator.
+- **Volume** — bars, from a zero baseline, rounded at the data end only. Weekly volume is a discrete tally per week and the job is comparing weeks, which is what bars are for; the height *is* the value, so the baseline cannot start anywhere else. (Contrast the fitness curve, a rolling average, which is a line on a fitted window — the form follows the data, not the house style.) Deload weeks are lighter, not absent: the shorter bar says "less", the tone says it was planned.
+- **Cycles** — one segmented bar, each segment as wide as its phase is long, with the current phase brought forward. The names sit in a plain wrapping row **below** it, never in columns matching the segments: a phase's width says how many weeks it lasts and has nothing to do with how long its name is.
+
+**One level deeper, and only one.** Régularité, Volume and Cycles each carry a "Voir le détail" in the same place — the bottom of the card — opening a screen that breaks that one card into the four figures behind it (`StatTiles`), the same visualisation at full size, and a week-by-week list. The summary answers *what*; the detail answers *how much, and when*. A figure never appears without a line saying what it means, and a stat with nothing measured yet reads "—", never "0 %": nothing measured and nothing achieved are different statements. Volume's Distance/Durée toggle exists because minutes are what the plan prescribes and kilometres are derived from target pace — burying either would misrepresent which is the real instruction. Phase descriptions come from the project's training-science reference, never from invented copy.
+
+### Week Runs (what this week asks of you)
+Under the week trail on Accueil: the current week's running sessions, one 44pt row each — day, name, duration and estimated distance — opening straight onto the session. The trail says *where* you are in the plan and the hero says what to do *today*; between them, "what does this week ask of me?" had no answer short of opening Séances.
+
+**Runs only, and that is the point.** It sits a few blocks below "Ta charge cette semaine", which lists every sport with the same bar treatment because cross-training *is* load. These two are not in tension: one answers "what has my body absorbed this week?", the other "what does the running plan ask of me?". Folding padel into the second would blur both. A deload week wears a Décharge chip — without it, a light week reads as falling behind rather than as planned recovery.
+
 ### Load Breakdown (the thesis, made literal)
 "Ta charge cette semaine" lists every sport logged this week — running *and* padel/basket/bike — with the **same bar treatment**, because the product's whole thesis is that cross-training is load, not noise. Bars are sienna Contour, never a second accent: this is a read-out, not a call to act. Cross-training is never visually subordinated to running, and never collapsed into a single "activities" total.
+
+### Charts: baselines, and saying it in words
+The 90-day fitness trend is a **line**, not bars. Bars and filled areas state their value through their height, so they are only ever drawn from a zero baseline; a line carries no such claim and may be scaled to the data's own range. CTL lives inside a narrow band, and a zero baseline pressed three months of training into the top fifth of the plot — so the line gets a fitted window, with a floor on how far it will zoom (a couple of points of drift must keep looking like drift, never a mountain range).
+
+**A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
 
 ### Navigation
 No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.

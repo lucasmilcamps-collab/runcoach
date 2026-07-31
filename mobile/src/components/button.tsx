@@ -35,7 +35,11 @@ export function Button({ label, variant = 'primary', loading = false, disabled, 
           // near-black label on the faint disabled fill otherwise — 1.23:1, all
           // but invisible. The old order meant this branch was only ever
           // reachable for the ghost variant.
-          themeColor={isDisabled ? 'textSecondary' : variant === 'primary' ? 'background' : 'text'}>
+          themeColor={isDisabled ? 'textSecondary' : variant === 'primary' ? 'background' : 'text'}
+          // The Pressable centres the text block, not the lines inside it — so a
+          // label that wraps ("Synchroniser Garmin" in a half-width button) came
+          // out ragged-left against a centred box.
+          style={styles.label}>
           {label}
         </ThemedText>
       )}
@@ -44,6 +48,9 @@ export function Button({ label, variant = 'primary', loading = false, disabled, 
 }
 
 const styles = StyleSheet.create({
+  label: {
+    textAlign: 'center',
+  },
   base: {
     minHeight: 52,
     borderRadius: Rounded.md,

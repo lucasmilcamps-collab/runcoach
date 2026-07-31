@@ -201,7 +201,7 @@ class PlanResponse(BaseModel):
     """Public shape for a stored plan (api-conventions: never leaks user_id)."""
 
     id: str
-    status: Literal["generating", "ready", "failed"]
+    status: Literal["generating", "ready", "failed", "cancelled"]
     request: PlanRequest | None = None
     plan: Plan | None = None
     estimated_time_min: int | None = None  # estimated current time at the target
@@ -211,11 +211,17 @@ class PlanResponse(BaseModel):
 
 
 class PlanVersionSummary(BaseModel):
-    """One entry in the read-only plan history. Versions are immutable (never
-    mutated in place); the newest is always the active plan."""
+    """One entry in the read-only list of plan versions. Versions are immutable
+    (never mutated in place)."""
 
     version: int
     created_at: datetime.datetime
+    status: Literal["ready", "cancelled"] = "ready"
+    # Whether this version IS the plan currently driving the app. Derived here
+    # rather than in the client: "the newest one" stopped being true once a plan
+    # could be stopped, and a client re-deriving the rule gets it wrong the day
+    # the rule changes again.
+    is_active: bool = False
     goal_description: str | None = None
     race_date: date | None = None
     weeks_total: int | None = None
@@ -280,6 +286,43 @@ class PlanProgress(BaseModel):
     tsb: float = 0.0
     replan_suggested: bool = False
     replan_reason: str | None = None
+
+
+class WeekAdherence(BaseModel):
+    """One week of a plan, planned versus actually done.
+
+    Counts KEY runs only — the sessions the athlete committed to. An optional
+    session skipped on a busy week is not a broken week, and counting it as one
+    would turn a deliberately flexible plan into a guilt meter.
+    """
+
+    week_index: int
+    planned: int
+    completed: int
+    is_deload: bool = False
+    # A week is only scored once it is over: an in-progress or future week has
+    # nothing to be behind on, and shading it as "missed" would be a lie.
+    is_past: bool = False
+    is_current: bool = False
+
+
+class PlanOverview(BaseModel):
+    """What a plan's summary screen needs that the plan document alone can't say:
+    where the weeks fall on the calendar, and how much of it was actually run.
+
+    Everything derivable from the plan itself (weekly volume, phases, sessions
+    per week) is left to the client — sending it twice would be a second copy to
+    keep in step."""
+
+    version: int
+    start_date: date
+    end_date: date
+    week_current: int | None = None
+    weeks_total: int = 0
+    # Totals over ELAPSED weeks only — the denominator the percentage uses.
+    planned: int = 0
+    completed: int = 0
+    weeks: list[WeekAdherence] = Field(default_factory=list)
 
 
 class SessionLinkRequest(BaseModel):

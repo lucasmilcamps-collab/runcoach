@@ -14,19 +14,22 @@ import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeekProgressCard } from '@/components/week-progress-card';
+import { WeekRuns } from '@/components/week-runs';
 import { WeekSportStrip } from '@/components/week-sport-strip';
 import { WeekStepper } from '@/components/week-stepper';
-import { BottomTabInset, Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
+import { Colors, MaxContentWidthWide, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { getFitness } from '@/lib/api/fitness';
 import { getCurrentPlan, getPlanProgress, getTodaySession } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
+import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
 export default function DashboardScreen() {
+  const bottomPad = useTabScrollPadding();
   const garminConnected = useAuthStore((state) => state.garminConnected);
   const { isSyncing, errorMessage } = useGarminSync();
 
@@ -67,7 +70,8 @@ export default function DashboardScreen() {
   const weekCurrent = progressQuery.data?.week_current ?? null;
   const weeksTotal = progressQuery.data?.weeks_total ?? null;
   const hasPlan = plan != null;
-  const weekProgress = computeWeekProgress(activities, findWeek(plan, weekCurrent));
+  const currentWeek = findWeek(plan, weekCurrent);
+  const weekProgress = computeWeekProgress(activities, currentWeek);
 
   // Every dashboard block below the hero goes through the same two-column grid
   // on wide viewports. Blocks left outside it ended up orphaned against one
@@ -109,7 +113,7 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <ScreenCrest />
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TopBar title="RUNCOACH" subtitle={currentWeekRangeLabel()} />
             {errorMessage ? (
@@ -159,6 +163,9 @@ export default function DashboardScreen() {
                 weekCurrent={weekCurrent}
                 onPick={() => router.push('/plan')}
               />
+              {/* The trail says where you are in the plan; this says what the
+                  week asks of you, without a trip to Séances. */}
+              {currentWeek ? <WeekRuns week={currentWeek} /> : null}
             </View>
           ) : null}
 
@@ -196,9 +203,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   scrollContent: {
-    gap: Spacing.five,
+    // Spacing.four like every other tab — Accueil used `five` and read looser
+    // than Séances/Activités for no reason.
+    gap: Spacing.four,
     paddingTop: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
   },
   header: {
     gap: Spacing.two,

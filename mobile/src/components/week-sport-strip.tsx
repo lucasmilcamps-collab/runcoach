@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Rounded, Spacing } from '@/constants/theme';
@@ -15,14 +16,21 @@ import type { WeekSport } from '@/lib/week-progress';
  * a call to act, so the One Blaze Rule is left to the hero and the week
  * waymarker.
  */
-export function WeekSportStrip({ sports }: { sports: WeekSport[] }) {
+export function WeekSportStrip({
+  sports,
+  style,
+}: {
+  sports: WeekSport[];
+  // Set by CardColumns on wide viewports so the card fills its column.
+  style?: StyleProp<ViewStyle>;
+}) {
   if (sports.length === 0) return null;
 
   const max = Math.max(...sports.map((s) => s.count), 1);
   const hasCrossTraining = sports.some((s) => s.sport !== 'RUN');
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, style]}>
       <ThemedText type="waypointLabel" themeColor="textSecondary">
         Ta charge cette semaine
       </ThemedText>
@@ -61,6 +69,10 @@ const styles = StyleSheet.create({
   },
   rows: {
     gap: Spacing.two,
+    // Extra height handed down by the column settles around the bars rather
+    // than piling up under them.
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   row: {
     flexDirection: 'row',

@@ -160,10 +160,15 @@ export function getCurrentPlan() {
   return apiClient.get<PlanResponse>('/api/v1/plans/current');
 }
 
-/** One entry in the read-only plan history. */
+/** One stored plan version, read-only. */
 export type PlanVersionSummary = {
   version: number;
   created_at: string;
+  status: 'ready' | 'cancelled';
+  /** Whether this version is the plan currently driving the app. Comes from the
+   * server: "the newest one" stopped being the rule once a plan could be
+   * stopped, and re-deriving it here would just be a second place to get wrong. */
+  is_active: boolean;
   goal_description: string | null;
   race_date: string | null;
   weeks_total: number | null;
@@ -179,6 +184,36 @@ export function getPlanVersions() {
 
 export function getPlanVersion(version: number) {
   return apiClient.get<PlanResponse>(`/api/v1/plans/versions/${version}`);
+}
+
+/** One week of a plan, committed-to versus actually run. Key runs only. */
+export type WeekAdherence = {
+  week_index: number;
+  planned: number;
+  completed: number;
+  is_deload: boolean;
+  /** A week is only scored once it is over — an unfinished week isn't "missed". */
+  is_past: boolean;
+  is_current: boolean;
+};
+
+/** What the plan summary screen needs beyond the plan document: where its weeks
+ * fall on the calendar, and how much of it was actually run. Everything
+ * derivable from the plan itself (volume, phases, sessions per week) is
+ * computed client-side rather than sent twice. */
+export type PlanOverview = {
+  version: number;
+  start_date: string; // ISO date
+  end_date: string; // ISO date, inclusive
+  week_current: number | null;
+  weeks_total: number;
+  planned: number; // totals over elapsed weeks only
+  completed: number;
+  weeks: WeekAdherence[];
+};
+
+export function getPlanOverview(version: number) {
+  return apiClient.get<PlanOverview>(`/api/v1/plans/versions/${version}/overview`);
 }
 
 /**
@@ -217,6 +252,15 @@ export function setSessionLink(weekIndex: number, day: Weekday, activityId: stri
     day,
     activity_id: activityId,
   });
+}
+
+/**
+ * Stop the active plan. It leaves every current-plan read (today, progress,
+ * per-week overrides) but stays readable in the version history, and a new plan
+ * can be generated right after.
+ */
+export function cancelPlan() {
+  return apiClient.post<void>('/api/v1/plans/cancel', {});
 }
 
 /**
