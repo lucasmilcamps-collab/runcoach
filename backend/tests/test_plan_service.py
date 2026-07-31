@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -929,3 +930,77 @@ def test_missing_fixed_sport_violation_says_what_to_add():
     assert missing
     assert "type='cross_training'" in missing[0]
     assert "sport='SportType.BASKETBALL'" in missing[0] or "BASKETBALL'" in missing[0]
+
+
+async def test_empty_tool_input_is_not_reported_as_a_schema_error(db):
+    """The model called submit_plan with nothing in it. That used to degrade to
+    `{}`, fail validation as "goal → Field required", and send both the retry and
+    the athlete after a schema problem that never existed."""
+    user_id = await _seed_user(db)
+    empty = SimpleNamespace(
+        stop_reason="tool_use",
+        content=[SimpleNamespace(type="tool_use", id="t1", name="submit_plan", input={})],
+    )
+    create_mock = _create_mock(empty, _mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    # The second attempt succeeds, and the first fed back an accurate reproach.
+    assert result.status == "ready", result.error_message
+    feedback = create_mock.call_args_list[1].kwargs["messages"][2]["content"][0]["content"]
+    assert "sans aucun contenu" in feedback
+    assert "plan ENTIER" in feedback
+    assert "Field required" not in feedback
+
+
+async def test_unparseable_tool_json_says_so(db):
+    """A cut-off payload is the usual cause. Naming it beats "schéma non
+    respecté", which is what the athlete used to be told."""
+    user_id = await _seed_user(db)
+    truncated_json = SimpleNamespace(
+        stop_reason="tool_use",
+        content=[
+            SimpleNamespace(type="tool_use", id="t1", name="submit_plan", input='{"goal": {"desc')
+        ],
+    )
+    # Every attempt hits the same wall — the budget isn't the limit here.
+    create_mock = _create_mock(*[truncated_json] * plan_service._MAX_ATTEMPTS)
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "failed"
+    message = result.error_message or ""
+    assert "illisible" in message and "tronqu" in message
+    assert "Field required" not in message
+
+
+async def test_a_json_string_tool_input_is_still_accepted(db):
+    """The defensive path that matters: some SDK paths hand back the arguments
+    as a JSON string. A parseable one goes through untouched."""
+    user_id = await _seed_user(db)
+    as_string = SimpleNamespace(
+        stop_reason="tool_use",
+        content=[
+            SimpleNamespace(
+                type="tool_use",
+                id="t1",
+                name="submit_plan",
+                input=json.dumps(_valid_plan_dict()),
+            )
+        ],
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(as_string),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message

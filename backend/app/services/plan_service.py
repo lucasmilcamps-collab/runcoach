@@ -101,6 +101,23 @@ class PlanGenerationError(Exception):
     failure, or 3 failed validation attempts). Carries a user-safe message."""
 
 
+class UnusableToolInput(Exception):
+    """The model called `submit_plan` but handed back nothing we can read — an
+    empty argument object, or JSON that doesn't parse (a cut-off payload).
+
+    Not a schema violation, though it used to be reported as one: the empty dict
+    it degraded into failed validation as "goal → Field required", so the retry
+    told the model to fix fields it had never emitted, and the athlete was told
+    the schema was wrong. Carries the turn so the retry can still replay it with
+    feedback that matches what actually happened."""
+
+    def __init__(self, problem: str, tool_use_id: str, assistant_content: list) -> None:
+        super().__init__(problem)
+        self.problem = problem
+        self.tool_use_id = tool_use_id
+        self.assistant_content = assistant_content
+
+
 def _extract_json(text: str) -> str:
     """Isolate the JSON object even if the model wraps it in ```fences``` or adds
     a sentence before/after — the model doesn't always obey 'JSON only'."""
@@ -540,12 +557,6 @@ async def _call_anthropic(
         raise PlanGenerationError(
             "Le modèle n'a pas renvoyé de plan structuré (aucun appel d'outil)."
         )
-    plan_input = tool_block.input
-    if isinstance(plan_input, str):  # defensive: some SDK paths return a JSON string
-        try:
-            plan_input = json.loads(plan_input)
-        except json.JSONDecodeError:
-            plan_input = {}
     assistant_content = [
         {
             "type": "tool_use",
@@ -554,6 +565,33 @@ async def _call_anthropic(
             "input": tool_block.input,
         }
     ]
+
+    plan_input = tool_block.input
+    unusable: str | None = None
+    if isinstance(plan_input, str):  # defensive: some SDK paths return a JSON string
+        raw = plan_input
+        try:
+            plan_input = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            # Was silently swallowed into {}, which then failed validation as
+            # "goal → Field required" — a diagnosis that sent both the retry and
+            # the athlete after the wrong problem. An unparseable payload is
+            # almost always a cut-off one; say so.
+            unusable = (
+                f"JSON de l'outil illisible ({exc.msg} @ {exc.pos}/{len(raw)} car.) — "
+                "réponse probablement tronquée"
+            )
+    if unusable is None and not isinstance(plan_input, dict):
+        unusable = f"l'outil a reçu un {type(plan_input).__name__}, pas un objet"
+    elif unusable is None and not plan_input:
+        unusable = "submit_plan a été appelé sans aucun contenu"
+
+    if unusable is not None:
+        stop = getattr(response, "stop_reason", None)
+        raise UnusableToolInput(
+            f"{unusable} (stop_reason={stop}).", tool_block.id, assistant_content
+        )
+
     return plan_input, tool_block.id, assistant_content
 
 
@@ -598,9 +636,21 @@ async def _generate_valid_plan(
                 f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
                 f"après {attempt} tentative(s). Dernier problème : {last_problem[:300]}"
             )
-        plan_input, tool_use_id, assistant_content = await _call_anthropic(
-            client, system, user, history, min(_ANTHROPIC_TIMEOUT_S, remaining)
-        )
+        try:
+            plan_input, tool_use_id, assistant_content = await _call_anthropic(
+                client, system, user, history, min(_ANTHROPIC_TIMEOUT_S, remaining)
+            )
+        except UnusableToolInput as exc:
+            last_problem = exc.problem
+            _record(
+                exc.assistant_content,
+                exc.tool_use_id,
+                f"{exc.problem} Rappelle submit_plan avec le plan ENTIER dans "
+                "l'argument. Si la réponse précédente était trop longue, réduis "
+                "`rationale` à quelques mots et laisse `structure` vide sauf pour "
+                "les fractionnés.",
+            )
+            continue
         try:
             plan = Plan.model_validate(plan_input)
         except ValidationError as exc:
