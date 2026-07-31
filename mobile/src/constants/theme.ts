@@ -1,5 +1,5 @@
 /**
- * RunCoach design tokens — see DESIGN.md at the project root for the full
+ * Mosa design tokens — see DESIGN.md at the project root for the full
  * system (Night-Trail Waymarking). Dark is the only theme: this is a project
  * convention (read at 6am before a run), not a placeholder for a future toggle.
  */

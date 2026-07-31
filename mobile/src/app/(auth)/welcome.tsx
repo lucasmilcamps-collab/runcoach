@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { Logo } from '@/components/logo';
 import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { WaypointStepper } from '@/components/waypoint-stepper';
@@ -17,9 +18,13 @@ export default function WelcomeScreen() {
         <WaypointStepper currentStep={0} />
 
         <View style={styles.hero}>
-          <ThemedText type="title">Le sentier s'adapte à vous, pas l'inverse.</ThemedText>
+          {/* The only screen that introduces the app, and so the only one that
+              carries the full lockup — everywhere else the avatar heads the
+              page and the tab bar says where you are. */}
+          <Logo size={44} />
+          <ThemedText type="title">Tous tes sports, une seule foulée.</ThemedText>
           <ThemedText type="default" themeColor="textSecondary">
-            RunCoach lit vos données Garmin réelles — récupération, sommeil, Body Battery — et
+            Mosa lit vos données Garmin réelles — récupération, sommeil, Body Battery — et
             recalcule votre plan course à pied en tenant compte de vos autres sports.
           </ThemedText>
         </View>

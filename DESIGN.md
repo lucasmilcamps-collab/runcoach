@@ -1,5 +1,5 @@
 ---
-name: RunCoach
+name: Mosa
 description: Night-trail waymarking for a solo, recovery-adaptive running coach
 colors:
   ground: "#14140F"
@@ -47,13 +47,13 @@ components:
     padding: "16px 24px"
 ---
 
-# Design System: RunCoach
+# Design System: Mosa
 
 ## Overview
 
 **Creative North Star: "Night-Trail Waymarking"**
 
-RunCoach's first surface is a trailhead read at dusk: a topographic world rendered dark, where thin contour-line hairlines trace the ground and a single "you are here" waymarker in trail-blaze orange advances as you move through onboarding. The mechanism this world carries: a plan that reads your terrain (real recovery data) and adjusts the route in front of you, not a fixed course laid down in advance. Nothing here is a stock fitness-app gradient hero or a clinical dashboard card grid — it is signage, not decoration.
+Mosa's first surface is a trailhead read at dusk: a topographic world rendered dark, where thin contour-line hairlines trace the ground and a single "you are here" waymarker in trail-blaze orange advances as you move through onboarding. The mechanism this world carries: a plan that reads your terrain (real recovery data) and adjusts the route in front of you, not a fixed course laid down in advance. Nothing here is a stock fitness-app gradient hero or a clinical dashboard card grid — it is signage, not decoration.
 
 Dark is the resting state (project convention, not a category default): the app is read at 6am before a run or mid-recovery in bed, not under gallery lighting. Contour lines carry structure the way hairline rules carry structure in an editorial grid, but they are drawn from a real cartographic vocabulary: sienna-brown hairlines on near-black olive ground, exactly as a relief map reads under a headlamp.
 
@@ -87,6 +87,8 @@ Restrained strategy: a warm-dark neutral ground carries the surface, one saturat
 
 ### Named Rules
 **The One Blaze Rule.** Trail Blaze orange appears on at most one element's fill per screen at rest (the primary CTA or the active waypoint pin). Everything else that needs emphasis uses weight, a Contour outline, or Parchment at full opacity instead of reaching for the accent.
+
+The brand mark is outside this rule: a lockup shown once, at the top of an onboarding screen, is identity rather than an offer to act, and it never sits where a control would.
 
 ## Typography
 
@@ -206,6 +208,13 @@ Under the week trail on Accueil: the current week's running sessions, one 44pt r
 The 90-day fitness trend is a **line**, not bars. Bars and filled areas state their value through their height, so they are only ever drawn from a zero baseline; a line carries no such claim and may be scaled to the data's own range. CTL lives inside a narrow band, and a zero baseline pressed three months of training into the top fifth of the plot — so the line gets a fitted window, with a floor on how far it will zoom (a couple of points of drift must keep looking like drift, never a mountain range).
 
 **A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
+
+### The mark
+**Mosa — "Tous tes sports, une seule foulée."** Two rounded tiles that overlap, the overlap drawn in Parchment: one Blaze tile for running, one Contour tile for everything else, and between them the part where they stop being separate. A mosaic is many pieces reading as one picture, which is the product's whole argument — running and the rest of your week are one training load, not a headline plus some noise.
+
+Two tiles and not four, deliberately. Four in a grid say *four things side by side*, the opposite of the promise; and two shapes are what still reads at 16px in a browser tab. The mark uses the app's own palette, not the warm light one from the identity board — only the name and the mark changed, the system did not.
+
+The wordmark is set in IBM Plex Mono with wide tracking rather than a display face. The type system reserves that font for measurements and positions, and a wordmark is the app's own signage; bringing in a fourth typeface would be the first step of replacing the type system.
 
 ### Tab header (who you are, and when)
 The three main tabs share one header: the avatar (60pt, → Réglages), then the athlete's name and the current week range, as a **left-aligned group**. It replaced a centred "RUNCOACH" wordmark with the avatar floating alone in the far corner — a small circle adrift in a wide empty band, above an app announcing daily which app you had opened. The wordmark is gone from the tabs; the tab bar already says where you are.
