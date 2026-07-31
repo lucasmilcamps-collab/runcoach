@@ -186,6 +186,36 @@ export function getPlanVersion(version: number) {
   return apiClient.get<PlanResponse>(`/api/v1/plans/versions/${version}`);
 }
 
+/** One week of a plan, committed-to versus actually run. Key runs only. */
+export type WeekAdherence = {
+  week_index: number;
+  planned: number;
+  completed: number;
+  is_deload: boolean;
+  /** A week is only scored once it is over — an unfinished week isn't "missed". */
+  is_past: boolean;
+  is_current: boolean;
+};
+
+/** What the plan summary screen needs beyond the plan document: where its weeks
+ * fall on the calendar, and how much of it was actually run. Everything
+ * derivable from the plan itself (volume, phases, sessions per week) is
+ * computed client-side rather than sent twice. */
+export type PlanOverview = {
+  version: number;
+  start_date: string; // ISO date
+  end_date: string; // ISO date, inclusive
+  week_current: number | null;
+  weeks_total: number;
+  planned: number; // totals over elapsed weeks only
+  completed: number;
+  weeks: WeekAdherence[];
+};
+
+export function getPlanOverview(version: number) {
+  return apiClient.get<PlanOverview>(`/api/v1/plans/versions/${version}/overview`);
+}
+
 /**
  * Today's planned session, deterministically adjusted for current form (TSB).
  * No AI, no cost — the adjustment and its reason are computed server-side.

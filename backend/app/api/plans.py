@@ -5,6 +5,7 @@ from app.core.db import get_db
 from app.core.security import get_current_user
 from app.models.plan import (
     InjuryReport,
+    PlanOverview,
     PlanProgress,
     PlanRequest,
     PlanResponse,
@@ -255,3 +256,20 @@ async def plan_version(
             detail={"code": "NO_PLAN_VERSION", "message": "Version introuvable."},
         )
     return plan
+
+
+@router.get("/versions/{version}/overview", response_model=PlanOverview)
+async def plan_version_overview(
+    version: int,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Calendar placement + week-by-week planned-vs-done key runs for one plan
+    version — what the plan summary screen needs beyond the plan itself."""
+    adherence = await plan_progress.compute_overview(db, str(user["_id"]), version)
+    if adherence is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_PLAN_VERSION", "message": "Version introuvable."},
+        )
+    return adherence

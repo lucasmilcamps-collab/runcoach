@@ -288,6 +288,43 @@ class PlanProgress(BaseModel):
     replan_reason: str | None = None
 
 
+class WeekAdherence(BaseModel):
+    """One week of a plan, planned versus actually done.
+
+    Counts KEY runs only — the sessions the athlete committed to. An optional
+    session skipped on a busy week is not a broken week, and counting it as one
+    would turn a deliberately flexible plan into a guilt meter.
+    """
+
+    week_index: int
+    planned: int
+    completed: int
+    is_deload: bool = False
+    # A week is only scored once it is over: an in-progress or future week has
+    # nothing to be behind on, and shading it as "missed" would be a lie.
+    is_past: bool = False
+    is_current: bool = False
+
+
+class PlanOverview(BaseModel):
+    """What a plan's summary screen needs that the plan document alone can't say:
+    where the weeks fall on the calendar, and how much of it was actually run.
+
+    Everything derivable from the plan itself (weekly volume, phases, sessions
+    per week) is left to the client — sending it twice would be a second copy to
+    keep in step."""
+
+    version: int
+    start_date: date
+    end_date: date
+    week_current: int | None = None
+    weeks_total: int = 0
+    # Totals over ELAPSED weeks only — the denominator the percentage uses.
+    planned: int = 0
+    completed: int = 0
+    weeks: list[WeekAdherence] = Field(default_factory=list)
+
+
 class SessionLinkRequest(BaseModel):
     """Attach (or detach, when activity_id is null) a recorded activity to a
     planned session, identified by its week index and weekday."""

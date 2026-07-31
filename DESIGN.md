@@ -175,6 +175,15 @@ The Accueil screen opens with the one question a Home tab exists to answer: **"s
 
 **The verdict lives in exactly one place.** `formBand()` (`lib/fitness-format.ts`) is the single source of the band, its wording and its color; the hero states it and the Forme card never repeats it. A screen that says "Forme +14 · Frais" twice reads as unfinished.
 
+### Plan summary (what opening a plan lands on)
+Opening a plan from Mes plans lands on a summary, not on its 60 sessions: **Objectif** (goal, chrono départ → projeté), **Régularité**, **Volume**, **Cycles**, **Le plan**. The full week-by-week list is one tap behind "Voir toutes les séances" — it answers a question you only ask after the ones the summary answers.
+
+Each card leads with the one figure it exists to give (80%, 34,3 km au pic) and a plain-French line saying what it's for. Three read-outs, three deliberately different forms:
+
+- **Régularité** — one cell per committed run, one column per week. Done / manquée / à venir differ by fill *and* outline, never by colour alone, with a legend naming all three. Missed sessions are drawn in contour, never in Flare Red: skipping a run is a fact the plan adapts to, not an error to flag. A week is only scored once it is over — shading an unfinished week as "missed" would be a lie, and it stays out of the percentage's denominator.
+- **Volume** — bars, from a zero baseline, rounded at the data end only. Weekly volume is a discrete tally per week and the job is comparing weeks, which is what bars are for; the height *is* the value, so the baseline cannot start anywhere else. (Contrast the fitness curve, a rolling average, which is a line on a fitted window — the form follows the data, not the house style.) Deload weeks are lighter, not absent: the shorter bar says "less", the tone says it was planned.
+- **Cycles** — one segmented bar, each segment as wide as its phase is long, with the current phase brought forward. The names sit in a plain wrapping row **below** it, never in columns matching the segments: a phase's width says how many weeks it lasts and has nothing to do with how long its name is.
+
 ### Week Runs (what this week asks of you)
 Under the week trail on Accueil: the current week's running sessions, one 44pt row each — day, name, duration and estimated distance — opening straight onto the session. The trail says *where* you are in the plan and the hero says what to do *today*; between them, "what does this week ask of me?" had no answer short of opening Séances.
 

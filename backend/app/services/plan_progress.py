@@ -8,6 +8,7 @@ pipeline; this module decides *whether* to suggest it and feeds the adherence
 summary into the prompt so the regenerated plan is realistic.
 """
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -17,8 +18,10 @@ from app.models.fitness import FitnessResponse
 from app.models.plan import (
     WEEKDAY_ORDER,
     Plan,
+    PlanOverview,
     PlanProgress,
     Session,
+    WeekAdherence,
 )
 from app.services import fitness_service, plan_moves_service
 
@@ -48,6 +51,139 @@ def _plan_start_date(doc: dict, today: date) -> date:
     return base - timedelta(days=base.weekday())
 
 
+async def _load_run_days(db: AsyncIOMotorDatabase, user_id: str, since: date) -> dict[date, float]:
+    """Longest RUN, in minutes, per day since `since`.
+
+    A key RUN session is only "done" by a RUN activity of sufficient duration —
+    a padel game the same day doesn't validate a long run (Lot 6.2) — and only
+    the longest run of a day counts toward the 60%-of-planned check.
+    """
+    since_dt = datetime(since.year, since.month, since.day, tzinfo=UTC)
+    run_minutes_by_date: dict[date, float] = {}
+    cursor = db.activities.find(
+        {"user_id": user_id, "sport": SportType.RUN, "start_time": {"$gte": since_dt}}
+    )
+    async for act in cursor:
+        st = act.get("start_time")
+        if st is None:
+            continue
+        st_aware = st.replace(tzinfo=UTC) if st.tzinfo is None else st
+        day = st_aware.astimezone(UTC).date()
+        minutes = (act.get("duration_s") or 0) / 60
+        run_minutes_by_date[day] = max(run_minutes_by_date.get(day, 0.0), minutes)
+    return run_minutes_by_date
+
+
+async def _load_linked_dates(db: AsyncIOMotorDatabase, user_id: str) -> set[date]:
+    """Sessions the athlete explicitly linked to an activity — those count as
+    done even when the activity lands on a different day than planned."""
+    linked_dates: set[date] = set()
+    async for comp in db.session_completions.find(
+        {"user_id": user_id, "activity_id": {"$ne": None}}
+    ):
+        stored = comp.get("session_date")
+        if isinstance(stored, str):
+            try:
+                linked_dates.add(date.fromisoformat(stored))
+            except ValueError:
+                pass
+    return linked_dates
+
+
+def _make_run_done(
+    run_minutes_by_date: dict[date, float], linked_dates: set[date]
+) -> Callable[[date, int], bool]:
+    """The one rule for "was this planned run actually done?".
+
+    Shared by the replan trigger and the per-week adherence read-out: two copies
+    of this would drift, and the day they disagree the app tells the athlete two
+    different things about the same session.
+    """
+
+    def _run_done(session_date: date, planned_min: int) -> bool:
+        if session_date in linked_dates:  # explicit link always counts
+            return True
+        done_min = run_minutes_by_date.get(session_date)
+        return done_min is not None and done_min >= 0.6 * planned_min
+
+    return _run_done
+
+
+async def compute_overview(
+    db: AsyncIOMotorDatabase, user_id: str, version: int
+) -> PlanOverview | None:
+    """Week-by-week adherence for one stored plan version.
+
+    Unlike `compute_progress`, which looks at a rolling 14-day window to decide
+    whether to suggest a replan, this covers the whole plan — it answers "did I
+    follow this plan?", including for a version that is no longer active.
+    Returns None when the version doesn't exist.
+    """
+    today = datetime.now(UTC).date()
+    doc = await db.plans.find_one(
+        {
+            "user_id": user_id,
+            "version": version,
+            "status": {"$in": ["ready", "cancelled"]},
+        }
+    )
+    if doc is None or not doc.get("plan"):
+        return None
+
+    plan = Plan.model_validate(doc["plan"])
+    # Per-week overrides only exist for the active plan; applying them to a
+    # retired version would report weeks it never actually had.
+    if doc.get("status") == "ready":
+        await plan_moves_service.apply_overrides(db, user_id, plan, version)
+    weeks = [week for phase in plan.phases for week in phase.weeks]
+    start = _plan_start_date(doc, today)
+
+    run_minutes_by_date = await _load_run_days(db, user_id, start)
+    linked_dates = await _load_linked_dates(db, user_id)
+    _run_done = _make_run_done(run_minutes_by_date, linked_dates)
+
+    week_pos_today = (today - start).days // 7
+    rows: list[WeekAdherence] = []
+    total_planned = total_completed = 0
+
+    for week_pos, week in enumerate(weeks):
+        week_start = start + timedelta(days=week_pos * 7)
+        is_past = week_start + timedelta(days=7) <= today
+        planned = completed = 0
+        for session in week.sessions:
+            if not _is_key_run(session):
+                continue
+            planned += 1
+            session_date = week_start + timedelta(days=WEEKDAY_ORDER.index(session.day))
+            if session_date < today and _run_done(session_date, session.duration_min):
+                completed += 1
+        rows.append(
+            WeekAdherence(
+                week_index=week.index,
+                planned=planned,
+                completed=completed,
+                is_deload=week.is_deload,
+                is_past=is_past,
+                is_current=week_pos == week_pos_today,
+            )
+        )
+        if is_past:
+            total_planned += planned
+            total_completed += completed
+
+    return PlanOverview(
+        version=version,
+        start_date=start,
+        # Inclusive: the last day of the last week, not the Monday after it.
+        end_date=start + timedelta(days=len(weeks) * 7 - 1),
+        week_current=(week_pos_today + 1 if 0 <= week_pos_today < len(weeks) else None),
+        weeks_total=len(weeks),
+        planned=total_planned,
+        completed=total_completed,
+        weeks=rows,
+    )
+
+
 async def compute_progress(
     db: AsyncIOMotorDatabase, user_id: str, fitness: FitnessResponse | None = None
 ) -> PlanProgress:
@@ -66,41 +202,9 @@ async def compute_progress(
     start = _plan_start_date(doc, today)
     window_start = today - timedelta(days=_WINDOW_DAYS)
 
-    # A key RUN session is only "done" by a RUN activity of sufficient duration —
-    # a padel game the same day doesn't validate a long run (Lot 6.2). Keep the
-    # longest run per day for the 60%-of-planned check.
-    run_minutes_by_date: dict[date, float] = {}
-    window_start_dt = datetime(window_start.year, window_start.month, window_start.day, tzinfo=UTC)
-    cursor = db.activities.find(
-        {"user_id": user_id, "sport": SportType.RUN, "start_time": {"$gte": window_start_dt}}
-    )
-    async for act in cursor:
-        st = act.get("start_time")
-        if st is None:
-            continue
-        st_aware = st.replace(tzinfo=UTC) if st.tzinfo is None else st
-        day = st_aware.astimezone(UTC).date()
-        minutes = (act.get("duration_s") or 0) / 60
-        run_minutes_by_date[day] = max(run_minutes_by_date.get(day, 0.0), minutes)
-
-    # Sessions the user explicitly linked to an activity — counts as done even
-    # if the activity itself lands on a different day than planned.
-    linked_dates: set[date] = set()
-    async for comp in db.session_completions.find(
-        {"user_id": user_id, "activity_id": {"$ne": None}}
-    ):
-        stored = comp.get("session_date")
-        if isinstance(stored, str):
-            try:
-                linked_dates.add(date.fromisoformat(stored))
-            except ValueError:
-                pass
-
-    def _run_done(session_date, planned_min: int) -> bool:
-        if session_date in linked_dates:  # explicit link always counts
-            return True
-        done_min = run_minutes_by_date.get(session_date)
-        return done_min is not None and done_min >= 0.6 * planned_min
+    run_minutes_by_date = await _load_run_days(db, user_id, window_start)
+    linked_dates = await _load_linked_dates(db, user_id)
+    _run_done = _make_run_done(run_minutes_by_date, linked_dates)
 
     planned = completed = 0
     for week_pos, week in enumerate(weeks):
