@@ -327,10 +327,18 @@ d'un état faux.
 
 Option A. `_ANTHROPIC_TIMEOUT_S = 75.0`, `_TOTAL_DEADLINE_S = 150.0`, et chaque
 tentative est en plus bornée par le budget restant, donc le total ne dépasse
-jamais 150 s. Vérification demandée par la spec : Render autorise une réponse
-HTTP jusqu'à 100 minutes — la marge est large, rien n'oblige à passer en job.
-`plan-generator/SKILL.md` porte les valeurs réelles, et
+jamais 150 s. `plan-generator/SKILL.md` porte les valeurs réelles, et
 `test_skill_documents_the_real_timeouts` échoue si le skill et le code divergent.
+
+**Correction (31/07)** : la vérification demandée par la spec (« 150 s reste-t-il
+sous le timeout HTTP de l'hébergeur ? ») avait été notée comme faite, sur la foi
+d'un « Render laisse une réponse durer jusqu'à 100 min » qui venait d'un résumé
+de recherche web et non de la doc Render. **Ce point reste donc ouvert** : la
+limite d'inactivité sur la requête entrante n'est pas mesurée, et c'est l'unique
+hypothèse qui rend le design synchrone acceptable. Procédure de mesure et
+endpoint temporaire `GET /debug/slow` : voir `plan-generator/SKILL.md`, section
+« Limite de requête entrante ». Si le test échoue à 150 s, l'option B ci-dessus
+(génération en job) redevient la solution.
 
 ### 7.3 — `training-science/SKILL.md`
 

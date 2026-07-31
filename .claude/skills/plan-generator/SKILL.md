@@ -47,10 +47,28 @@ La forme (`compute_fitness`) est calculée une seule fois par génération et in
 
 ## Appel API Anthropic
 
-- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 150.0 s pour 75.0 s par tentative (`_TOTAL_DEADLINE_S` / `_ANTHROPIC_TIMEOUT_S`). Les deux doivent rester distincts — à valeurs égales, une première tentative lente consomme tout le budget et le retry n'a jamais lieu ; chaque tentative est en plus bornée par ce qui reste. `test_skill_documents_the_real_timeouts` échoue si cette ligne diverge du code. Génération synchrone dans la requête HTTP : Render laisse une réponse durer jusqu'à 100 min, la marge est donc large.
+- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 150.0 s pour 75.0 s par tentative (`_TOTAL_DEADLINE_S` / `_ANTHROPIC_TIMEOUT_S`). Les deux doivent rester distincts — à valeurs égales, une première tentative lente consomme tout le budget et le retry n'a jamais lieu ; chaque tentative est en plus bornée par ce qui reste. `test_skill_documents_the_real_timeouts` échoue si cette ligne diverge du code. Génération **synchrone** dans la requête HTTP — voir ci-dessous, l'hypothèse sur laquelle ça repose n'est pas vérifiée.
 - **Tool use** : le plan est émis via l'outil `submit_plan` dont l'`input_schema` = `Plan.model_json_schema()` + `tool_choice` forcé. Ça supprime la classe d'erreurs « JSON non conforme » ; `tool_block.input` est déjà un dict → `Plan.model_validate(...)`.
 - System prompt : rôle de coach, règles training-science, priority/min-max, renfo et cross-training **conditionnels** au `PlanRequest`, streaming, thinking off.
 - Retry conversationnel : chaque échec est rejoué en `assistant`=tool_use + `user`=tool_result(violations). Max 3 tentatives.
+
+### Limite de requête entrante — NON VÉRIFIÉE
+
+Tout le design synchrone de `generate_plan` repose sur une hypothèse qui n'a **jamais été mesurée** : que la plateforme d'hébergement laisse une requête entrante rester ouverte 150 s sans qu'aucun octet ne soit émis. Ne pas la traiter comme acquise.
+
+Piège à ne pas refaire : le streaming vers Anthropic protège l'appel **sortant**. La requête **entrante**, elle, reste totalement silencieuse pendant toute la génération — c'est une limite d'inactivité côté plateforme (load balancer, proxy) qui la coupera, pas un timeout applicatif. Si ça arrive, le client prend un 502 pendant que le backend continue de consommer des tokens pour un plan que personne ne recevra.
+
+**Procédure de mesure** (à faire sur l'environnement déployé, pas en local — c'est le proxy de la plateforme qu'on teste, pas uvicorn) :
+
+1. Poser `ENABLE_DEBUG_SLOW=true` dans les variables d'env du service, redéployer.
+2. `curl -w '\n%{http_code} %{time_total}s\n' "https://<host>/debug/slow?seconds=150"`
+3. Lire le **corps** de la réponse, pas seulement le code : un 502/504 ou une connexion coupée = la limite est sous 150 s. Le champ `elapsed_s` renvoyé permet de repérer un proxy qui répondrait tôt.
+4. Si 150 s passe, remonter (`seconds=200`, `300`) pour connaître la marge réelle.
+5. **Inscrire le résultat daté juste en dessous**, retirer `ENABLE_DEBUG_SLOW`, puis supprimer `app/api/debug.py`, le réglage `enable_debug_slow` et `tests/test_debug_slow.py`.
+
+**Résultat de la mesure** : *(non mesuré — remplacer par : date, hébergeur, durée testée, verdict)*
+
+**Si le test échoue à 150 s** : la génération doit passer en job, c'est l'option B de la section 7.2 de `docs/refonte-plan-generator-addendum.md`. `job_service` et `api/jobs.py` existent déjà et servent la synchro Garmin ; `generate_plan` devient un job persisté en base, l'endpoint répond immédiatement avec un `job_id`, et le mobile interroge son statut. Un job persisté ne souffre pas du problème qui a fait écarter les `BackgroundTask` (processus recyclé sur un hébergement mono-instance gratuit). Ne pas rafistoler avec un timeout plus court : réduire le budget en dessous d'une génération réelle rendrait juste l'échec plus fréquent.
 
 ## Schéma JSON du plan (contrat de sortie)
 

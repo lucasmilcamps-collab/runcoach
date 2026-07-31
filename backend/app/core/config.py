@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:coach@runcoach.app"
     push_run_secret: str = ""
 
+    # TEMPORARY — remove once the platform's inbound request limit is measured
+    # (plan-generator skill, "Limite de requête entrante"). Enables GET
+    # /debug/slow, which holds a request open for N seconds. Off unless the env
+    # var is set: an endpoint that ties up a worker for minutes has no business
+    # being reachable by default on a single-instance host.
+    enable_debug_slow: bool = False
+
     # Kept as a plain str (not list[str]): pydantic-settings JSON-decodes any
     # complex-typed env var unconditionally, before validators run, so a
     # host dashboard value that isn't strict JSON (e.g. a bare comma list)

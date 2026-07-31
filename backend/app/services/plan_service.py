@@ -51,9 +51,14 @@ _ANTHROPIC_TIMEOUT_S = 75.0
 # so the retry the validator exists for never happened. Keeping the total at
 # 2× one attempt means a maxed-out first pass still leaves a full correction
 # round, and each attempt is additionally capped to whatever is left (see
-# `_generate_valid_plan`) so the sum never overruns this. Generation is called
-# inside the HTTP request, but Render allows responses to take up to 100
-# minutes, so 150s is nowhere near the platform ceiling.
+# `_generate_valid_plan`) so the sum never overruns this.
+#
+# UNVERIFIED ASSUMPTION: generation runs inside the HTTP request and sends
+# nothing for up to 150s. Streaming protects the call OUT to Anthropic, not the
+# request coming IN — an idle-connection limit on the host would cut the client
+# while this keeps spending tokens. Nobody has measured where that limit sits.
+# See the plan-generator skill, "Limite de requête entrante", for the test to
+# run and what to do if 150s doesn't hold (move generation to job_service).
 _TOTAL_DEADLINE_S = 150.0
 # Below this, what's left of the budget can't produce a plan — don't burn tokens
 # on an attempt that will be cut off mid-generation.
