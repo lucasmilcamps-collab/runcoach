@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import anthropic
 import pytest
 
 from app.models.activity import SportType
@@ -103,6 +104,14 @@ async def _seed_user(db) -> str:
 def _patched_client(*responses):
     mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create_mock(*responses)))
     return patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client)
+
+
+def _rate_limit_error() -> anthropic.RateLimitError:
+    """A real 429 as the SDK raises it — it carries an httpx response."""
+    import httpx
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return anthropic.RateLimitError("429", response=httpx.Response(429, request=request), body=None)
 
 
 def _no_repair():
@@ -1275,3 +1284,70 @@ def test_race_week_is_told_it_is_not_an_exception():
     directive = plan_service._weeks_directive(req, start)
     assert "semaine 17 n'est PAS une exception" in directive
     assert "la course du jour J en fait partie" in directive
+
+
+# --- The SDK must not retry behind the budget's back ---
+
+
+async def test_client_is_built_without_sdk_retries(db):
+    captured = {}
+
+    def _factory(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            messages=SimpleNamespace(create=_create_mock(_mock_response(_valid_plan_dict())))
+        )
+
+    user_id = await _seed_user(db)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", _factory),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    assert captured["max_retries"] == 0
+    assert captured["timeout"] == plan_service._ANTHROPIC_TIMEOUT_S
+
+
+async def test_transient_error_is_retried_within_the_budget(db):
+    """A 429 used to end the generation, because the SDK had already retried and
+    given up. With its retries off, the decision comes back to the loop that
+    knows the deadline."""
+    user_id = await _seed_user(db)
+    create_mock = _create_mock(
+        _rate_limit_error(),
+        _mock_response(_valid_plan_dict()),
+    )
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.asyncio.sleep", AsyncMock()),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 2
+
+
+async def test_transient_error_gives_up_when_the_budget_is_gone(db):
+    user_id = await _seed_user(db)
+    create_mock = _create_mock(_rate_limit_error())
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    ticks = iter([0.0, 0.0])
+
+    def _clock() -> float:
+        return next(ticks, plan_service._TOTAL_DEADLINE_S)  # budget spent
+
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.time.monotonic", _clock),
+        patch("app.services.plan_service.asyncio.sleep", AsyncMock()),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "failed"
+    assert "429" in (result.error_message or "")
+    assert "budget" in (result.error_message or "").lower()
+    assert create_mock.call_count == 1  # no blind hammering of a rate limit
