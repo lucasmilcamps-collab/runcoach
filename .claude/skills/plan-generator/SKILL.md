@@ -51,6 +51,7 @@ La forme (`compute_fitness`) est calculée une seule fois par génération et in
 - **Tool use** : le plan est émis via l'outil `submit_plan` dont l'`input_schema` = `Plan.model_json_schema()` + `tool_choice` forcé. Ça supprime la classe d'erreurs « JSON non conforme » ; `tool_block.input` est déjà un dict → `Plan.model_validate(...)`.
 - System prompt : rôle de coach, règles training-science, priority/min-max, renfo et cross-training **conditionnels** au `PlanRequest`, streaming, thinking off.
 - Retry conversationnel : chaque échec est rejoué en `assistant`=tool_use + `user`=tool_result(violations). Max 3 tentatives.
+- **Réparation ciblée avant régénération** (`_repair_rounds`) : quand les violations désignent toutes des semaines précises, on ne régénère pas le plan — on renvoie au modèle *uniquement* ces semaines (outil `submit_weeks`), plus un résumé d'une ligne par semaine pour la cohérence d'ensemble, et on recolle les semaines corrigées par `index` avant de revalider le plan entier. Motif : sur un plan de 16 semaines une régénération complète dépasse à elle seule le budget total, donc le retry n'avait plus lieu d'être ; une réparation coûte quelques secondes. Trois garde-fous : une violation non rattachée à une semaine (nombre de semaines, taper, plan tout-deload) désactive le chemin et force la régénération ; un résultat qui augmente le nombre de violations est jeté ; une semaine d'`index` inconnu est ignorée, jamais ajoutée.
 
 ### Limite de requête entrante — NON VÉRIFIÉE
 
