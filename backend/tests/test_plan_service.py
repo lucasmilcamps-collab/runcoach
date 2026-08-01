@@ -110,7 +110,7 @@ def _no_repair():
     regeneration retry and the time budget; repair has its own tests below."""
 
     async def _passthrough(client, system, plan, violations, *args):
-        return plan, violations
+        return plan, violations, 0
 
     return patch("app.services.plan_service._repair_rounds", _passthrough)
 
@@ -1229,3 +1229,49 @@ def test_splice_ignores_a_week_index_that_does_not_exist():
     stray.index = 99
     assert plan_service._splice_weeks(plan, [stray]) == 0
     assert len(plan.phases[0].weeks) == 4  # nothing appended
+
+
+async def test_repair_still_runs_on_the_scraps_of_the_budget(db):
+    """What starved it in production: a 17-week plan takes ~125s, leaving under
+    the 25s a full generation needs — so the cheap fix that would have taken
+    seconds was skipped by the guard meant for regenerations."""
+    user_id = await _seed_user(db)
+    fixed_week = _valid_plan().phases[0].weeks[1].model_dump(mode="json")
+    create_mock = _create_mock(_mock_response(_bad_plan_dict()), _repair_response([fixed_week]))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    # Deadline set at 0; by the time the plan comes back only 15s are left —
+    # under _MIN_ATTEMPT_S, comfortably over _MIN_REPAIR_S.
+    left = plan_service._TOTAL_DEADLINE_S - 15.0
+    ticks = iter([0.0, 0.0, left])
+
+    def _clock() -> float:
+        return next(ticks, left)
+
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.time.monotonic", _clock),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 2
+    assert create_mock.call_args_list[1].kwargs["tools"][0]["name"] == "submit_weeks"
+
+
+def test_race_week_is_told_it_is_not_an_exception():
+    """Every violation of the last failure sat on the final week: the model
+    treats race week as licence to drop the per-week constraints."""
+    from datetime import date as _date
+
+    start = _date(2026, 8, 3)
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=42.2,
+        race_date=start + timedelta(weeks=17),
+        available_days=list(Weekday),
+    )
+    directive = plan_service._weeks_directive(req, start)
+    assert "semaine 17 n'est PAS une exception" in directive
+    assert "la course du jour J en fait partie" in directive
