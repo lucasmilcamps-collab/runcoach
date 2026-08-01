@@ -1092,9 +1092,11 @@ def test_deload_weeks_are_listed_not_left_to_be_derived():
     assert "aucune autre" in directive
 
 
-def test_impact_sport_names_the_days_quality_is_barred_from():
-    """Holding "no quality the day after basket" in mind across sixteen weeks is
-    what failed. The forbidden weekdays are derivable, so derive them."""
+def test_a_flexible_impact_sport_gets_one_chosen_day():
+    """Listing every candidate day left the model to work out which one mattered,
+    and it put a quality session the day after basket week after week. A flexible
+    commitment only has to land on ONE of its days, so the day is chosen here:
+    one sport, one day, one barred day."""
     from app.models.plan import FixedSport
 
     req = PlanRequest(
@@ -1107,9 +1109,25 @@ def test_impact_sport_names_the_days_quality_is_barred_from():
         ],
     )
     directive = plan_service._counts_directive(req)
-    assert "SATURDAY" in directive  # the day after Friday
-    assert "MONDAY" in directive  # the day after Sunday
-    assert "flexible" in directive
+    assert "BASKETBALL se place le FRIDAY" in directive  # earliest declared day
+    assert "AUCUNE séance de qualité (tempo, threshold, intervals) le SATURDAY" in directive
+    # The long run is NOT barred — the validator only bars quality types, and
+    # claiming otherwise over-constrained an already tight week.
+    assert "sortie longue ce jour-là est en revanche permise" in directive
+
+
+def test_a_fixed_impact_day_bars_the_day_after():
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        fixed_sports=[FixedSport(sport=SportType.PADEL, day=Weekday.WEDNESDAY)],
+    )
+    directive = plan_service._counts_directive(req)
+    assert "PADEL se place le WEDNESDAY" in directive
+    assert "le THURSDAY" in directive
 
 
 def test_no_impact_line_without_an_impact_sport():
@@ -1351,3 +1369,43 @@ async def test_transient_error_gives_up_when_the_budget_is_gone(db):
     assert "429" in (result.error_message or "")
     assert "budget" in (result.error_message or "").lower()
     assert create_mock.call_count == 1  # no blind hammering of a rate limit
+
+
+async def test_repair_is_given_the_hard_constraints():
+    """The repair used to receive only the system prompt. The hard constraints —
+    barred days, deload weeks, session counts — live in the user prompt, which
+    the repair call doesn't replay, so it was asked to fix violations while blind
+    to the rules it had to respect."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+        fixed_sports=[FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY, flexible=True)],
+    )
+    today = datetime.now(UTC).date()
+    constraints = (
+        f"{plan_service._weeks_directive(req, today)}\n{plan_service._counts_directive(req)}"
+    )
+    create_mock = _create_mock(_repair_response([]))
+    client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    await plan_service._repair_rounds(
+        client,
+        "system",
+        _valid_plan(),
+        ["Semaine 2 : charge +30%"],
+        req,
+        today,
+        {},
+        plan_service.time.monotonic() + 120,
+        constraints,
+    )
+
+    prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "BASKETBALL se place le FRIDAY" in prompt
+    assert "AUCUNE séance de qualité" in prompt
+    assert "EXACTEMENT 2" in prompt  # the key-session count travels too
