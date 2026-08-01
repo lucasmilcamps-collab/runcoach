@@ -1409,3 +1409,178 @@ async def test_repair_is_given_the_hard_constraints():
     assert "BASKETBALL se place le FRIDAY" in prompt
     assert "AUCUNE séance de qualité" in prompt
     assert "EXACTEMENT 2" in prompt  # the key-session count travels too
+
+
+# --- Mechanical violations get mechanical fixes ---
+
+
+def _plan_with_strength_before_long_run() -> Plan:
+    """The layout of the reported failure, every week: an easy Saturday carrying
+    the strength block, and the long run on Sunday."""
+    weeks = []
+    for index, load in ((1, 100.0), (2, 108.0), (3, 116.0)):
+        weeks.append(
+            Week(
+                index=index,
+                is_deload=False,
+                target_load=load,
+                sessions=[
+                    _s(Weekday.TUESDAY, "tempo", 45),
+                    Session(
+                        day=Weekday.SATURDAY,
+                        sport=SportType.RUN,
+                        type="easy",
+                        duration_min=40,
+                        priority="optional",
+                        rationale="x",
+                    ),
+                    _s(Weekday.SUNDAY, "long_run", 60 + (index - 1) * 10),
+                    Session(
+                        day=Weekday.SATURDAY,
+                        sport=SportType.STRENGTH,
+                        type="strength",
+                        duration_min=20,
+                        slot="addon",
+                        priority="optional",
+                        rationale="x",
+                    ),
+                ],
+            )
+        )
+    weeks.append(
+        Week(
+            index=4,
+            is_deload=True,
+            target_load=80.0,
+            sessions=[_s(Weekday.SUNDAY, "long_run", 60)],
+        )
+    )
+    return Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[Phase(name="base", weeks=weeks)],
+    )
+
+
+async def test_misplaced_strength_is_fixed_in_code_without_a_model_call(db):
+    """The reported failure: strength Saturday, long run Sunday, every week.
+    The model had proven it would keep re-placing it badly; the move is
+    mechanical, so the code does it and no repair call is spent on it."""
+    user_id = await _seed_user(db)
+    bad = _plan_with_strength_before_long_run()
+    from app.services import plan_validation
+
+    assert any(
+        "renforcement" in v
+        for v in plan_validation.validate_plan(bad, _request(), datetime.now(UTC).date())
+    )
+
+    create_mock = _create_mock(_mock_response(bad.model_dump(mode="json")))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 1  # generation only: no repair, no retry
+    for phase in result.plan.phases:
+        for week in phase.weeks:
+            for session in week.sessions:
+                if session.type == "strength":
+                    # Moved to the quality day (hard days hard), off Saturday.
+                    assert session.day == Weekday.TUESDAY
+
+
+def test_auto_fix_handles_the_sunday_to_monday_boundary():
+    plan = _plan_with_strength_before_long_run()
+    weeks = plan.phases[0].weeks
+    # Week 1's strength on Sunday, week 2 opens with intervals on Monday.
+    weeks[0].sessions = [
+        _s(Weekday.TUESDAY, "tempo", 45),
+        _s(Weekday.SATURDAY, "long_run", 60),
+        Session(
+            day=Weekday.SUNDAY,
+            sport=SportType.STRENGTH,
+            type="strength",
+            duration_min=20,
+            slot="addon",
+            priority="optional",
+            rationale="x",
+        ),
+    ]
+    weeks[1].sessions.insert(0, _s(Weekday.MONDAY, "intervals", 45))
+
+    assert plan_service._auto_fix_strength_placement(plan, _request()) is True
+    strength = next(s for s in weeks[0].sessions if s.type == "strength")
+    assert strength.day != Weekday.SUNDAY  # Monday-after was hard
+
+
+def test_auto_fix_separates_two_strength_blocks():
+    plan = _plan_with_strength_before_long_run()
+    week = plan.phases[0].weeks[0]
+    week.sessions = [
+        _s(Weekday.TUESDAY, "tempo", 45),
+        _s(Weekday.SATURDAY, "long_run", 60),
+        Session(
+            day=Weekday.WEDNESDAY,
+            sport=SportType.STRENGTH,
+            type="strength",
+            duration_min=20,
+            slot="addon",
+            priority="optional",
+            rationale="x",
+        ),
+        Session(
+            day=Weekday.THURSDAY,
+            sport=SportType.STRENGTH,
+            type="strength",
+            duration_min=20,
+            slot="addon",
+            priority="optional",
+            rationale="x",
+        ),
+    ]
+    assert plan_service._auto_fix_strength_placement(plan, _request()) is True
+    days = sorted(
+        plan_service.WEEKDAY_ORDER.index(s.day) for s in week.sessions if s.type == "strength"
+    )
+    assert days[1] - days[0] >= 2  # 48h restored
+
+
+async def test_repair_batches_a_systematic_violation():
+    """When every week is flagged, resending them all is a regeneration by
+    another name. Only the first _MAX_REPAIR_WEEKS go out per round."""
+    weeks = [
+        Week(
+            index=i,
+            is_deload=(i % 4 == 0),
+            target_load=100.0,
+            sessions=[_s(Weekday.TUESDAY, "tempo", 45), _s(Weekday.SATURDAY, "long_run", 60)],
+        )
+        for i in range(1, 9)
+    ]
+    plan = Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[Phase(name="base", weeks=weeks)],
+    )
+    violations = [f"Semaine {i} : renforcement mal placé" for i in range(1, 9)]
+    create_mock = _create_mock(_repair_response([]))  # unusable → returns after 1 call
+    client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    await plan_service._repair_rounds(
+        client,
+        "system",
+        plan,
+        violations,
+        _request(),
+        datetime.now(UTC).date(),
+        {},
+        plan_service.time.monotonic() + 120,
+    )
+
+    prompt = create_mock.call_args_list[0].kwargs["messages"][0]["content"]
+    assert '"index": 6' in prompt and '"index": 7' not in prompt
+    assert "Semaine 6 : renforcement" in prompt
+    assert "Semaine 7 : renforcement" not in prompt  # next round's batch
+    assert "S7 " in prompt  # but the outline still shows the whole plan

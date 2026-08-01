@@ -21,6 +21,7 @@ from app.models.activity import SportType
 from app.models.fitness import FitnessResponse
 from app.models.plan import (
     IMPACT_SPORTS,
+    QUALITY_SESSION_TYPES,
     WEEKDAY_ORDER,
     DailyAdjustment,
     InjuryReport,
@@ -32,6 +33,7 @@ from app.models.plan import (
     TodaySession,
     Week,
     Weekday,
+    session_order_key,
 )
 from app.services import (
     fitness_service,
@@ -72,6 +74,11 @@ _MIN_ATTEMPT_S = 25.0
 # the case it was built for: a 17-week plan that takes ~125s to generate leaves
 # under 25s, so the cheap fix that would have taken seconds never ran.
 _MIN_REPAIR_S = 8.0
+# Weeks per repair round. A systematic violation flags every week, and a repair
+# that resends all of them is as big and as slow as the regeneration it exists
+# to avoid — batching keeps each round small, and three rounds cover a long
+# plan because a round is only kept when the violation count drops.
+_MAX_REPAIR_WEEKS = 6
 # Backoff after an upstream hiccup. Short on purpose: the budget is the real
 # limit, and a long sleep would spend it doing nothing.
 _TRANSIENT_BACKOFF_S = 2.0
@@ -704,6 +711,69 @@ _WEEK_IN_VIOLATION = re.compile(r"Semaine (\d+)\s*:")
 _MAX_REPAIR_ROUNDS = 3
 
 
+_HARD_SESSION_TYPES = QUALITY_SESSION_TYPES | {"long_run"}
+
+
+def _strength_day_rank(week: Week, original_di: int, candidate_di: int) -> tuple:
+    """Order candidate days for a strength block: share a quality day first
+    (hard days hard), then any day already carrying a primary session, then any
+    allowed day — and among equals, stay close to where the plan had put it."""
+    day = WEEKDAY_ORDER[candidate_di]
+    has_quality = any(s.day == day and s.type in QUALITY_SESSION_TYPES for s in week.sessions)
+    has_primary = any(
+        s.day == day and s.slot == "primary" and s.type != "rest" for s in week.sessions
+    )
+    return (not has_quality, not has_primary, abs(candidate_di - original_di))
+
+
+def _auto_fix_strength_placement(plan: Plan, request: PlanRequest) -> bool:
+    """Move misplaced strength blocks to a legal day — in code, not in the model.
+
+    "Strength the day before a long run" is a mechanical violation with a
+    mechanical fix: pick another day whose morrow is easy. It was nonetheless
+    round-tripped through the model at full price, and the model kept putting
+    the block back on the same day, every week of the plan. The code does the
+    move deterministically, for free, and the validator re-checks the result
+    like any other plan. Returns True when anything moved."""
+    allowed = set(request.available_days) | {fs.day for fs in request.fixed_sports}
+    weeks = [w for phase in plan.phases for w in phase.weeks]
+    moved_any = False
+
+    def hard_after(pos: int, di: int) -> bool:
+        if di < 6:
+            return any(
+                WEEKDAY_ORDER.index(s.day) == di + 1 and s.type in _HARD_SESSION_TYPES
+                for s in weeks[pos].sessions
+            )
+        return pos + 1 < len(weeks) and any(
+            s.day == Weekday.MONDAY and s.type in _HARD_SESSION_TYPES
+            for s in weeks[pos + 1].sessions
+        )
+
+    for pos, week in enumerate(weeks):
+        strengths = [s for s in week.sessions if s.type == "strength"]
+        for session in strengths:
+            di = WEEKDAY_ORDER.index(session.day)
+            others = [WEEKDAY_ORDER.index(s.day) for s in strengths if s is not session]
+            if not hard_after(pos, di) and all(abs(di - o) >= 2 for o in others):
+                continue  # already legal
+            candidates = [
+                cdi
+                for cdi in range(7)
+                if cdi != di
+                and WEEKDAY_ORDER[cdi] in allowed
+                and not hard_after(pos, cdi)
+                and all(abs(cdi - o) >= 2 for o in others)
+            ]
+            if not candidates:
+                continue  # leave it to the model repair rather than force a bad move
+            best = min((_strength_day_rank(week, di, c), c) for c in candidates)[1]
+            session.day = WEEKDAY_ORDER[best]
+            week.sessions.sort(key=session_order_key)
+            moved_any = True
+    return moved_any
+
+
 def _repair_tool_schema() -> dict:
     """Schema for handing back a few corrected weeks instead of a whole plan."""
     week = Week.model_json_schema(ref_template="#/$defs/{model}")
@@ -801,7 +871,15 @@ async def _repair_rounds(
         if not targets or remaining < _MIN_REPAIR_S:
             return plan, violations, rounds
 
-        current = [w for phase in plan.phases for w in phase.weeks if w.index in targets]
+        # Batch: repairing every flagged week of a systematic violation means
+        # resending the whole plan, which defeats the point of repairing.
+        batch = set(sorted(targets)[:_MAX_REPAIR_WEEKS])
+        batch_violations = [
+            v
+            for v in violations
+            if (m := _WEEK_IN_VIOLATION.search(v)) and int(m.group(1)) in batch
+        ]
+        current = [w for phase in plan.phases for w in phase.weeks if w.index in batch]
         if not current:
             return plan, violations, rounds
         rounds += 1
@@ -812,7 +890,7 @@ async def _repair_rounds(
             # repair call doesn't replay. It fixed one week and broke another.
             f"{constraints}\n"
             "Le plan que tu as produit viole ces règles :\n- "
-            + "\n- ".join(violations)
+            + "\n- ".join(batch_violations)
             + "\n\nVoici la structure complète du plan, pour garder la cohérence "
             "d'ensemble (progression, deloads, sortie longue) :\n"
             + _plan_outline(plan)
@@ -994,6 +1072,18 @@ async def _generate_valid_plan(
         violations = plan_validation.validate_plan(plan, request, start, context)
         if not violations:
             return plan
+
+        # Mechanical violations first: a misplaced strength block has a
+        # deterministic fix, so it costs zero tokens and zero seconds — and the
+        # model had proven it would keep re-placing it badly, week after week.
+        if any("renforcement" in v for v in violations):
+            candidate = plan.model_copy(deep=True)
+            if _auto_fix_strength_placement(candidate, request):
+                still = plan_validation.validate_plan(candidate, request, start, context)
+                if len(still) < len(violations):
+                    plan, violations = candidate, still
+                    if not violations:
+                        return plan
 
         # Try to mend the flagged weeks before spending another full generation:
         # on a long plan a regeneration costs more than the whole remaining
