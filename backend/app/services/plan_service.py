@@ -65,6 +65,11 @@ _TOTAL_DEADLINE_S = 150.0
 # Below this, what's left of the budget can't produce a plan — don't burn tokens
 # on an attempt that will be cut off mid-generation.
 _MIN_ATTEMPT_S = 25.0
+# A repair rewrites a handful of weeks, not a plan, so it needs a fraction of
+# that headroom. Holding it to the full-generation minimum starved it in exactly
+# the case it was built for: a 17-week plan that takes ~125s to generate leaves
+# under 25s, so the cheap fix that would have taken seconds never ran.
+_MIN_REPAIR_S = 8.0
 # A full multi-week plan JSON (rationale + structure + paces per session) is
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
@@ -392,9 +397,14 @@ def _weeks_directive(request: PlanRequest, start: date) -> str:
         )
         return (
             f"Le plan doit compter EXACTEMENT {weeks} semaines (il reste {weeks} "
-            "semaines avant la course), la dernière étant la semaine de course "
-            "avec un affûtage (taper) et une charge réduite. N'ajoute ni ne "
-            f"retire de semaines.{schedule}"
+            f"semaines avant la course), la dernière (semaine {weeks}) étant la "
+            "semaine de course avec un affûtage (taper) et une charge réduite. "
+            f"N'ajoute ni ne retire de semaines.{schedule} ATTENTION : la semaine "
+            f"{weeks} n'est PAS une exception. Elle obéit aux mêmes contraintes "
+            "dures que les autres — plafond de séances de course (la course du "
+            "jour J en fait partie), nombre exact de séances 'key', sports fixes "
+            "présents. Une semaine de course allégée, ce sont des séances plus "
+            "courtes, pas des règles suspendues."
         )
     return (
         "Construis un plan de 8 à 12 semaines, avec une semaine is_deload=true "
@@ -728,24 +738,28 @@ async def _repair_rounds(
     start: date,
     context: dict,
     deadline: float,
-) -> tuple[Plan, list[str]]:
+) -> tuple[Plan, list[str], int]:
     """Fix the flagged weeks by rewriting only those weeks.
 
     Regenerating a 16-week plan to correct four of its weeks costs a full
     generation — over 125s at that length, which is more than the whole budget
     allows for a second attempt. So the retry that never got to run becomes a
     small call: the offending weeks go out, the corrected ones come back, and the
-    complete plan is re-validated. Returns the plan (repaired or not) and the
-    violations still standing."""
+    complete plan is re-validated. Returns the plan (repaired or not), the
+    violations still standing, and how many rounds actually ran — "the repair
+    never got the chance" and "the repair tried and failed" are different
+    problems and the failure message has to tell them apart."""
+    rounds = 0
     for _ in range(_MAX_REPAIR_ROUNDS):
         targets = _violation_weeks(violations)
         remaining = deadline - time.monotonic()
-        if not targets or remaining < _MIN_ATTEMPT_S:
-            return plan, violations
+        if not targets or remaining < _MIN_REPAIR_S:
+            return plan, violations, rounds
 
         current = [w for phase in plan.phases for w in phase.weeks if w.index in targets]
         if not current:
-            return plan, violations
+            return plan, violations, rounds
+        rounds += 1
 
         prompt = (
             "Le plan que tu as produit viole ces règles :\n- "
@@ -776,7 +790,7 @@ async def _repair_rounds(
                 timeout=min(_ANTHROPIC_TIMEOUT_S, remaining),
             )
         except anthropic.APIError:
-            return plan, violations  # the caller still has its full-retry path
+            return plan, violations, rounds  # the caller still has its full-retry path
 
         block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
         payload = getattr(block, "input", None)
@@ -784,27 +798,27 @@ async def _repair_rounds(
             try:
                 payload = json.loads(payload)
             except json.JSONDecodeError:
-                return plan, violations
+                return plan, violations, rounds
         if not isinstance(payload, dict) or not payload.get("weeks"):
-            return plan, violations
+            return plan, violations, rounds
 
         candidate = plan.model_copy(deep=True)
         try:
             repaired = [Week.model_validate(w) for w in payload["weeks"]]
         except ValidationError:
-            return plan, violations
+            return plan, violations, rounds
         if _splice_weeks(candidate, repaired) == 0:
-            return plan, violations
+            return plan, violations, rounds
 
         still = plan_validation.validate_plan(candidate, request, start, context)
         # Only keep the repair if it actually helped: a rewrite that trades four
         # violations for five would otherwise be adopted and repaired again.
         if len(still) >= len(violations):
-            return plan, violations
+            return plan, violations, rounds
         plan, violations = candidate, still
         if not violations:
-            return plan, []
-    return plan, violations
+            return plan, [], rounds
+    return plan, violations, rounds
 
 
 def _unwrapped(plan_input: dict) -> dict:
@@ -841,6 +855,7 @@ async def _generate_valid_plan(
     # Each entry: (assistant tool_use content, user tool_result content).
     history: list[tuple[list, list]] = []
     last_problem = "aucune réponse exploitable"
+    repairs = 0
     deadline = time.monotonic() + _TOTAL_DEADLINE_S
 
     def _record(assistant_content: list, tool_use_id: str, feedback: str) -> None:
@@ -863,7 +878,8 @@ async def _generate_valid_plan(
         if attempt > 0 and remaining < _MIN_ATTEMPT_S:
             raise PlanGenerationError(
                 f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
-                f"après {attempt} tentative(s). Dernier problème : {last_problem[:300]}"
+                f"après {attempt} tentative(s) et {repairs} réparation(s) ciblée(s). "
+                f"Dernier problème : {last_problem[:300]}"
             )
         try:
             plan_input, tool_use_id, assistant_content = await _call_anthropic(
@@ -908,9 +924,10 @@ async def _generate_valid_plan(
         # Try to mend the flagged weeks before spending another full generation:
         # on a long plan a regeneration costs more than the whole remaining
         # budget, so this is the only retry that actually fits.
-        plan, violations = await _repair_rounds(
+        plan, violations, rounds = await _repair_rounds(
             client, system, plan, violations, request, start, context, deadline
         )
+        repairs += rounds
         if not violations:
             return plan
 
@@ -924,7 +941,8 @@ async def _generate_valid_plan(
         )
 
     raise PlanGenerationError(
-        f"Plan invalide après {_MAX_ATTEMPTS} tentatives. Dernier problème : {last_problem[:400]}"
+        f"Plan invalide après {_MAX_ATTEMPTS} tentatives et {repairs} réparation(s) "
+        f"ciblée(s). Dernier problème : {last_problem[:400]}"
     )
 
 
