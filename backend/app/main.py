@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import activities, auth, debug, fitness, garmin, jobs, plans, push
+from app.api import activities, auth, fitness, garmin, jobs, plans, push
 from app.core.config import settings
 from app.core.db import get_db
 
@@ -53,10 +53,6 @@ app.include_router(fitness.router)
 app.include_router(plans.router)
 app.include_router(jobs.router)
 app.include_router(push.router)
-# TEMPORARY (see app/api/debug.py): 404s and stays out of the schema unless
-# ENABLE_DEBUG_SLOW is set. To be removed with the router once the platform's
-# inbound request limit is measured.
-app.include_router(debug.router)
 
 
 @app.get("/health")

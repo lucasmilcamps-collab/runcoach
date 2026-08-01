@@ -47,7 +47,7 @@ La forme (`compute_fitness`) est calculée une seule fois par génération et in
 
 ## Appel API Anthropic
 
-- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 150.0 s pour 110.0 s par tentative (`_TOTAL_DEADLINE_S` / `_ANTHROPIC_TIMEOUT_S`). Les deux doivent rester distincts — à valeurs égales, une première tentative lente consomme tout le budget et le retry n'a jamais lieu ; chaque tentative est en plus bornée par ce qui reste. `test_skill_documents_the_real_timeouts` échoue si cette ligne diverge du code. Génération **synchrone** dans la requête HTTP — voir ci-dessous, l'hypothèse sur laquelle ça repose n'est pas vérifiée.
+- Modèle : `claude-sonnet-5` (aligné sur `config.plan_model`). Clé en variable d'env `ANTHROPIC_API_KEY`, jamais côté client. Un client par génération (pas un par tentative), deadline globale 900.0 s pour 420.0 s par tentative (`_TOTAL_DEADLINE_S` / `_ANTHROPIC_TIMEOUT_S`). Les deux doivent rester distincts — à valeurs égales, une première tentative lente consomme tout le budget et le retry n'a jamais lieu ; chaque tentative est en plus bornée par ce qui reste. `test_skill_documents_the_real_timeouts` échoue si cette ligne diverge du code. Génération en **job de fond** (`start_generation` → `run_generation_job`), plus dans la requête HTTP : un plan de 17 semaines coûte ~12,5k tokens de sortie, soit 200-350 s, ce qu'aucune requête synchrone ne peut porter. `POST /plans` renvoie 202 + un job ; le client interroge `GET /jobs/{id}`.
 - **Tool use** : le plan est émis via l'outil `submit_plan` dont l'`input_schema` = `Plan.model_json_schema()` + `tool_choice` forcé. Ça supprime la classe d'erreurs « JSON non conforme » ; `tool_block.input` est déjà un dict → `Plan.model_validate(...)`.
 - System prompt : rôle de coach, règles training-science, priority/min-max, renfo et cross-training **conditionnels** au `PlanRequest`, streaming, thinking off.
 - Retry conversationnel : chaque échec est rejoué en `assistant`=tool_use + `user`=tool_result(violations). Max 3 tentatives.
@@ -55,23 +55,28 @@ La forme (`compute_fitness`) est calculée une seule fois par génération et in
 - **Correction mécanique avant tout appel modèle** (`_auto_fix_strength_placement`) : un renfo placé la veille d'un jour dur a une solution déterministe — le déplacer sur un jour dont le lendemain est facile. Le code fait ce déplacement lui-même (gratuit, instantané, revalidé comme n'importe quel plan) au lieu de payer un aller-retour modèle qui, en pratique, remettait le bloc au même endroit chaque semaine. Adopté seulement si le nombre de violations baisse.
 - **Réparation ciblée avant régénération** (`_repair_rounds`) : quand les violations désignent toutes des semaines précises, on ne régénère pas le plan — on renvoie au modèle *uniquement* ces semaines (outil `submit_weeks`), plus un résumé d'une ligne par semaine pour la cohérence d'ensemble, et on recolle les semaines corrigées par `index` avant de revalider le plan entier. Motif : sur un plan de 16 semaines une régénération complète dépasse à elle seule le budget total, donc le retry n'avait plus lieu d'être ; une réparation coûte quelques secondes. Trois garde-fous : une violation non rattachée à une semaine (nombre de semaines, taper, plan tout-deload) désactive le chemin et force la régénération ; un résultat qui augmente le nombre de violations est jeté ; une semaine d'`index` inconnu est ignorée, jamais ajoutée. Les rondes sont **par lots** (`_MAX_REPAIR_WEEKS`) : une violation systématique marque toutes les semaines, et les renvoyer toutes serait une régénération déguisée.
 
-### Limite de requête entrante — NON VÉRIFIÉE
+### Pourquoi la génération est un job, et pas une requête
 
-Tout le design synchrone de `generate_plan` repose sur une hypothèse qui n'a **jamais été mesurée** : que la plateforme d'hébergement laisse une requête entrante rester ouverte 150 s sans qu'aucun octet ne soit émis. Ne pas la traiter comme acquise.
+La question « la plateforme laisse-t-elle une requête ouverte 150 s ? » ne se pose plus : **elle n'a jamais été la contrainte**. Un plan de 17 semaines pèse ~12,5k tokens de sortie, soit 200 à 350 s de génération pure. Aucun réglage de timeout ne fait tenir ça dans une requête HTTP — c'est de l'arithmétique, pas du tuning.
 
-Piège à ne pas refaire : le streaming vers Anthropic protège l'appel **sortant**. La requête **entrante**, elle, reste totalement silencieuse pendant toute la génération — c'est une limite d'inactivité côté plateforme (load balancer, proxy) qui la coupera, pas un timeout applicatif. Si ça arrive, le client prend un 502 pendant que le backend continue de consommer des tokens pour un plan que personne ne recevra.
+Mesures (`backend/scripts/bench_generation.py`, qui lance une vraie génération et rapporte tokens/durée/débit) :
 
-**Procédure de mesure** (à faire sur l'environnement déployé, pas en local — c'est le proxy de la plateforme qu'on teste, pas uvicorn) :
+| Plan | Tokens de sortie | Durée estimée |
+|---|---|---|
+| 8 semaines | ~5 900 | ~107 s |
+| 12 semaines | ~8 800 | ~161 s |
+| 17 semaines | ~12 500 | ~227 s |
 
-1. Poser `ENABLE_DEBUG_SLOW=true` dans les variables d'env du service, redéployer.
-2. `curl -w '\n%{http_code} %{time_total}s\n' "https://<host>/debug/slow?seconds=150"`
-3. Lire le **corps** de la réponse, pas seulement le code : un 502/504 ou une connexion coupée = la limite est sous 150 s. Le champ `elapsed_s` renvoyé permet de repérer un proxy qui répondrait tôt.
-4. Si 150 s passe, remonter (`seconds=200`, `300`) pour connaître la marge réelle.
-5. **Inscrire le résultat daté juste en dessous**, retirer `ENABLE_DEBUG_SLOW`, puis supprimer `app/api/debug.py`, le réglage `enable_debug_slow` et `tests/test_debug_slow.py`.
+Alléger la sortie ne sauve pas les plans longs : sans `structure` on tombe à ~147 s, sans `structure` ni `rationale` à ~118 s — au prix du détail des fractionnés, et toujours trop pour un plan de 17 semaines.
 
-**Résultat de la mesure** : *(non mesuré — remplacer par : date, hébergeur, durée testée, verdict)*
+**Conséquence** : `POST /plans` et `POST /plans/replan-injury` renvoient **202 + un job** (`start_generation`), le travail tourne en tâche de fond (`run_generation_job`), et le client interroge `GET /jobs/{id}` puis relit `GET /plans/current`. Le budget est dimensionné sur les mesures ci-dessus, plus sur ce qu'une requête peut survivre.
 
-**Si le test échoue à 150 s** : la génération doit passer en job, c'est l'option B de la section 7.2 de `docs/refonte-plan-generator-addendum.md`. `job_service` et `api/jobs.py` existent déjà et servent la synchro Garmin ; `generate_plan` devient un job persisté en base, l'endpoint répond immédiatement avec un `job_id`, et le mobile interroge son statut. Un job persisté ne souffre pas du problème qui a fait écarter les `BackgroundTask` (processus recyclé sur un hébergement mono-instance gratuit). Ne pas rafistoler avec un timeout plus court : réduire le budget en dessous d'une génération réelle rendrait juste l'échec plus fréquent.
+Deux garde-fous que le passage en job impose :
+
+- **Une génération déjà en cours est renvoyée telle quelle** plutôt que relancée — un double tap sur « générer » ne doit pas acheter deux plans.
+- **Un job laissé `running`** au-delà de `job_service._STALE_AFTER` est rapporté `failed` : si le process est recyclé en cours de route, la ligne dirait `running` pour toujours et le client interrogerait un statut qui ne changera jamais. Rapporté à la lecture, jamais réécrit — le worker peut encore finir.
+
+Reste vrai malgré tout : le streaming vers Anthropic protège l'appel **sortant**, pas la requête entrante. C'est justement pour ça que plus rien de long ne vit dans une requête entrante.
 
 ## Schéma JSON du plan (contrat de sortie)
 

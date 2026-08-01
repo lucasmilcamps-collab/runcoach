@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -11,6 +10,7 @@ import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
+import { usePlanGeneration } from '@/lib/use-plan-generation';
 import { ApiError } from '@/lib/api/client';
 import { InjuryReport, reportInjury } from '@/lib/api/plans';
 
@@ -25,35 +25,23 @@ const SEVERITIES: { value: Severity; label: string; hint: string }[] = [
 const DAYS_OFF = [0, 3, 5, 7, 10, 14, 21];
 
 export default function InjuryReportScreen() {
-  const queryClient = useQueryClient();
 
   const [area, setArea] = useState('');
   const [severity, setSeverity] = useState<Severity>('gene');
   const [daysOff, setDaysOff] = useState(7);
 
-  const mutation = useMutation({
-    mutationFn: (injury: InjuryReport) => reportInjury(injury),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['plan'], data);
-      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
-      router.back();
-    },
-  });
+  const generation = usePlanGeneration(reportInjury, { onDone: () => router.back() });
 
   function handleSubmit() {
-    mutation.mutate({ area: area.trim(), severity, days_off: daysOff });
+    generation.generate({ area: area.trim(), severity, days_off: daysOff });
   }
 
   const errorMessage = (() => {
-    if (mutation.data?.status === 'failed') return mutation.data.error_message ?? undefined;
-    if (mutation.error instanceof ApiError) return mutation.error.message;
-    if (mutation.isError) return 'Impossible d’adapter le plan. Réessayez.';
+    return generation.errorMessage;
     return undefined;
   })();
 
-  const canSubmit = area.trim().length > 0 && !mutation.isPending;
+  const canSubmit = area.trim().length > 0 && !generation.isGenerating;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -77,7 +65,7 @@ export default function InjuryReportScreen() {
             value={area}
             onChangeText={(t) => {
               setArea(t);
-              mutation.reset();
+              generation.reset();
             }}
             placeholder="ex. mollet droit, genou gauche…"
             autoCapitalize="none"
@@ -116,10 +104,10 @@ export default function InjuryReportScreen() {
             </View>
           </Field>
 
-          {mutation.isPending ? (
+          {generation.isGenerating ? (
             <ThemedText type="small" themeColor="textSecondary">
-              Régénération du plan en cours… l’IA reconstruit la reprise, ça peut prendre une
-              trentaine de secondes.
+              Régénération en cours… l’IA reconstruit la reprise. Compte deux à cinq minutes pour
+              un plan long — tu peux quitter l’écran, le plan t’attendra.
             </ThemedText>
           ) : null}
           {errorMessage ? (
@@ -133,13 +121,13 @@ export default function InjuryReportScreen() {
           <Button
             label="Adapter mon plan"
             onPress={handleSubmit}
-            loading={mutation.isPending}
+            loading={generation.isGenerating}
             disabled={!canSubmit}
           />
           <Button
             label="Annuler"
             variant="ghost"
-            disabled={mutation.isPending}
+            disabled={generation.isGenerating}
             onPress={() => router.back()}
           />
         </View>
