@@ -208,12 +208,16 @@ async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
     )
     mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
 
-    # Clock: deadline set at 0, attempt 1 starts at 0 and the first call burns a
-    # full _ANTHROPIC_TIMEOUT_S before attempt 2 is considered.
-    ticks = iter([0.0, 0.0, plan_service._ANTHROPIC_TIMEOUT_S])
+    # Clock: deadline set at 0, attempt 1 starts at 0 and burns its whole call
+    # budget before attempt 2 is considered.
+    first_call = min(
+        plan_service._ANTHROPIC_TIMEOUT_S,
+        plan_service._TOTAL_DEADLINE_S - plan_service._REPAIR_RESERVE_S,
+    )
+    ticks = iter([0.0, 0.0, first_call])
 
     def _clock() -> float:
-        return next(ticks, plan_service._ANTHROPIC_TIMEOUT_S)
+        return next(ticks, first_call)
 
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
@@ -228,10 +232,11 @@ async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
     # Each attempt is capped by what's left of the global budget, so the total
     # never overruns _TOTAL_DEADLINE_S.
     timeouts = [call.kwargs["timeout"] for call in create_mock.call_args_list]
-    assert timeouts[0] == plan_service._ANTHROPIC_TIMEOUT_S
-    assert timeouts[1] == pytest.approx(
-        plan_service._TOTAL_DEADLINE_S - plan_service._ANTHROPIC_TIMEOUT_S
-    )
+    # The first call keeps a slice back for the cheap repair path rather than
+    # spending the lot; the second gets what is left, floored so it is worth
+    # starting at all.
+    assert timeouts[0] == pytest.approx(first_call)
+    assert timeouts[1] == pytest.approx(plan_service._MIN_ATTEMPT_S)
     assert sum(timeouts) <= plan_service._TOTAL_DEADLINE_S
 
 
@@ -1584,3 +1589,43 @@ async def test_repair_batches_a_systematic_violation():
     assert "Semaine 6 : renforcement" in prompt
     assert "Semaine 7 : renforcement" not in prompt  # next round's batch
     assert "S7 " in prompt  # but the outline still shows the whole plan
+
+
+async def test_a_timeout_costs_an_attempt_not_the_generation(db):
+    """The reported failure: with the SDK's retries off, one slow response
+    raised APITimeoutError and killed the whole generation. A timeout is the
+    most retryable thing there is under a budget — it costs an attempt."""
+    import httpx
+
+    user_id = await _seed_user(db)
+    timeout = anthropic.APITimeoutError(
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+    create_mock = _create_mock(timeout, _mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("app.services.plan_service.asyncio.sleep", AsyncMock()),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 2
+
+
+async def test_the_first_call_keeps_a_slice_for_the_repair(db):
+    """A plan that arrives invalid is mended for seconds; a second generation
+    costs everything left. So the generation call doesn't get the whole budget."""
+    user_id = await _seed_user(db)
+    create_mock = _create_mock(_mock_response(_valid_plan_dict()))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    used = create_mock.call_args_list[0].kwargs["timeout"]
+    assert used <= plan_service._TOTAL_DEADLINE_S - plan_service._REPAIR_RESERVE_S
+    assert used == plan_service._ANTHROPIC_TIMEOUT_S
