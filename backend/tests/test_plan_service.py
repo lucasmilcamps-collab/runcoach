@@ -105,6 +105,16 @@ def _patched_client(*responses):
     return patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client)
 
 
+def _no_repair():
+    """Bypass the targeted-repair round. These tests are about the full
+    regeneration retry and the time budget; repair has its own tests below."""
+
+    async def _passthrough(client, system, plan, violations, *args):
+        return plan, violations
+
+    return patch("app.services.plan_service._repair_rounds", _passthrough)
+
+
 async def test_generate_plan_success(db):
     user_id = await _seed_user(db)
     with (
@@ -130,6 +140,7 @@ async def test_generate_plan_retries_on_violation(db):
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+        _no_repair(),
     ):
         result = await plan_service.generate_plan(db, user_id, _request())
 
@@ -199,6 +210,7 @@ async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
         patch("app.services.plan_service.time.monotonic", _clock),
+        _no_repair(),
     ):
         result = await plan_service.generate_plan(db, user_id, _request())
 
@@ -1050,3 +1062,170 @@ async def test_schema_error_reports_the_keys_that_did_arrive(db):
     assert "clés reçues : objectif, semaines" in (result.error_message or "")
     feedback = create_mock.call_args_list[1].kwargs["messages"][2]["content"][0]["content"]
     assert "pas enveloppé" in feedback
+
+
+def test_deload_weeks_are_listed_not_left_to_be_derived():
+    """ "One deload per 4-week block" is a rule to apply four times over a
+    16-week plan, and the model dropped the last one. A list of week numbers is
+    something to copy instead."""
+    from datetime import date as _date
+
+    start = _date(2026, 8, 3)
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=42.2,
+        race_date=start + timedelta(weeks=16),
+        available_days=list(Weekday),
+    )
+    directive = plan_service._weeks_directive(req, start)
+    assert "EXACTEMENT 16 semaines" in directive
+    assert "4, 8, 12, 16" in directive
+    assert "aucune autre" in directive
+
+
+def test_impact_sport_names_the_days_quality_is_barred_from():
+    """Holding "no quality the day after basket" in mind across sixteen weeks is
+    what failed. The forbidden weekdays are derivable, so derive them."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        fixed_sports=[
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY, flexible=True),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.SUNDAY, flexible=True),
+        ],
+    )
+    directive = plan_service._counts_directive(req)
+    assert "SATURDAY" in directive  # the day after Friday
+    assert "MONDAY" in directive  # the day after Sunday
+    assert "flexible" in directive
+
+
+def test_no_impact_line_without_an_impact_sport():
+    """A cycling commitment carries no impact, so the constraint isn't invented."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        fixed_sports=[FixedSport(sport=SportType.BIKE, day=Weekday.WEDNESDAY)],
+    )
+    assert "sport à impacts" not in plan_service._counts_directive(req)
+
+
+# --- Targeted repair: fix the flagged weeks, not the whole plan ---
+
+
+def _repair_response(weeks: list[dict], tool_id: str = "rep_1"):
+    block = SimpleNamespace(
+        type="tool_use", id=tool_id, name="submit_weeks", input={"weeks": weeks}
+    )
+    return SimpleNamespace(stop_reason="tool_use", content=[block])
+
+
+def test_violation_weeks_reads_the_indices():
+    assert plan_service._violation_weeks(
+        ["Semaine 3 : renforcement le FRIDAY…", "Semaine 12 : 3 séance(s)…"]
+    ) == {3, 12}
+
+
+def test_violation_weeks_refuses_plan_wide_problems():
+    """A week count or an all-deload plan can't be fixed by rewriting weeks, so
+    the caller must fall back to regenerating rather than silently drop it."""
+    assert plan_service._violation_weeks(["Le plan compte 4 semaines mais il reste ~12"]) is None
+    assert (
+        plan_service._violation_weeks(["Semaine 2 : rampe", "Toutes les semaines sont deload"])
+        is None
+    )
+
+
+async def test_repair_fixes_the_flagged_week_without_regenerating(db):
+    """A 16-week plan costs a full generation to correct four weeks — more than
+    the remaining budget allows. The repair sends those weeks out and splices
+    the corrected ones back."""
+    user_id = await _seed_user(db)
+    fixed_week = _valid_plan().phases[0].weeks[1].model_dump(mode="json")
+    create_mock = _create_mock(
+        _mock_response(_bad_plan_dict()),  # week 2 ramps +30%
+        _repair_response([fixed_week]),  # only week 2 comes back
+    )
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.call_count == 2  # generation + one small repair, no regeneration
+    repair_call = create_mock.call_args_list[1]
+    assert repair_call.kwargs["tools"][0]["name"] == "submit_weeks"
+    prompt = repair_call.kwargs["messages"][0]["content"]
+    assert "Semaine 2" in prompt or "S2 " in prompt  # the outline keeps it coherent
+    assert '"index": 2' in prompt  # the week to fix went out in full
+    assert '"index": 3' not in prompt  # the others did not
+    # The splice landed on the stored plan.
+    assert result.plan.phases[0].weeks[1].target_load == 108.0
+
+
+async def test_repair_that_makes_things_worse_is_discarded(db):
+    """A rewrite trading four violations for five would otherwise be adopted and
+    then repaired again, drifting further each round."""
+    user_id = await _seed_user(db)
+    worse = _valid_plan().phases[0].weeks[1]
+    worse.target_load = 400.0  # even further off the ramp
+    create_mock = _create_mock(
+        _mock_response(_bad_plan_dict()),
+        _repair_response([worse.model_dump(mode="json")]),
+        _mock_response(_valid_plan_dict()),  # falls back to a full regeneration
+    )
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert result.plan.phases[0].weeks[1].target_load == 108.0
+
+
+async def test_repair_is_skipped_for_a_plan_wide_violation(db):
+    """Nothing to target, so no pointless call — straight to regeneration."""
+    user_id = await _seed_user(db)
+    short = _valid_plan_dict()  # 4 weeks, against a ~12-week race
+    create_mock = _create_mock(_mock_response(short), _mock_response(short), _mock_response(short))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    from datetime import date as _date
+
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=21.1,
+        race_date=_date.today() + timedelta(weeks=12),
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, req)
+
+    assert result.status == "failed"
+    # Three full generations, no repair call in between.
+    assert create_mock.call_count == plan_service._MAX_ATTEMPTS
+    assert all(
+        call.kwargs["tools"][0]["name"] == "submit_plan" for call in create_mock.call_args_list
+    )
+
+
+def test_splice_ignores_a_week_index_that_does_not_exist():
+    plan = _valid_plan()
+    stray = _valid_plan().phases[0].weeks[0]
+    stray.index = 99
+    assert plan_service._splice_weeks(plan, [stray]) == 0
+    assert len(plan.phases[0].weeks) == 4  # nothing appended

@@ -7,6 +7,7 @@ never logged, nor is any health data (project security rules)."""
 
 import json
 import math
+import re
 import time
 from datetime import UTC, date, datetime, timedelta
 
@@ -18,6 +19,7 @@ from app.core.config import settings
 from app.models.activity import SportType
 from app.models.fitness import FitnessResponse
 from app.models.plan import (
+    IMPACT_SPORTS,
     WEEKDAY_ORDER,
     DailyAdjustment,
     InjuryReport,
@@ -377,13 +379,27 @@ def _system_prompt(request: PlanRequest) -> str:
 def _weeks_directive(request: PlanRequest, start: date) -> str:
     if request.race_date is not None:
         weeks = max(1, math.ceil((request.race_date - start).days / 7))
+        # Spell the deload weeks out. "One per 4-week block" is a rule to apply
+        # 4 times over a 16-week plan, and the model dropped the last one; a
+        # list of week numbers is a thing to copy. Every 4th week satisfies
+        # MAX_CONSECUTIVE_NORMAL_WEEKS = 3 by construction.
+        deloads = list(range(4, weeks + 1, 4))
+        schedule = (
+            f" Marque is_deload=true EXACTEMENT sur ces semaines : "
+            f"{', '.join(str(w) for w in deloads)} — et sur aucune autre."
+            if deloads
+            else ""
+        )
         return (
             f"Le plan doit compter EXACTEMENT {weeks} semaines (il reste {weeks} "
             "semaines avant la course), la dernière étant la semaine de course "
             "avec un affûtage (taper) et une charge réduite. N'ajoute ni ne "
-            "retire de semaines."
+            f"retire de semaines.{schedule}"
         )
-    return "Construis un plan de 8 à 12 semaines."
+    return (
+        "Construis un plan de 8 à 12 semaines, avec une semaine is_deload=true "
+        "toutes les 4 semaines (semaines 4, 8, 12 selon la longueur retenue)."
+    )
 
 
 _SEVERITY_LABELS = {"gene": "gêne légère", "douleur": "douleur", "arret": "arrêt"}
@@ -448,6 +464,26 @@ def _counts_directive(request: PlanRequest) -> str:
             + " ; ".join(parts)
             + "."
         )
+        # Name the days quality is barred from, rather than restating the rule.
+        # "No quality the day after an impact sport" needs the model to hold the
+        # basket day in mind on every week of a 16-week plan; a list of weekdays
+        # is checkable in one glance.
+        impact_days = sorted(
+            {
+                WEEKDAY_ORDER[(WEEKDAY_ORDER.index(fs.day) + 1) % 7].value
+                for fs in request.fixed_sports
+                if fs.sport in IMPACT_SPORTS
+            }
+        )
+        if impact_days:
+            lines.append(
+                "- AUCUNE séance de qualité (tempo, threshold, intervals) ni sortie "
+                "longue le lendemain d'un sport à impacts. Concrètement, selon le "
+                "jour où tu places ce sport, les jours à éviter sont : "
+                + ", ".join(impact_days)
+                + ". Si le sport est flexible, c'est le lendemain du jour que TU "
+                "choisis qui est interdit."
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -607,6 +643,169 @@ async def _call_anthropic(
 
 _PLAN_TOP_LEVEL_KEYS = frozenset({"goal", "phases"})
 
+# Every per-week violation is prefixed "Semaine N : " by plan_validation.
+_WEEK_IN_VIOLATION = re.compile(r"Semaine (\d+)\s*:")
+# Repair rounds are cheap — a handful of weeks in, a handful out — so several
+# fit where one full regeneration doesn't.
+_MAX_REPAIR_ROUNDS = 3
+
+
+def _repair_tool_schema() -> dict:
+    """Schema for handing back a few corrected weeks instead of a whole plan."""
+    week = Week.model_json_schema(ref_template="#/$defs/{model}")
+    defs = week.pop("$defs", {})
+    defs.get("Session", {}).get("properties", {}).pop("skipped", None)
+    return {
+        "type": "object",
+        "properties": {"weeks": {"type": "array", "items": week}},
+        "required": ["weeks"],
+        "$defs": defs,
+    }
+
+
+_REPAIR_TOOL = {
+    "name": "submit_weeks",
+    "description": (
+        "Renvoie UNIQUEMENT les semaines corrigées, complètes (toutes leurs "
+        "séances). Ne renvoie pas les autres semaines du plan."
+    ),
+    "input_schema": _repair_tool_schema(),
+}
+
+
+def _violation_weeks(violations: list[str]) -> set[int] | None:
+    """Week indices the violations point at, or None when any of them is about
+    the plan as a whole (week count, taper, all-deload).
+
+    None means a targeted repair can't express the fix, so the caller falls back
+    to regenerating everything — the repair path must never quietly drop a
+    violation it has no way to address."""
+    indices: set[int] = set()
+    for violation in violations:
+        match = _WEEK_IN_VIOLATION.search(violation)
+        if match is None:
+            return None
+        indices.add(int(match.group(1)))
+    return indices
+
+
+def _plan_outline(plan: Plan) -> str:
+    """One line per week: enough for the model to keep the plan coherent while
+    rewriting a few weeks, without re-sending (or re-emitting) all of it."""
+    lines = []
+    for phase in plan.phases:
+        for week in phase.weeks:
+            days = " ".join(
+                f"{s.day.value[:3]}:{s.type}" for s in week.sessions if s.type != "rest"
+            )
+            flag = " DELOAD" if week.is_deload else ""
+            lines.append(
+                f"S{week.index} [{phase.name}{flag}] charge={week.target_load:.0f} — {days}"
+            )
+    return "\n".join(lines)
+
+
+def _splice_weeks(plan: Plan, repaired: list[Week]) -> int:
+    """Replace weeks in place by index. Returns how many actually landed —
+    a week the model invented an index for is ignored rather than appended."""
+    by_index = {week.index: week for week in repaired}
+    applied = 0
+    for phase in plan.phases:
+        for position, week in enumerate(phase.weeks):
+            replacement = by_index.get(week.index)
+            if replacement is not None:
+                phase.weeks[position] = replacement
+                applied += 1
+    return applied
+
+
+async def _repair_rounds(
+    client: "anthropic.AsyncAnthropic",
+    system: str,
+    plan: Plan,
+    violations: list[str],
+    request: PlanRequest,
+    start: date,
+    context: dict,
+    deadline: float,
+) -> tuple[Plan, list[str]]:
+    """Fix the flagged weeks by rewriting only those weeks.
+
+    Regenerating a 16-week plan to correct four of its weeks costs a full
+    generation — over 125s at that length, which is more than the whole budget
+    allows for a second attempt. So the retry that never got to run becomes a
+    small call: the offending weeks go out, the corrected ones come back, and the
+    complete plan is re-validated. Returns the plan (repaired or not) and the
+    violations still standing."""
+    for _ in range(_MAX_REPAIR_ROUNDS):
+        targets = _violation_weeks(violations)
+        remaining = deadline - time.monotonic()
+        if not targets or remaining < _MIN_ATTEMPT_S:
+            return plan, violations
+
+        current = [w for phase in plan.phases for w in phase.weeks if w.index in targets]
+        if not current:
+            return plan, violations
+
+        prompt = (
+            "Le plan que tu as produit viole ces règles :\n- "
+            + "\n- ".join(violations)
+            + "\n\nVoici la structure complète du plan, pour garder la cohérence "
+            "d'ensemble (progression, deloads, sortie longue) :\n"
+            + _plan_outline(plan)
+            + "\n\nEt le contenu intégral des semaines à corriger :\n"
+            + json.dumps(
+                [
+                    w.model_dump(mode="json", exclude={"sessions": {"__all__": {"skipped"}}})
+                    for w in current
+                ],
+                ensure_ascii=False,
+            )
+            + "\n\nRenvoie via submit_weeks UNIQUEMENT ces semaines, corrigées et "
+            "complètes (index inchangé, toutes leurs séances). Ne touche à rien "
+            "d'autre."
+        )
+        try:
+            response = await client.messages.create(
+                model=settings.plan_model,
+                max_tokens=_MAX_TOKENS,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[_REPAIR_TOOL],
+                tool_choice={"type": "tool", "name": _REPAIR_TOOL["name"]},
+                timeout=min(_ANTHROPIC_TIMEOUT_S, remaining),
+            )
+        except anthropic.APIError:
+            return plan, violations  # the caller still has its full-retry path
+
+        block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+        payload = getattr(block, "input", None)
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                return plan, violations
+        if not isinstance(payload, dict) or not payload.get("weeks"):
+            return plan, violations
+
+        candidate = plan.model_copy(deep=True)
+        try:
+            repaired = [Week.model_validate(w) for w in payload["weeks"]]
+        except ValidationError:
+            return plan, violations
+        if _splice_weeks(candidate, repaired) == 0:
+            return plan, violations
+
+        still = plan_validation.validate_plan(candidate, request, start, context)
+        # Only keep the repair if it actually helped: a rewrite that trades four
+        # violations for five would otherwise be adopted and repaired again.
+        if len(still) >= len(violations):
+            return plan, violations
+        plan, violations = candidate, still
+        if not violations:
+            return plan, []
+    return plan, violations
+
 
 def _unwrapped(plan_input: dict) -> dict:
     """Accept a plan the model wrapped in an extra key.
@@ -705,6 +904,16 @@ async def _generate_valid_plan(
         violations = plan_validation.validate_plan(plan, request, start, context)
         if not violations:
             return plan
+
+        # Try to mend the flagged weeks before spending another full generation:
+        # on a long plan a regeneration costs more than the whole remaining
+        # budget, so this is the only retry that actually fits.
+        plan, violations = await _repair_rounds(
+            client, system, plan, violations, request, start, context, deadline
+        )
+        if not violations:
+            return plan
+
         last_problem = " ; ".join(violations)
         _record(
             assistant_content,
