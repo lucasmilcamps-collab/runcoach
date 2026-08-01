@@ -48,10 +48,11 @@ from app.services import (
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
-# Ceiling for ONE attempt. A full multi-week plan is a big tool call (~40-60
-# sessions) and usually lands in 45-60s; 75s absorbs a slow one without letting
-# a single stuck call swallow the whole budget.
-_ANTHROPIC_TIMEOUT_S = 75.0
+# Ceiling for ONE attempt. Measured, not guessed: a 17-week plan (~70 sessions)
+# times out at 75s. With the SDK's own retries off the wall clock is finally
+# predictable, so the first attempt can be given the bulk of the budget —
+# producing a plan at all is what matters, and what follows is cheap.
+_ANTHROPIC_TIMEOUT_S = 110.0
 # Global wall-clock budget across all attempts, and the reason the two constants
 # differ: at 160/160 a first attempt that burned its own ceiling left nothing,
 # so the retry the validator exists for never happened. Keeping the total at
@@ -74,6 +75,11 @@ _MIN_ATTEMPT_S = 25.0
 # the case it was built for: a 17-week plan that takes ~125s to generate leaves
 # under 25s, so the cheap fix that would have taken seconds never ran.
 _MIN_REPAIR_S = 8.0
+# Held back from the generation call so a plan that arrives invalid can still be
+# mended. The mechanical fix is free and a repair round costs seconds, whereas a
+# second full generation costs everything left — reserving for the cheap path
+# beats hoping there is room for the expensive one.
+_REPAIR_RESERVE_S = 30.0
 # Weeks per repair round. A systematic violation flags every week, and a repair
 # that resends all of them is as big and as slow as the regeneration it exists
 # to avoid — batching keeps each round small, and three rounds cover a long
@@ -618,9 +624,11 @@ async def _call_anthropic(
             timeout=timeout_s,
         )
     except anthropic.APITimeoutError as exc:
-        raise PlanGenerationError(
-            "Le modèle a mis trop de temps à répondre (timeout). Réessayez."
-        ) from exc
+        # Transient like the rest. Leaving it fatal was an oversight of the
+        # max_retries=0 change: the SDK used to absorb a slow response, and once
+        # it stopped, a single overrun killed the whole generation instead of
+        # costing one attempt.
+        raise TransientApiError("Le modèle a mis trop de temps à répondre (timeout).") from exc
     except anthropic.AuthenticationError as exc:
         raise PlanGenerationError(
             "Clé API Anthropic refusée (401). Vérifiez ANTHROPIC_API_KEY sur Render."
@@ -1020,8 +1028,11 @@ async def _generate_valid_plan(
                 f"Dernier problème : {last_problem[:300]}"
             )
         try:
+            call_timeout = max(
+                _MIN_ATTEMPT_S, min(_ANTHROPIC_TIMEOUT_S, remaining - _REPAIR_RESERVE_S)
+            )
             plan_input, tool_use_id, assistant_content = await _call_anthropic(
-                client, system, user, history, min(_ANTHROPIC_TIMEOUT_S, remaining)
+                client, system, user, history, call_timeout
             )
         except TransientApiError as exc:
             # A rate limit or a 5xx costs an attempt but not the generation: back
