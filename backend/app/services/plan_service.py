@@ -5,6 +5,7 @@ violations as feedback (max 3) → persist as a new immutable version. The model
 proposes; validate_plan guarantees. The API key lives server-side only and is
 never logged, nor is any health data (project security rules)."""
 
+import asyncio
 import json
 import math
 import re
@@ -70,6 +71,9 @@ _MIN_ATTEMPT_S = 25.0
 # the case it was built for: a 17-week plan that takes ~125s to generate leaves
 # under 25s, so the cheap fix that would have taken seconds never ran.
 _MIN_REPAIR_S = 8.0
+# Backoff after an upstream hiccup. Short on purpose: the budget is the real
+# limit, and a long sleep would spend it doing nothing.
+_TRANSIENT_BACKOFF_S = 2.0
 # A full multi-week plan JSON (rationale + structure + paces per session) is
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
@@ -106,6 +110,14 @@ class NoActivePlanError(Exception):
 class PlanGenerationError(Exception):
     """Raised when generation can't produce a valid plan (bad key, upstream
     failure, or 3 failed validation attempts). Carries a user-safe message."""
+
+
+class TransientApiError(Exception):
+    """An upstream hiccup worth one more go — rate limit, network, 5xx.
+
+    These used to end the generation outright, because the SDK had already
+    retried behind our back and a failure meant it had given up. With the SDK's
+    retries off, the decision comes back here, where the deadline is known."""
 
 
 class UnusableToolInput(Exception):
@@ -586,19 +598,22 @@ async def _call_anthropic(
             f"Modèle « {settings.plan_model} » introuvable (404). Vérifiez PLAN_MODEL."
         ) from exc
     except anthropic.RateLimitError as exc:
-        raise PlanGenerationError(
-            "Limite de requêtes Anthropic atteinte (429). Réessayez dans un instant."
-        ) from exc
+        raise TransientApiError("Limite de requêtes Anthropic atteinte (429).") from exc
     except anthropic.APIStatusError as exc:
+        detail = (exc.message or "")[:160]
+        # 5xx is Anthropic having a moment, not our request being wrong.
+        if exc.status_code >= 500:
+            raise TransientApiError(
+                f"Anthropic indisponible (HTTP {exc.status_code}) : {detail}"
+            ) from exc
         # Any other non-2xx (incl. 400 "credit balance too low"). Surface the
         # status and upstream message so the cause is diagnosable — the message
         # never contains the API key, only Anthropic's own error text.
-        detail = (exc.message or "")[:160]
         raise PlanGenerationError(
             f"Erreur Anthropic (HTTP {exc.status_code} · {exc.type}) : {detail}"
         ) from exc
     except anthropic.APIConnectionError as exc:
-        raise PlanGenerationError("Impossible de joindre Anthropic (réseau). Réessayez.") from exc
+        raise TransientApiError("Impossible de joindre Anthropic (réseau).") from exc
 
     if getattr(response, "stop_reason", None) == "max_tokens":
         # The tool JSON was cut mid-way: retrying regenerates the same too-long
@@ -848,14 +863,23 @@ async def _generate_valid_plan(
     user = _user_prompt(request, context, start, injury)
 
     # One client per generation (reused across attempts), not one per attempt.
+    # max_retries=0 is the point, not a detail. The SDK retries twice by default
+    # and `timeout` applies PER REQUEST, so one `messages.create(timeout=75)`
+    # could quietly spend 225s plus backoff — which is how a single "attempt"
+    # ate 125s of a 150s budget and starved the repair that would have fixed the
+    # plan. Retrying is this loop's job: it is the only thing here that knows
+    # the deadline.
     client = anthropic.AsyncAnthropic(
-        api_key=settings.anthropic_api_key, timeout=_ANTHROPIC_TIMEOUT_S
+        api_key=settings.anthropic_api_key,
+        timeout=_ANTHROPIC_TIMEOUT_S,
+        max_retries=0,
     )
 
     # Each entry: (assistant tool_use content, user tool_result content).
     history: list[tuple[list, list]] = []
     last_problem = "aucune réponse exploitable"
     repairs = 0
+    transient = 0
     deadline = time.monotonic() + _TOTAL_DEADLINE_S
 
     def _record(assistant_content: list, tool_use_id: str, feedback: str) -> None:
@@ -878,13 +902,28 @@ async def _generate_valid_plan(
         if attempt > 0 and remaining < _MIN_ATTEMPT_S:
             raise PlanGenerationError(
                 f"Budget temps de génération dépassé (~{_TOTAL_DEADLINE_S:.0f}s) "
-                f"après {attempt} tentative(s) et {repairs} réparation(s) ciblée(s). "
+                f"après {attempt} tentative(s), {repairs} réparation(s) ciblée(s) "
+                f"et {transient} incident(s) API. "
                 f"Dernier problème : {last_problem[:300]}"
             )
         try:
             plan_input, tool_use_id, assistant_content = await _call_anthropic(
                 client, system, user, history, min(_ANTHROPIC_TIMEOUT_S, remaining)
             )
+        except TransientApiError as exc:
+            # A rate limit or a 5xx costs an attempt but not the generation: back
+            # off briefly and let the loop's own deadline decide whether there is
+            # room for another. The SDK used to make this call for us, blind to
+            # the budget, and would burn it entirely on backoff.
+            last_problem = str(exc)
+            transient += 1
+            if deadline - time.monotonic() < _MIN_ATTEMPT_S:
+                raise PlanGenerationError(
+                    f"{last_problem} Plus de temps pour réessayer "
+                    f"(~{_TOTAL_DEADLINE_S:.0f}s de budget épuisé)."
+                ) from exc
+            await asyncio.sleep(_TRANSIENT_BACKOFF_S)
+            continue
         except UnusableToolInput as exc:
             last_problem = exc.problem
             _record(
@@ -941,8 +980,8 @@ async def _generate_valid_plan(
         )
 
     raise PlanGenerationError(
-        f"Plan invalide après {_MAX_ATTEMPTS} tentatives et {repairs} réparation(s) "
-        f"ciblée(s). Dernier problème : {last_problem[:400]}"
+        f"Plan invalide après {_MAX_ATTEMPTS} tentatives, {repairs} réparation(s) "
+        f"ciblée(s) et {transient} incident(s) API. Dernier problème : {last_problem[:400]}"
     )
 
 
