@@ -31,6 +31,7 @@ from app.models.plan import (
     RecoverySummary,
     TodaySession,
     Week,
+    Weekday,
 )
 from app.services import (
     fitness_service,
@@ -460,6 +461,53 @@ def _detraining_directive(context: dict) -> str:
     )
 
 
+def _impact_lines(request: PlanRequest) -> list[str]:
+    """Turn "no quality the day after an impact sport" into named days.
+
+    Two things were wrong with stating it as a rule. It also claimed the long
+    run was barred — the validator only bars tempo/threshold/intervals — which
+    over-constrained an already tight week. And for a FLEXIBLE sport it listed
+    every candidate day and left the model to work out which one mattered; the
+    model then placed a quality session the day after basket, week after week.
+
+    A flexible commitment only has to land on ONE of its days, so the day is
+    chosen here. One sport, one day, one barred day: checkable at a glance, and
+    the athlete can still move it week by week in the app."""
+    fixed: list[tuple[str, str]] = []  # (sport, day) actually planned
+    flexible_pool: dict[str, list[str]] = {}
+    for fs in request.fixed_sports:
+        if fs.sport not in IMPACT_SPORTS:
+            continue
+        if fs.flexible:
+            flexible_pool.setdefault(fs.sport.value, []).append(fs.day.value)
+        else:
+            fixed.append((fs.sport.value, fs.day.value))
+
+    for sport, days in flexible_pool.items():
+        # Earliest declared day, so the choice is stable across regenerations.
+        chosen = min(days, key=lambda d: WEEKDAY_ORDER.index(Weekday(d)))
+        fixed.append((sport, chosen))
+
+    if not fixed:
+        return []
+
+    lines = []
+    for sport, day in sorted(fixed):
+        after = WEEKDAY_ORDER[(WEEKDAY_ORDER.index(Weekday(day)) + 1) % 7].value
+        pool = flexible_pool.get(sport)
+        chose = (
+            f" (jour choisi parmi {'/'.join(pool)} — garde-le identique toutes les semaines)"
+            if pool
+            else ""
+        )
+        lines.append(
+            f"- {sport} se place le {day}{chose}. Conséquence NON NÉGOCIABLE : "
+            f"AUCUNE séance de qualité (tempo, threshold, intervals) le {after}, "
+            "aucune semaine. Une sortie longue ce jour-là est en revanche permise."
+        )
+    return lines
+
+
 def _counts_directive(request: PlanRequest) -> str:
     lo, hi = request.min_run_sessions_per_week, request.max_run_sessions_per_week
     lines = [
@@ -486,26 +534,7 @@ def _counts_directive(request: PlanRequest) -> str:
             + " ; ".join(parts)
             + "."
         )
-        # Name the days quality is barred from, rather than restating the rule.
-        # "No quality the day after an impact sport" needs the model to hold the
-        # basket day in mind on every week of a 16-week plan; a list of weekdays
-        # is checkable in one glance.
-        impact_days = sorted(
-            {
-                WEEKDAY_ORDER[(WEEKDAY_ORDER.index(fs.day) + 1) % 7].value
-                for fs in request.fixed_sports
-                if fs.sport in IMPACT_SPORTS
-            }
-        )
-        if impact_days:
-            lines.append(
-                "- AUCUNE séance de qualité (tempo, threshold, intervals) ni sortie "
-                "longue le lendemain d'un sport à impacts. Concrètement, selon le "
-                "jour où tu places ce sport, les jours à éviter sont : "
-                + ", ".join(impact_days)
-                + ". Si le sport est flexible, c'est le lendemain du jour que TU "
-                "choisis qui est interdit."
-            )
+        lines.extend(_impact_lines(request))
     return "\n".join(lines) + "\n"
 
 
@@ -753,6 +782,7 @@ async def _repair_rounds(
     start: date,
     context: dict,
     deadline: float,
+    constraints: str = "",
 ) -> tuple[Plan, list[str], int]:
     """Fix the flagged weeks by rewriting only those weeks.
 
@@ -777,6 +807,10 @@ async def _repair_rounds(
         rounds += 1
 
         prompt = (
+            # Without this the repair is asked to fix violations while blind to
+            # the rules: the hard constraints live in the user prompt, which the
+            # repair call doesn't replay. It fixed one week and broke another.
+            f"{constraints}\n"
             "Le plan que tu as produit viole ces règles :\n- "
             + "\n- ".join(violations)
             + "\n\nVoici la structure complète du plan, pour garder la cohérence "
@@ -861,6 +895,7 @@ async def _generate_valid_plan(
 
     system = _system_prompt(request)
     user = _user_prompt(request, context, start, injury)
+    constraints = f"{_weeks_directive(request, start)}\n{_counts_directive(request)}"
 
     # One client per generation (reused across attempts), not one per attempt.
     # max_retries=0 is the point, not a detail. The SDK retries twice by default
@@ -964,7 +999,7 @@ async def _generate_valid_plan(
         # on a long plan a regeneration costs more than the whole remaining
         # budget, so this is the only retry that actually fits.
         plan, violations, rounds = await _repair_rounds(
-            client, system, plan, violations, request, start, context, deadline
+            client, system, plan, violations, request, start, context, deadline, constraints
         )
         repairs += rounds
         if not violations:
