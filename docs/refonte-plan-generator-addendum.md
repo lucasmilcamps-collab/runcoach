@@ -330,15 +330,20 @@ tentative est en plus bornée par le budget restant, donc le total ne dépasse
 jamais 150 s. `plan-generator/SKILL.md` porte les valeurs réelles, et
 `test_skill_documents_the_real_timeouts` échoue si le skill et le code divergent.
 
-**Correction (31/07)** : la vérification demandée par la spec (« 150 s reste-t-il
-sous le timeout HTTP de l'hébergeur ? ») avait été notée comme faite, sur la foi
-d'un « Render laisse une réponse durer jusqu'à 100 min » qui venait d'un résumé
-de recherche web et non de la doc Render. **Ce point reste donc ouvert** : la
-limite d'inactivité sur la requête entrante n'est pas mesurée, et c'est l'unique
-hypothèse qui rend le design synchrone acceptable. Procédure de mesure et
-endpoint temporaire `GET /debug/slow` : voir `plan-generator/SKILL.md`, section
-« Limite de requête entrante ». Si le test échoue à 150 s, l'option B ci-dessus
-(génération en job) redevient la solution.
+**Correction (31/07, puis 01/08)** : la vérification demandée par la spec
+(« 150 s reste-t-il sous le timeout HTTP de l'hébergeur ? ») avait d'abord été
+notée comme faite sur la foi d'une source non vérifiée. Elle est désormais **sans
+objet** : la mesure du coût réel d'un plan a montré que la question ne se posait
+pas dans ce sens. Un plan de 17 semaines pèse ~12 500 tokens de sortie, soit 200
+à 350 s de génération pure — aucune requête HTTP n'a jamais pu porter ça, quel
+que soit le timeout de la plateforme.
+
+**L'option B a donc été retenue et implémentée** : la génération est un job
+(`start_generation` → `run_generation_job`), `POST /plans` renvoie 202 + un job,
+et le mobile interroge son statut (`usePlanGeneration`). Le budget est
+dimensionné sur le coût mesuré d'un plan, plus sur ce qu'une requête peut
+survivre. L'endpoint temporaire `GET /debug/slow` a été retiré avec son réglage
+et son test : il servait à mesurer une limite qui ne contraint plus rien.
 
 ### 7.3 — `training-science/SKILL.md`
 

@@ -114,6 +114,17 @@ def _rate_limit_error() -> anthropic.RateLimitError:
     return anthropic.RateLimitError("429", response=httpx.Response(429, request=request), body=None)
 
 
+async def _drain_jobs() -> None:
+    """Let the queued generation task finish.
+
+    POST /plans returns a job now, so an endpoint test has to wait for the
+    worker the way the athlete's client polls for it."""
+    import asyncio
+
+    while plan_service._RUNNING_JOBS:
+        await asyncio.gather(*list(plan_service._RUNNING_JOBS))
+
+
 def _no_repair():
     """Bypass the targeted-repair round. These tests are about the full
     regeneration retry and the time budget; repair has its own tests below."""
@@ -214,6 +225,13 @@ async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
         plan_service._ANTHROPIC_TIMEOUT_S,
         plan_service._TOTAL_DEADLINE_S - plan_service._REPAIR_RESERVE_S,
     )
+    second_call = max(
+        plan_service._MIN_ATTEMPT_S,
+        min(
+            plan_service._ANTHROPIC_TIMEOUT_S,
+            plan_service._TOTAL_DEADLINE_S - first_call - plan_service._REPAIR_RESERVE_S,
+        ),
+    )
     ticks = iter([0.0, 0.0, first_call])
 
     def _clock() -> float:
@@ -236,7 +254,7 @@ async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
     # spending the lot; the second gets what is left, floored so it is worth
     # starting at all.
     assert timeouts[0] == pytest.approx(first_call)
-    assert timeouts[1] == pytest.approx(plan_service._MIN_ATTEMPT_S)
+    assert timeouts[1] == pytest.approx(second_call)
     assert sum(timeouts) <= plan_service._TOTAL_DEADLINE_S
 
 
@@ -302,14 +320,18 @@ async def test_replan_injury_endpoint(client, db):
             headers={"Authorization": f"Bearer {token}"},
             json=_request().model_dump(mode="json"),
         )
+        await _drain_jobs()
         response = await client.post(
             "/api/v1/plans/replan-injury",
             headers={"Authorization": f"Bearer {token}"},
             json={"area": "genou gauche", "severity": "gene", "days_off": 5},
         )
+        await _drain_jobs()
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ready"
+    assert response.status_code == 202
+    assert response.json()["type"] == plan_service.PLAN_JOB_TYPE
+    # Two versions on file: the original plan and the comeback.
+    assert await db.plans.count_documents({}) == 2
 
 
 async def test_replan_injury_requires_existing_plan(client, db):
@@ -403,6 +425,7 @@ async def test_versions_endpoint(client, db):
             headers={"Authorization": f"Bearer {token}"},
             json=_request().model_dump(mode="json"),
         )
+        await _drain_jobs()
 
     listing = await client.get(
         "/api/v1/plans/versions", headers={"Authorization": f"Bearer {token}"}
@@ -437,11 +460,25 @@ async def test_plans_endpoint_generates(client, db):
             headers={"Authorization": f"Bearer {token}"},
             json=_request().model_dump(mode="json"),
         )
+        await _drain_jobs()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ready"
-    assert body["plan"]["phases"][0]["weeks"][0]["index"] == 1
+    # The endpoint hands back a job, not a plan: a 17-week plan is minutes of
+    # model time, which no HTTP request should hold open.
+    assert response.status_code == 202
+    job = response.json()
+    assert job["type"] == plan_service.PLAN_JOB_TYPE
+    assert job["status"] in ("pending", "running")
+
+    finished = await client.get(
+        f"/api/v1/jobs/{job['id']}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert finished.json()["status"] == "done"
+
+    current = await client.get(
+        "/api/v1/plans/current", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert current.json()["status"] == "ready"
+    assert current.json()["plan"]["phases"][0]["weeks"][0]["index"] == 1
 
 
 async def _seed_ready_plan(db, user_id: str, sessions_by_day: dict) -> None:

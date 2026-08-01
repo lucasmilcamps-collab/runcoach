@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.db import get_db
 from app.core.security import get_current_user
+from app.models.job import JobResponse
 from app.models.plan import (
     InjuryReport,
     PlanOverview,
@@ -45,19 +46,21 @@ def _session_not_found_error() -> HTTPException:
     )
 
 
-@router.post("", response_model=PlanResponse)
+@router.post("", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_plan(
     body: PlanRequest,
     db: AsyncIOMotorDatabase = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Generate a new plan version from the athlete's request. Synchronous:
-    resolves only once the plan is generated, validated, and stored (or failed
-    with a message)."""
-    return await plan_service.generate_plan(db, str(user["_id"]), body)
+    """Queue a plan generation and return its job.
+
+    Not synchronous, and it can't be: a 17-week plan is ~12.5k output tokens,
+    three to six minutes of model time. Poll `GET /api/v1/jobs/{id}`; once it
+    reports `done`, `GET /api/v1/plans/current` has the plan."""
+    return await plan_service.start_generation(db, str(user["_id"]), body)
 
 
-@router.post("/replan-injury", response_model=PlanResponse)
+@router.post("/replan-injury", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def replan_injury(
     body: InjuryReport,
     db: AsyncIOMotorDatabase = Depends(get_db),
@@ -65,7 +68,7 @@ async def replan_injury(
 ):
     """Declare an injury and regenerate the remaining plan as a comeback (eased-off
     period then a gradual ramp). Reuses the current plan's objective; a plan must
-    already exist."""
+    already exist. Queued like any generation — poll the returned job."""
     user_id = str(user["_id"])
     current = await plan_service.get_current_plan(db, user_id)
     if current is None or current.request is None:
@@ -73,7 +76,7 @@ async def replan_injury(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NO_PLAN", "message": "Aucun plan à réadapter."},
         )
-    return await plan_service.generate_plan(db, user_id, current.request, injury=body)
+    return await plan_service.start_generation(db, user_id, current.request, injury=body)
 
 
 @router.get("/today", response_model=TodaySession)

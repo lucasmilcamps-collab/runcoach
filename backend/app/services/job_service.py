@@ -1,9 +1,14 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.job import JobResponse, JobStatus
+
+# A job whose worker died leaves its row saying RUNNING for ever, and the client
+# polls a status that will never change. Past this, a running job is reported as
+# failed: generation is the long one and it is bounded well under this.
+_STALE_AFTER = timedelta(minutes=30)
 
 
 async def create_job(db: AsyncIOMotorDatabase, user_id: str, job_type: str) -> str:
@@ -48,12 +53,26 @@ async def get_job(db: AsyncIOMotorDatabase, job_id: str, user_id: str) -> JobRes
     doc = await db.jobs.find_one({"_id": ObjectId(job_id), "user_id": user_id})
     if doc is None:
         return None
+
+    job_status = doc["status"]
+    error_message = doc.get("error_message")
+    if job_status in (JobStatus.PENDING, JobStatus.RUNNING) and _is_stale(doc["updated_at"]):
+        # Reported, not written back: the worker may yet finish, and a row this
+        # code rewrote would then contradict it. The client needs an answer now.
+        job_status = JobStatus.FAILED
+        error_message = "Tâche interrompue (serveur redémarré). Relancez-la."
+
     return JobResponse(
         id=str(doc["_id"]),
         type=doc["type"],
-        status=doc["status"],
+        status=job_status,
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
-        error_message=doc.get("error_message"),
+        error_message=error_message,
         result_summary=doc.get("result_summary"),
     )
+
+
+def _is_stale(updated_at: datetime) -> bool:
+    aware = updated_at.replace(tzinfo=UTC) if updated_at.tzinfo is None else updated_at
+    return datetime.now(UTC) - aware > _STALE_AFTER

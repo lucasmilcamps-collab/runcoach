@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.models.activity import SportType
 from app.models.fitness import FitnessResponse
+from app.models.job import JobResponse, JobStatus
 from app.models.plan import (
     IMPACT_SPORTS,
     QUALITY_SESSION_TYPES,
@@ -37,6 +38,7 @@ from app.models.plan import (
 )
 from app.services import (
     fitness_service,
+    job_service,
     load_service,
     performance_service,
     plan_adaptation,
@@ -48,43 +50,35 @@ from app.services import (
 
 _MAX_ATTEMPTS = 3
 _RUN_VOLUME_DAYS = 56  # last 8 weeks
-# Ceiling for ONE attempt. Measured, not guessed: a 17-week plan (~70 sessions)
-# times out at 75s. With the SDK's own retries off the wall clock is finally
-# predictable, so the first attempt can be given the bulk of the budget —
-# producing a plan at all is what matters, and what follows is cheap.
-_ANTHROPIC_TIMEOUT_S = 110.0
-# Global wall-clock budget across all attempts, and the reason the two constants
-# differ: at 160/160 a first attempt that burned its own ceiling left nothing,
-# so the retry the validator exists for never happened. Keeping the total at
-# 2× one attempt means a maxed-out first pass still leaves a full correction
-# round, and each attempt is additionally capped to whatever is left (see
-# `_generate_valid_plan`) so the sum never overruns this.
+# Generation runs in a background job, so these are sized by what a plan
+# actually costs rather than by what an HTTP request can survive. Measured: a
+# 17-week plan is ~12.5k output tokens, 200-350s. It could never fit the 150s
+# the synchronous design allowed, at any timeout — that is what the job is for.
 #
-# UNVERIFIED ASSUMPTION: generation runs inside the HTTP request and sends
-# nothing for up to 150s. Streaming protects the call OUT to Anthropic, not the
-# request coming IN — an idle-connection limit on the host would cut the client
-# while this keeps spending tokens. Nobody has measured where that limit sits.
-# See the plan-generator skill, "Limite de requête entrante", for the test to
-# run and what to do if 150s doesn't hold (move generation to job_service).
-_TOTAL_DEADLINE_S = 150.0
+# Ceiling for ONE attempt: generous enough for a marathon-length plan with room
+# to spare, tight enough that a stuck call still ends.
+_ANTHROPIC_TIMEOUT_S = 420.0
+# Global wall-clock budget across all attempts. Strictly greater than one
+# attempt, so a first pass that burns its ceiling still leaves a correction
+# round — the property that was broken when both were 160s.
+_TOTAL_DEADLINE_S = 900.0
 # Below this, what's left of the budget can't produce a plan — don't burn tokens
 # on an attempt that will be cut off mid-generation.
-_MIN_ATTEMPT_S = 25.0
+_MIN_ATTEMPT_S = 60.0
 # A repair rewrites a handful of weeks, not a plan, so it needs a fraction of
 # that headroom. Holding it to the full-generation minimum starved it in exactly
-# the case it was built for: a 17-week plan that takes ~125s to generate leaves
-# under 25s, so the cheap fix that would have taken seconds never ran.
+# the case it was built for.
 _MIN_REPAIR_S = 8.0
-# Held back from the generation call so a plan that arrives invalid can still be
-# mended. The mechanical fix is free and a repair round costs seconds, whereas a
-# second full generation costs everything left — reserving for the cheap path
-# beats hoping there is room for the expensive one.
-_REPAIR_RESERVE_S = 30.0
 # Weeks per repair round. A systematic violation flags every week, and a repair
 # that resends all of them is as big and as slow as the regeneration it exists
 # to avoid — batching keeps each round small, and three rounds cover a long
 # plan because a round is only kept when the violation count drops.
 _MAX_REPAIR_WEEKS = 6
+# Held back from the generation call so a plan that arrives invalid can still be
+# mended. The mechanical fix is free and a repair round costs seconds, whereas a
+# second full generation costs everything left — reserving for the cheap path
+# beats hoping there is room for the expensive one.
+_REPAIR_RESERVE_S = 180.0
 # Backoff after an upstream hiccup. Short on purpose: the budget is the real
 # limit, and a long sleep would spend it doing nothing.
 _TRANSIENT_BACKOFF_S = 2.0
@@ -92,6 +86,9 @@ _TRANSIENT_BACKOFF_S = 2.0
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
 _MAX_TOKENS = 32000
+
+# Strong references to in-flight generation tasks (asyncio keeps only weak ones).
+_RUNNING_JOBS: set[asyncio.Task] = set()
 
 
 def _plan_tool_schema() -> dict:
@@ -1309,6 +1306,82 @@ async def generate_plan(
         projected_time_min=projected_min,
         feasibility_warning=feasibility,
     )
+
+
+PLAN_JOB_TYPE = "plan_generation"
+
+
+async def run_generation_job(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    job_id: str,
+    request: PlanRequest,
+    injury: InjuryReport | None = None,
+) -> None:
+    """Fire-and-forget background job — must never raise, or the exception is
+    only ever seen in asyncio's default logger.
+
+    Generation takes minutes on a long plan, which is more than an HTTP request
+    should hold open. The job row is the durable part: the athlete's client polls
+    it, and if this process is recycled mid-run the row is what says so (see
+    `job_service.get_job`, which fails a job left running past its ceiling)
+    instead of a request hanging until the platform cuts it."""
+    await job_service.update_job(db, job_id, JobStatus.RUNNING)
+    try:
+        result = await generate_plan(db, user_id, request, injury)
+    except Exception as exc:  # noqa: BLE001 — a background job must never crash silently
+        await job_service.update_job(db, job_id, JobStatus.FAILED, error_message=str(exc))
+        return
+
+    if result.status == "failed":
+        # The failed version is persisted either way (it is the athlete's record
+        # of what was attempted); the job carries the reason to the screen.
+        await job_service.update_job(
+            db, job_id, JobStatus.FAILED, error_message=result.error_message
+        )
+        return
+    await job_service.update_job(
+        db,
+        job_id,
+        JobStatus.DONE,
+        result_summary={"plan_id": result.id, "status": result.status},
+    )
+
+
+async def start_generation(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    request: PlanRequest,
+    injury: InjuryReport | None = None,
+) -> JobResponse:
+    """Queue a generation and return its job straight away.
+
+    A plan of a dozen-plus weeks costs more model time than any HTTP request can
+    reasonably hold, so the endpoint hands back a job id and the client polls it.
+    A generation already in flight is returned as-is rather than started twice —
+    a double tap on "générer" should not buy two plans."""
+    existing = await db.jobs.find_one(
+        {
+            "user_id": user_id,
+            "type": PLAN_JOB_TYPE,
+            "status": {"$in": [JobStatus.PENDING, JobStatus.RUNNING]},
+        },
+        sort=[("created_at", -1)],
+    )
+    if existing is not None:
+        running = await job_service.get_job(db, str(existing["_id"]), user_id)
+        if running is not None and running.status in (JobStatus.PENDING, JobStatus.RUNNING):
+            return running
+
+    job_id = await job_service.create_job(db, user_id, PLAN_JOB_TYPE)
+    task = asyncio.create_task(run_generation_job(db, user_id, job_id, request, injury))
+    # Hold a reference: asyncio only keeps a weak one, and a garbage-collected
+    # task is a generation that silently never happens.
+    _RUNNING_JOBS.add(task)
+    task.add_done_callback(_RUNNING_JOBS.discard)
+    job = await job_service.get_job(db, job_id, user_id)
+    assert job is not None  # just created
+    return job
 
 
 async def unlogged_strength(

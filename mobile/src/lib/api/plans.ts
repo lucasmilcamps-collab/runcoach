@@ -158,8 +158,10 @@ export function getPlanProgress() {
  * Declare an injury and regenerate the remaining plan as a comeback (eased-off
  * period then a gradual ramp). Reuses the current plan's objective.
  */
+/** Queues a comeback replan and returns its job — same polling as a fresh
+ * generation (see `createPlan`). */
 export function reportInjury(injury: InjuryReport) {
-  return apiClient.post<PlanResponse>('/api/v1/plans/replan-injury', injury);
+  return apiClient.post<PlanJob>('/api/v1/plans/replan-injury', injury);
 }
 
 export function getCurrentPlan() {
@@ -234,8 +236,29 @@ export function getTodaySession() {
  * Generate a new plan. Resolves only when the backend has generated, validated,
  * and stored it (synchronous, like the Garmin sync) — can take ~10-30s.
  */
+/** A queued plan generation. */
+export type PlanJob = {
+  id: string;
+  type: string;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  error_message: string | null;
+  result_summary: { plan_id?: string; status?: string } | null;
+};
+
+/**
+ * Queues a generation and returns its job — it does NOT return a plan.
+ *
+ * A 17-week plan is ~12.5k output tokens, three to six minutes of model time;
+ * no HTTP request should be held open for that. Poll `getPlanJob` until it
+ * leaves `pending`/`running`, then read the plan from `getCurrentPlan`.
+ * `usePlanGeneration` does all of that.
+ */
 export function createPlan(request: PlanRequest) {
-  return apiClient.post<PlanResponse>('/api/v1/plans', request);
+  return apiClient.post<PlanJob>('/api/v1/plans', request);
+}
+
+export function getPlanJob(jobId: string) {
+  return apiClient.get<PlanJob>(`/api/v1/jobs/${jobId}`);
 }
 
 /** The activity linked to a planned session, plus that session's calendar date

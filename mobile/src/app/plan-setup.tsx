@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
@@ -10,10 +10,10 @@ import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
-import { ApiError } from '@/lib/api/client';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
 import { weekRangeLabel } from '@/lib/plan-overview';
+import { usePlanGeneration } from '@/lib/use-plan-generation';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
 // Per sport: day → isFlexible. Flexibility is per DAY (e.g. basket Wed fixed +
@@ -186,14 +186,7 @@ export default function PlanSetupScreen() {
     });
   }
 
-  const mutation = useMutation({
-    mutationFn: (request: PlanRequest) => createPlan(request),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['plan'], data);
-      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-      router.back();
-    },
-  });
+  const generation = usePlanGeneration(createPlan, { onDone: () => router.back() });
 
   function toggleDay(day: Weekday) {
     setDays((prev) => {
@@ -230,17 +223,15 @@ export default function PlanSetupScreen() {
       include_cross_training: crossTraining,
       strength: { enabled: strengthOn, sessions_per_week: strengthPerWeek, duration_min: 20 },
     };
-    mutation.mutate(request);
+    generation.generate(request);
   }
 
   const errorMessage = (() => {
-    if (mutation.data?.status === 'failed') return mutation.data.error_message ?? undefined;
-    if (mutation.error instanceof ApiError) return mutation.error.message;
-    if (mutation.isError) return 'Impossible de générer le plan. Réessayez.';
+    return generation.errorMessage;
     return undefined;
   })();
 
-  const canSubmit = days.size >= 2 && !mutation.isPending;
+  const canSubmit = days.size >= 2 && !generation.isGenerating;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -273,7 +264,7 @@ export default function PlanSetupScreen() {
               onChangeText={(t) => {
                 setRaceDate(t);
                 setDateError(undefined);
-                mutation.reset();
+                generation.reset();
               }}
               error={dateError}
               placeholder="AAAA-MM-JJ"
@@ -413,10 +404,10 @@ export default function PlanSetupScreen() {
             })}
           </Field>
 
-          {mutation.isPending ? (
+          {generation.isGenerating ? (
             <ThemedText type="small" themeColor="textSecondary">
-              Génération du plan en cours… l’IA construit et vérifie chaque semaine, ça peut prendre
-              une trentaine de secondes.
+              Génération en cours… l’IA construit et vérifie chaque semaine. Compte deux à cinq
+              minutes pour un plan long — tu peux quitter l’écran, le plan t’attendra.
             </ThemedText>
           ) : null}
           {errorMessage ? (
@@ -427,8 +418,8 @@ export default function PlanSetupScreen() {
         </ScrollView>
 
         <View style={styles.actions}>
-          <Button label="Générer mon plan" onPress={handleGenerate} loading={mutation.isPending} disabled={!canSubmit} />
-          <Button label="Annuler" variant="ghost" disabled={mutation.isPending} onPress={() => router.back()} />
+          <Button label="Générer mon plan" onPress={handleGenerate} loading={generation.isGenerating} disabled={!canSubmit} />
+          <Button label="Annuler" variant="ghost" disabled={generation.isGenerating} onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ import {
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
+import { usePlanGeneration } from '@/lib/use-plan-generation';
 import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -116,15 +117,7 @@ export default function PlanScreen() {
   });
   const queryClient = useQueryClient();
 
-  const replanMutation = useMutation({
-    mutationFn: (request: PlanRequest) => createPlan(request),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['plan'], data);
-      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
-    },
-  });
+  const replan = usePlanGeneration(createPlan);
 
   const noPlan = query.error instanceof ApiError && query.error.status === 404;
   const currentRequest = query.data?.request ?? null;
@@ -166,8 +159,8 @@ export default function PlanScreen() {
           {progressQuery.data?.replan_suggested && currentRequest ? (
             <ReplanBanner
               progress={progressQuery.data}
-              onReplan={() => replanMutation.mutate(currentRequest)}
-              isReplanning={replanMutation.isPending}
+              onReplan={() => replan.generate(currentRequest)}
+              isReplanning={replan.isGenerating}
             />
           ) : null}
 
