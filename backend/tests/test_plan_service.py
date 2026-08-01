@@ -1050,3 +1050,55 @@ async def test_schema_error_reports_the_keys_that_did_arrive(db):
     assert "clés reçues : objectif, semaines" in (result.error_message or "")
     feedback = create_mock.call_args_list[1].kwargs["messages"][2]["content"][0]["content"]
     assert "pas enveloppé" in feedback
+
+
+def test_deload_weeks_are_listed_not_left_to_be_derived():
+    """ "One deload per 4-week block" is a rule to apply four times over a
+    16-week plan, and the model dropped the last one. A list of week numbers is
+    something to copy instead."""
+    from datetime import date as _date
+
+    start = _date(2026, 8, 3)
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=42.2,
+        race_date=start + timedelta(weeks=16),
+        available_days=list(Weekday),
+    )
+    directive = plan_service._weeks_directive(req, start)
+    assert "EXACTEMENT 16 semaines" in directive
+    assert "4, 8, 12, 16" in directive
+    assert "aucune autre" in directive
+
+
+def test_impact_sport_names_the_days_quality_is_barred_from():
+    """Holding "no quality the day after basket" in mind across sixteen weeks is
+    what failed. The forbidden weekdays are derivable, so derive them."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        fixed_sports=[
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.FRIDAY, flexible=True),
+            FixedSport(sport=SportType.BASKETBALL, day=Weekday.SUNDAY, flexible=True),
+        ],
+    )
+    directive = plan_service._counts_directive(req)
+    assert "SATURDAY" in directive  # the day after Friday
+    assert "MONDAY" in directive  # the day after Sunday
+    assert "flexible" in directive
+
+
+def test_no_impact_line_without_an_impact_sport():
+    """A cycling commitment carries no impact, so the constraint isn't invented."""
+    from app.models.plan import FixedSport
+
+    req = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        fixed_sports=[FixedSport(sport=SportType.BIKE, day=Weekday.WEDNESDAY)],
+    )
+    assert "sport à impacts" not in plan_service._counts_directive(req)

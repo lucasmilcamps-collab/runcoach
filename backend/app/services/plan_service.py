@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.models.activity import SportType
 from app.models.fitness import FitnessResponse
 from app.models.plan import (
+    IMPACT_SPORTS,
     WEEKDAY_ORDER,
     DailyAdjustment,
     InjuryReport,
@@ -377,13 +378,27 @@ def _system_prompt(request: PlanRequest) -> str:
 def _weeks_directive(request: PlanRequest, start: date) -> str:
     if request.race_date is not None:
         weeks = max(1, math.ceil((request.race_date - start).days / 7))
+        # Spell the deload weeks out. "One per 4-week block" is a rule to apply
+        # 4 times over a 16-week plan, and the model dropped the last one; a
+        # list of week numbers is a thing to copy. Every 4th week satisfies
+        # MAX_CONSECUTIVE_NORMAL_WEEKS = 3 by construction.
+        deloads = list(range(4, weeks + 1, 4))
+        schedule = (
+            f" Marque is_deload=true EXACTEMENT sur ces semaines : "
+            f"{', '.join(str(w) for w in deloads)} — et sur aucune autre."
+            if deloads
+            else ""
+        )
         return (
             f"Le plan doit compter EXACTEMENT {weeks} semaines (il reste {weeks} "
             "semaines avant la course), la dernière étant la semaine de course "
             "avec un affûtage (taper) et une charge réduite. N'ajoute ni ne "
-            "retire de semaines."
+            f"retire de semaines.{schedule}"
         )
-    return "Construis un plan de 8 à 12 semaines."
+    return (
+        "Construis un plan de 8 à 12 semaines, avec une semaine is_deload=true "
+        "toutes les 4 semaines (semaines 4, 8, 12 selon la longueur retenue)."
+    )
 
 
 _SEVERITY_LABELS = {"gene": "gêne légère", "douleur": "douleur", "arret": "arrêt"}
@@ -448,6 +463,26 @@ def _counts_directive(request: PlanRequest) -> str:
             + " ; ".join(parts)
             + "."
         )
+        # Name the days quality is barred from, rather than restating the rule.
+        # "No quality the day after an impact sport" needs the model to hold the
+        # basket day in mind on every week of a 16-week plan; a list of weekdays
+        # is checkable in one glance.
+        impact_days = sorted(
+            {
+                WEEKDAY_ORDER[(WEEKDAY_ORDER.index(fs.day) + 1) % 7].value
+                for fs in request.fixed_sports
+                if fs.sport in IMPACT_SPORTS
+            }
+        )
+        if impact_days:
+            lines.append(
+                "- AUCUNE séance de qualité (tempo, threshold, intervals) ni sortie "
+                "longue le lendemain d'un sport à impacts. Concrètement, selon le "
+                "jour où tu places ce sport, les jours à éviter sont : "
+                + ", ".join(impact_days)
+                + ". Si le sport est flexible, c'est le lendemain du jour que TU "
+                "choisis qui est interdit."
+            )
     return "\n".join(lines) + "\n"
 
 
