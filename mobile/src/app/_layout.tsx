@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
+import { registerServiceWorker } from '@/lib/push';
 import { queryClient } from '@/lib/query-client';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
@@ -23,6 +24,14 @@ export default function RootLayout() {
     hydrate();
     hydratePreferences();
   }, [hydrate, hydratePreferences]);
+
+  // Registered here rather than on the dashboard: the worker caches the app
+  // shell, so it has to be installed whichever screen the PWA was opened on —
+  // a user who lands on Séances and then loses the network was previously left
+  // with no cache at all. No-op on native.
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded && isHydrated) {

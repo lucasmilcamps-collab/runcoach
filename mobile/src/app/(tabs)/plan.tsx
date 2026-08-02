@@ -7,6 +7,7 @@ import { Button } from '@/components/button';
 import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
+import { OfflineBanner } from '@/components/offline-banner';
 import { PlanWeekPager } from '@/components/plan-view';
 import { ScreenCrest } from '@/components/screen-crest';
 import { SportIcon } from '@/components/sport-icon';
@@ -138,6 +139,11 @@ export default function PlanScreen() {
           onScroll={onScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}>
+
+          {/* Above everything: this screen is the one read at 6am with no
+              network, and the age of what's below it is the first thing to
+              know. */}
+          <OfflineBanner />
 
           {ready ? (
             <View style={styles.historyRow}>
