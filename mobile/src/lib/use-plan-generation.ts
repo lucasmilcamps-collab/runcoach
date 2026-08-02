@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import { getPlanJob, type PlanJob } from '@/lib/api/plans';
+import { invalidatePlanReads, qk } from '@/lib/query-keys';
 
 /** How often the job is polled. Generation takes minutes, so a tight interval
  * would only add requests; slower than this and the plan sits ready unnoticed. */
@@ -35,7 +36,7 @@ export function usePlanGeneration<TArg>(
   });
 
   const jobQuery = useQuery({
-    queryKey: ['plan-job', jobId],
+    queryKey: qk.planJob(jobId),
     queryFn: () => getPlanJob(jobId as string),
     enabled: jobId != null,
     // Stop polling as soon as the job settles, either way.
@@ -43,7 +44,6 @@ export function usePlanGeneration<TArg>(
       const status = query.state.data?.status;
       return status === 'done' || status === 'failed' ? false : POLL_MS;
     },
-    retry: false,
   });
 
   const status = jobQuery.data?.status;
@@ -52,11 +52,7 @@ export function usePlanGeneration<TArg>(
     if (status !== 'done') return;
     setJobId(null);
     // The plan itself lives behind its own queries; the job only says "ready".
-    queryClient.invalidateQueries({ queryKey: ['plan'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-versions'] });
+    invalidatePlanReads(queryClient);
     onDone?.();
     // onDone is a fresh closure each render; keying on the status is what matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps

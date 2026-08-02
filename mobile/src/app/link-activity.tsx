@@ -15,6 +15,7 @@ import { Activity, listActivities } from '@/lib/api/activities';
 import { setSessionLink } from '@/lib/api/plans';
 import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 
 const WINDOW_DAYS = 10;
 
@@ -56,15 +57,15 @@ export default function LinkActivityScreen() {
   const sessionDate = params.sessionDate;
 
   const queryClient = useQueryClient();
-  const activitiesQuery = useQuery({ queryKey: ['activities'], queryFn: listActivities });
+  const activitiesQuery = useQuery({ queryKey: qk.activities(), queryFn: listActivities });
 
   const mutation = useMutation({
     mutationFn: (activityId: string) =>
       setSessionLink(weekIndex, day as Weekday, activityId, slot),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['session-link', weekIndex, day, slot] });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
+      queryClient.invalidateQueries({ queryKey: qk.sessionLink(weekIndex, day, slot) });
+      queryClient.invalidateQueries({ queryKey: qk.planProgress() });
+      queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
       router.back();
     },
   });

@@ -25,6 +25,7 @@ import { pressable } from '@/lib/pressable';
 import { registerServiceWorker } from '@/lib/push';
 import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
+import { qk } from '@/lib/query-keys';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
@@ -36,26 +37,24 @@ export default function DashboardScreen() {
   const { isSyncing, errorMessage } = useGarminSync();
 
   const activitiesQuery = useQuery({
-    queryKey: ['activities'],
+    queryKey: qk.activities(),
     queryFn: listActivities,
     enabled: garminConnected,
   });
   const fitnessQuery = useQuery({
-    queryKey: ['fitness'],
+    queryKey: qk.fitness(),
     queryFn: getFitness,
     enabled: garminConnected,
   });
-  const planQuery = useQuery({ queryKey: ['plan'], queryFn: getCurrentPlan, retry: false });
+  const planQuery = useQuery({ queryKey: qk.plan(), queryFn: getCurrentPlan });
   const progressQuery = useQuery({
-    queryKey: ['plan-progress'],
+    queryKey: qk.planProgress(),
     queryFn: getPlanProgress,
-    retry: false,
   });
   // Today's (form-adjusted) session powers the readiness hero's "next move".
   const todayQuery = useQuery({
-    queryKey: ['plan-today'],
+    queryKey: qk.planToday(),
     queryFn: getTodaySession,
-    retry: false,
   });
 
   // Register the Web Push service worker on web (no-op on native / unsupported).

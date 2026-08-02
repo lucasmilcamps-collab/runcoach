@@ -13,6 +13,7 @@ import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { listActivities } from '@/lib/api/activities';
 import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
+import { qk } from '@/lib/query-keys';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 
@@ -23,7 +24,7 @@ export default function ActivitiesScreen() {
   const { sync, isSyncing, errorMessage } = useGarminSync();
 
   const activitiesQuery = useQuery({
-    queryKey: ['activities'],
+    queryKey: qk.activities(),
     queryFn: listActivities,
     enabled: garminConnected,
   });

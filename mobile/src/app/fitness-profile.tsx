@@ -12,6 +12,7 @@ import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 import { PrimaryMetric, usePreferencesStore } from '@/lib/stores/preferences-store';
 
 // Kept in sync with the backend bounds (FitnessProfileUpdate). Client-side
@@ -29,7 +30,7 @@ function parseHr(value: string): number | null {
 
 export default function FitnessProfileScreen() {
   const queryClient = useQueryClient();
-  const fitnessQuery = useQuery({ queryKey: ['fitness'], queryFn: getFitness });
+  const fitnessQuery = useQuery({ queryKey: qk.fitness(), queryFn: getFitness });
 
   const primaryMetric = usePreferencesStore((s) => s.primaryMetric);
   const setPrimaryMetric = usePreferencesStore((s) => s.setPrimaryMetric);
@@ -53,7 +54,7 @@ export default function FitnessProfileScreen() {
   const saveMutation = useMutation({
     mutationFn: ({ max, rest }: { max: number; rest: number }) => updateFitnessProfile(max, rest),
     onSuccess: (data) => {
-      queryClient.setQueryData(['fitness'], data);
+      queryClient.setQueryData(qk.fitness(), data);
       router.back();
     },
   });

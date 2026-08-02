@@ -11,6 +11,7 @@ import { getPlanOverview, getPlanVersion } from '@/lib/api/plans';
 import type { Plan, PlanOverview, PlanPhase } from '@/lib/api/plans';
 import { PHASE_LABELS, formatDuration, frKm } from '@/lib/plan-format';
 import { PHASE_PURPOSE, phaseSpans, weeklyVolume, weekRangeLabel } from '@/lib/plan-overview';
+import { qk } from '@/lib/query-keys';
 
 export default function PlanCyclesScreen() {
   const { version } = useLocalSearchParams<{ version: string }>();
@@ -18,16 +19,14 @@ export default function PlanCyclesScreen() {
   const enabled = Number.isFinite(versionNumber);
 
   const planQuery = useQuery({
-    queryKey: ['plan-version', versionNumber],
+    queryKey: qk.planVersion.byVersion(versionNumber),
     queryFn: () => getPlanVersion(versionNumber),
     enabled,
-    retry: false,
   });
   const overviewQuery = useQuery({
-    queryKey: ['plan-overview', versionNumber],
+    queryKey: qk.planOverview.byVersion(versionNumber),
     queryFn: () => getPlanOverview(versionNumber),
     enabled,
-    retry: false,
   });
 
   const plan = planQuery.data?.plan ?? null;

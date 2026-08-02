@@ -27,6 +27,7 @@ import {
 } from '@/lib/api/plans';
 import type { PlanSession, Weekday } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 import { usePreferencesStore } from '@/lib/stores/preferences-store';
 import {
   DAY_LABELS,
@@ -116,25 +117,23 @@ export default function SessionDetailScreen() {
    * them: the detailed adherence screen is computed from the same completions
    * and overrides, so leaving it out left it showing yesterday's answer. */
   const invalidatePlan = () => {
-    queryClient.invalidateQueries({ queryKey: ['plan'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-    queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
+    queryClient.invalidateQueries({ queryKey: qk.plan() });
+    queryClient.invalidateQueries({ queryKey: qk.planToday() });
+    queryClient.invalidateQueries({ queryKey: qk.planProgress() });
+    queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
   };
+  const linkKey = qk.sessionLink(data?.weekNumber, data?.session.day, data?.session.slot);
   const linkQuery = useQuery({
-    queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
+    queryKey: linkKey,
     queryFn: () => getSessionLink(data!.weekNumber, data!.session.day, data!.session.slot),
     enabled: !!data,
-    retry: false,
   });
   const unlinkMutation = useMutation({
     mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null, data!.session.slot),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['session-link', data?.weekNumber, data?.session.day, data?.session.slot],
-      });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
+      queryClient.invalidateQueries({ queryKey: linkKey });
+      queryClient.invalidateQueries({ queryKey: qk.planProgress() });
+      queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
     },
   });
   const [editingDuration, setEditingDuration] = useState(false);

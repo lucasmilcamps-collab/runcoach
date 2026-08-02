@@ -29,6 +29,7 @@ import {
 } from '@/lib/api/plans';
 import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
 import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
@@ -93,25 +94,22 @@ function RecoveryStats({ recovery }: { recovery: RecoverySummary }) {
 
 export default function PlanScreen() {
   const query = useQuery({
-    queryKey: ['plan'],
+    queryKey: qk.plan(),
     queryFn: getCurrentPlan,
-    retry: false,
   });
   const todayQuery = useQuery({
-    queryKey: ['plan-today'],
+    queryKey: qk.planToday(),
     queryFn: getTodaySession,
-    retry: false,
   });
   const progressQuery = useQuery({
-    queryKey: ['plan-progress'],
+    queryKey: qk.planProgress(),
     queryFn: getPlanProgress,
-    retry: false,
   });
   const bottomPad = useTabScrollPadding();
   const { compact, onScroll } = useCompactHeader();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const activitiesQuery = useQuery({
-    queryKey: ['activities'],
+    queryKey: qk.activities(),
     queryFn: listActivities,
     enabled: garminConnected,
   });
