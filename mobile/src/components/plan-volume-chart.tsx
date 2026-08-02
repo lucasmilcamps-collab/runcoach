@@ -35,7 +35,12 @@ export function PlanVolumeChart({
       <View
         style={styles.chart}
         accessibilityRole="image"
-        accessibilityLabel={label(weeks, peak, metric)}>
+        accessibilityLabel={label(weeks, peak, metric)}
+        // The label says how much and over how long; the hint says what the
+        // bars encode — including that a short bar can be a planned deload
+        // rather than a gap, which is the single most misreadable thing about
+        // this chart and is carried on screen by tone alone.
+        accessibilityHint="Une barre par semaine, hauteur proportionnelle au volume prévu. Les barres les plus claires sont les semaines de décharge, prévues plus légères ; la barre la plus vive est la semaine en cours.">
         {weeks.map((week) => {
           const isCurrent = week.index === weekCurrent;
           return (

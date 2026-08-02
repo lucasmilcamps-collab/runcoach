@@ -46,7 +46,12 @@ export function PlanAdherenceGrid({ weeks }: { weeks: WeekAdherence[] }) {
         style={styles.grid}
         onLayout={onLayout}
         accessibilityRole="image"
-        accessibilityLabel={label(weeks)}>
+        accessibilityLabel={label(weeks)}
+        // The label gives the totals; the hint explains the shape those totals
+        // are drawn in, which is the part a non-sighted reader has no other way
+        // to reconstruct — and which the on-screen legend only tells you if you
+        // can see the swatches.
+        accessibilityHint="Une colonne par semaine, un carré par séance clé prévue : plein pour une séance faite, contour pour une manquée, estompé pour une séance à venir.">
         {width > 0
           ? weeks.map((week) => (
               <View key={week.week_index} style={styles.column}>
