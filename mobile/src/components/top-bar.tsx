@@ -5,6 +5,7 @@ import { AvatarButton } from '@/components/avatar-button';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, Spacing } from '@/constants/theme';
 import { displayNameFromEmail, getMe } from '@/lib/api/auth';
+import { qk } from '@/lib/query-keys';
 
 /**
  * The header of the three main tabs: the avatar, then who you are and which
@@ -22,7 +23,7 @@ import { displayNameFromEmail, getMe } from '@/lib/api/auth';
  */
 export function TopBar({ subtitle, compact = false }: { subtitle?: string; compact?: boolean }) {
   // Shares the cache with AvatarButton — same key, so this costs no request.
-  const { data } = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: Infinity });
+  const { data } = useQuery({ queryKey: qk.me(), queryFn: getMe, staleTime: Infinity });
   const name = displayNameFromEmail(data?.email) ?? 'Mosa';
 
   return (

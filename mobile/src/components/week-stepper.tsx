@@ -51,6 +51,11 @@ export function WeekStepper({
                 state === 'current' ? ', en cours' : state === 'done' ? ', terminée' : ''
               }`}
               accessibilityState={{ selected: state === 'current' }}
+              // A row of numbered dots gives no clue that it is navigation
+              // rather than a progress read-out. Only announced where the
+              // stepper is actually interactive — a hint on a node that does
+              // nothing would be a promise the component doesn't keep.
+              accessibilityHint={onPick ? 'Ouvre le plan d’entraînement.' : undefined}
               style={pressable(styles.nodeTouch)}>
               {/* The dot stays 28pt; the 44pt target is the transparent frame
                   around it. hitSlop would have been the lighter fix, but it

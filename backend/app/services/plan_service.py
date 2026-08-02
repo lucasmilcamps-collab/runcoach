@@ -1339,6 +1339,7 @@ async def run_generation_job(
         await job_service.update_job(
             db, job_id, JobStatus.FAILED, error_message=result.error_message
         )
+        await _notify_generation_finished(db, user_id, succeeded=False)
         return
     await job_service.update_job(
         db,
@@ -1346,6 +1347,43 @@ async def run_generation_job(
         JobStatus.DONE,
         result_summary={"plan_id": result.id, "status": result.status},
     )
+    await _notify_generation_finished(db, user_id, succeeded=True)
+
+
+async def _notify_generation_finished(
+    db: AsyncIOMotorDatabase, user_id: str, *, succeeded: bool
+) -> None:
+    """Push the outcome, so the wait doesn't have to be watched.
+
+    Minutes of staring at a spinner is the whole problem this solves: with a
+    notification the athlete can close the app and be told when it lands. Sent
+    on failure too — someone waiting on a plan that will never arrive needs to
+    know at least as much as someone whose plan is ready.
+
+    Imported here rather than at module scope: push_service imports this module
+    to build the daily "séance du jour" copy, so a top-level import would close
+    the cycle. Never allowed to affect the job — a browser that refused a push
+    is not a generation that failed.
+    """
+    from app.services import push_service
+
+    notification = (
+        push_service.Notification(
+            title="Ton plan est prêt",
+            body="Ta première semaine t'attend dans Séances.",
+            url="/plan",
+        )
+        if succeeded
+        else push_service.Notification(
+            title="Génération interrompue",
+            body="Ton plan n'a pas pu être généré. Ouvre l'app pour réessayer.",
+            url="/plan",
+        )
+    )
+    try:
+        await push_service.send_to_user(db, user_id, notification)
+    except Exception:  # noqa: BLE001 — delivery is best-effort, the plan is not
+        return
 
 
 async def start_generation(

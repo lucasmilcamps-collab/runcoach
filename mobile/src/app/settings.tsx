@@ -12,13 +12,14 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
 import { cancelPlan, getCurrentPlan } from '@/lib/api/plans';
+import { invalidatePlanReads, qk } from '@/lib/query-keys';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 export default function SettingsScreen() {
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const queryClient = useQueryClient();
   // Only offer the stop when there is something to stop.
-  const planQuery = useQuery({ queryKey: ['plan'], queryFn: getCurrentPlan, retry: false });
+  const planQuery = useQuery({ queryKey: qk.plan(), queryFn: getCurrentPlan });
   // `isError` matters as much as the data: after the stop the refetch 404s, and
   // TanStack Query keeps the last successful value — so checking `data` alone
   // left the row on screen offering to stop an already-stopped plan.
@@ -29,11 +30,9 @@ export default function SettingsScreen() {
   const stopMutation = useMutation({
     mutationFn: cancelPlan,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['plan'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-today'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-progress'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-overview'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-versions'] });
+      // Stopping a plan makes exactly the same five reads stale as generating
+      // one does — same set, one call.
+      invalidatePlanReads(queryClient);
       setConfirmStop(false);
     },
   });

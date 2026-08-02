@@ -10,6 +10,7 @@ import { Colors, Rounded, Spacing } from '@/constants/theme';
 import { getPlanOverview } from '@/lib/api/plans';
 import type { PlanOverview, WeekAdherence } from '@/lib/api/plans';
 import { weekRangeLabel } from '@/lib/plan-overview';
+import { qk } from '@/lib/query-keys';
 
 // The recent window: enough weeks to be a trend, few enough to still be recent.
 const RecentWeeks = 4;
@@ -19,10 +20,9 @@ export default function PlanRegularityScreen() {
   const versionNumber = Number(version);
 
   const query = useQuery({
-    queryKey: ['plan-overview', versionNumber],
+    queryKey: qk.planOverview.byVersion(versionNumber),
     queryFn: () => getPlanOverview(versionNumber),
     enabled: Number.isFinite(versionNumber),
-    retry: false,
   });
 
   return (

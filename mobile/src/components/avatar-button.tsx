@@ -11,13 +11,14 @@ export const AVATAR = 60;
 export const AVATAR_COMPACT = 40;
 import { getMe, initialsFromEmail } from '@/lib/api/auth';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 
 /**
  * Round initials button (top-left of the main screens) that opens Settings —
  * the Campus-style entry point that replaces the Réglages tab.
  */
 export function AvatarButton({ compact = false }: { compact?: boolean }) {
-  const { data } = useQuery({ queryKey: ['me'], queryFn: getMe, staleTime: Infinity });
+  const { data } = useQuery({ queryKey: qk.me(), queryFn: getMe, staleTime: Infinity });
   // No placeholder glyph while /me loads: a lone '·' reads as a broken
   // avatar. The empty ring is a calmer, honest loading state.
   const initials = initialsFromEmail(data?.email);

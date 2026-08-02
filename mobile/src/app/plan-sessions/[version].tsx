@@ -9,6 +9,7 @@ import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
 import { getPlanVersion } from '@/lib/api/plans';
+import { qk } from '@/lib/query-keys';
 
 /**
  * Every session of a plan, week by week. This used to be what opening a plan
@@ -20,10 +21,9 @@ export default function PlanSessionsScreen() {
   const versionNumber = Number(version);
 
   const query = useQuery({
-    queryKey: ['plan-version', versionNumber],
+    queryKey: qk.planVersion.byVersion(versionNumber),
     queryFn: () => getPlanVersion(versionNumber),
     enabled: Number.isFinite(versionNumber),
-    retry: false,
   });
 
   return (

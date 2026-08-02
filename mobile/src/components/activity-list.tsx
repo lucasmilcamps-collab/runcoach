@@ -8,6 +8,7 @@ import { Colors, Rounded, Spacing } from '@/constants/theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, deleteActivity } from '@/lib/api/activities';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 
 function formatDuration(durationS: number): string {
   const minutes = Math.round(durationS / 60);
@@ -70,8 +71,8 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
   const deleteMutation = useMutation({
     mutationFn: () => deleteActivity(activity.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['activities'] });
-      queryClient.invalidateQueries({ queryKey: ['fitness'] });
+      queryClient.invalidateQueries({ queryKey: qk.activities() });
+      queryClient.invalidateQueries({ queryKey: qk.fitness() });
     },
   });
 

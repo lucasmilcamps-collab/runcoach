@@ -10,6 +10,7 @@ import { Icon } from '@/components/icon';
 import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
 import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
+import { qk } from '@/lib/query-keys';
 
 function fmtTime(min: number): string {
   const h = Math.floor(min / 60);
@@ -26,7 +27,7 @@ function formatDate(iso: string): string {
 }
 
 export default function PlanHistoryScreen() {
-  const query = useQuery({ queryKey: ['plan-versions'], queryFn: getPlanVersions, retry: false });
+  const query = useQuery({ queryKey: qk.planVersions(), queryFn: getPlanVersions });
   const versions = query.data ?? [];
 
   // The split the athlete actually thinks in: the plan they're running now, and

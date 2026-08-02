@@ -16,6 +16,7 @@ import type { Plan, PlanOverview } from '@/lib/api/plans';
 import { frKm } from '@/lib/plan-format';
 import { phaseSpans, runsPerWeek, weeklyVolume } from '@/lib/plan-overview';
 import { pressable } from '@/lib/pressable';
+import { qk } from '@/lib/query-keys';
 
 function fmtTime(min: number): string {
   const h = Math.floor(min / 60);
@@ -37,19 +38,17 @@ export default function PlanVersionScreen() {
   const enabled = Number.isFinite(versionNumber);
 
   const planQuery = useQuery({
-    queryKey: ['plan-version', versionNumber],
+    queryKey: qk.planVersion.byVersion(versionNumber),
     queryFn: () => getPlanVersion(versionNumber),
     enabled,
-    retry: false,
   });
   // Split from the plan itself on purpose: the plan document says what was
   // asked, this says where its weeks land on the calendar and what was actually
   // run. Only the second needs the server.
   const overviewQuery = useQuery({
-    queryKey: ['plan-overview', versionNumber],
+    queryKey: qk.planOverview.byVersion(versionNumber),
     queryFn: () => getPlanOverview(versionNumber),
     enabled,
-    retry: false,
   });
 
   const plan = planQuery.data?.plan ?? null;

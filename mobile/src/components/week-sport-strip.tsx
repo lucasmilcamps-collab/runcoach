@@ -40,8 +40,15 @@ export function WeekSportStrip({
             <ThemedText type="default" style={styles.name} numberOfLines={1}>
               {sportLabel(s.sport)}
             </ThemedText>
+            {/* The role is what makes the label exist: an aria-label on a
+                role-less <div> — which is all a bare View compiles to on web —
+                is dropped by every screen reader, so this bar was announcing
+                nothing at all. "image" matches how the app's other read-only
+                graphics (volume chart, adherence grid, phase bar) expose
+                themselves: one atomic description, not a tree of empty boxes. */}
             <View
               style={styles.track}
+              accessibilityRole="image"
               accessibilityLabel={`${sportLabel(s.sport)} : ${s.count} séance${s.count > 1 ? 's' : ''}`}>
               <View style={[styles.fill, { width: `${(s.count / max) * 100}%` }]} />
             </View>

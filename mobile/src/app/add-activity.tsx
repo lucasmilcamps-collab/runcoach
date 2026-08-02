@@ -13,6 +13,7 @@ import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { createManualActivity, ManualActivityCreate } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
+import { qk } from '@/lib/query-keys';
 
 const SPORT_OPTIONS: { sport: SportType; label: string }[] = [
   { sport: 'RUN', label: 'Course' },
@@ -52,8 +53,8 @@ export default function AddActivityScreen() {
   const mutation = useMutation({
     mutationFn: (payload: ManualActivityCreate) => createManualActivity(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['activities'] });
-      queryClient.invalidateQueries({ queryKey: ['fitness'] });
+      queryClient.invalidateQueries({ queryKey: qk.activities() });
+      queryClient.invalidateQueries({ queryKey: qk.fitness() });
       router.back();
     },
   });

@@ -14,6 +14,7 @@ import type { Plan, PlanOverview } from '@/lib/api/plans';
 import { formatDuration, frKm } from '@/lib/plan-format';
 import { volumeValue, weeklyVolume, weekRangeLabel } from '@/lib/plan-overview';
 import type { VolumeMetric, WeekVolume } from '@/lib/plan-overview';
+import { qk } from '@/lib/query-keys';
 
 export default function PlanVolumeScreen() {
   const { version } = useLocalSearchParams<{ version: string }>();
@@ -24,16 +25,14 @@ export default function PlanVolumeScreen() {
   const [metric, setMetric] = useState<VolumeMetric>('km');
 
   const planQuery = useQuery({
-    queryKey: ['plan-version', versionNumber],
+    queryKey: qk.planVersion.byVersion(versionNumber),
     queryFn: () => getPlanVersion(versionNumber),
     enabled,
-    retry: false,
   });
   const overviewQuery = useQuery({
-    queryKey: ['plan-overview', versionNumber],
+    queryKey: qk.planOverview.byVersion(versionNumber),
     queryFn: () => getPlanOverview(versionNumber),
     enabled,
-    retry: false,
   });
 
   const plan = planQuery.data?.plan ?? null;

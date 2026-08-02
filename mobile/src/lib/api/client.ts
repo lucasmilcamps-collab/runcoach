@@ -1,6 +1,12 @@
 import { useAuthStore } from '@/lib/stores/auth-store';
+import { useOfflineStore } from '@/lib/stores/offline-store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+/** Set by the service worker on a response it served from its cache, carrying
+ * the date that copy was stored (public/sw.js). Absent on anything that came
+ * off the network — which is how the app knows the difference. */
+const CACHED_AT_HEADER = 'X-Mosa-Cached-At';
 
 /** Mirrors the backend's `HTTPException(detail={code, message})` shape (api-conventions). */
 export class ApiError extends Error {
@@ -48,6 +54,12 @@ async function request<T>(path: string, options: RequestOptions = {}, isRetry = 
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  if (method === 'GET') {
+    // Only reads can be served from the cache, and only a read tells us
+    // anything about connectivity — a write never reaches the worker's cache.
+    useOfflineStore.getState().report(response.headers.get(CACHED_AT_HEADER));
+  }
 
   if (response.status === 401 && auth && !isRetry) {
     const refreshed = await tryRefreshToken();

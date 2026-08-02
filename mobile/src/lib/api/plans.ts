@@ -241,6 +241,11 @@ export type PlanJob = {
   id: string;
   type: string;
   status: 'pending' | 'running' | 'done' | 'failed';
+  /** When the job was queued (ISO, UTC). The server's clock is the only honest
+   * source for "how long has this been running": the client's own start time is
+   * lost the moment the PWA is reloaded mid-generation. */
+  created_at: string;
+  updated_at: string;
   error_message: string | null;
   result_summary: { plan_id?: string; status?: string } | null;
 };

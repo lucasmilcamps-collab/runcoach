@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { GenerationProgress } from '@/components/generation-progress';
 import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -13,6 +14,7 @@ import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
 import { weekRangeLabel } from '@/lib/plan-overview';
+import { qk } from '@/lib/query-keys';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
 
 type Objective = { label: string; goal: 'distance' | 'fitness'; distanceKm: number | null };
@@ -131,7 +133,7 @@ function groupFixed(request: PlanRequest | null): Map<SportType, FixedDays> {
 
 export default function PlanSetupScreen() {
   const queryClient = useQueryClient();
-  const prefill = queryClient.getQueryData<PlanResponse>(['plan'])?.request ?? null;
+  const prefill = queryClient.getQueryData<PlanResponse>(qk.plan())?.request ?? null;
 
   const [objectiveIndex, setObjectiveIndex] = useState(objectiveIndexFor(prefill));
   const [raceDate, setRaceDate] = useState(prefill?.race_date ?? '');
@@ -404,12 +406,10 @@ export default function PlanSetupScreen() {
             })}
           </Field>
 
-          {generation.isGenerating ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              Génération en cours… l’IA construit et vérifie chaque semaine. Compte deux à cinq
-              minutes pour un plan long — tu peux quitter l’écran, le plan t’attendra.
-            </ThemedText>
-          ) : null}
+          <GenerationProgress
+            phase={generation.phase}
+            elapsedSeconds={generation.elapsedSeconds}
+          />
           {errorMessage ? (
             <ThemedText type="small" themeColor="flare">
               {errorMessage}

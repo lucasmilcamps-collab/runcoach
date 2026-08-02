@@ -1,8 +1,9 @@
 /**
- * Web Push glue (browser/PWA only). Everything here is guarded by pushSupported()
- * so it's a no-op on native — the app runs the same codebase on iOS/Android where
- * these Web APIs don't exist. On iPhone, push requires the PWA to be installed
- * to the home screen (iOS 16.4+).
+ * Service worker + Web Push glue (browser/PWA only). Every entry point is
+ * guarded by a support check so it's a no-op on native — the app runs the same
+ * codebase on iOS/Android where these Web APIs don't exist. On iPhone, push
+ * requires the PWA to be installed to the home screen (iOS 16.4+); the offline
+ * cache the same worker provides has no such condition.
  */
 import { Platform } from 'react-native';
 
@@ -10,13 +11,17 @@ import { getVapidPublicKey, subscribePush, unsubscribePush } from '@/lib/api/pus
 
 export type PushState = 'unsupported' | 'default' | 'granted' | 'denied';
 
+/** Service workers exist here — which is all the offline cache needs. Push
+ * needs more (see `pushSupported`), and gating registration on the stricter
+ * test used to mean a browser without PushManager got no offline cache
+ * either. */
+function serviceWorkerSupported(): boolean {
+  return Platform.OS === 'web' && typeof window !== 'undefined' && 'serviceWorker' in navigator;
+}
+
 export function pushSupported(): boolean {
   return (
-    Platform.OS === 'web' &&
-    typeof window !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    'Notification' in window
+    serviceWorkerSupported() && 'PushManager' in window && 'Notification' in window
   );
 }
 
@@ -40,10 +45,13 @@ async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.register('/sw.js');
 }
 
-/** Register the service worker early so a later subscribe is instant. Safe to
- * call on every web load; no-op on native. */
+/**
+ * Register the service worker early: it is what serves the app shell and the
+ * plan offline, and having it in place also makes a later push subscribe
+ * instant. Safe to call on every web load; no-op on native.
+ */
 export async function registerServiceWorker(): Promise<void> {
-  if (!pushSupported()) return;
+  if (!serviceWorkerSupported()) return;
   try {
     await ensureRegistration();
   } catch {

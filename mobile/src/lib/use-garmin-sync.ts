@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import { syncGarmin } from '@/lib/api/garmin';
+import { qk } from '@/lib/query-keys';
 import { useAuthStore } from '@/lib/stores/auth-store';
 
 /**
@@ -19,8 +20,8 @@ export function useGarminSync() {
   const mutation = useMutation({
     mutationFn: syncGarmin,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['activities'] });
-      queryClient.invalidateQueries({ queryKey: ['fitness'] });
+      queryClient.invalidateQueries({ queryKey: qk.activities() });
+      queryClient.invalidateQueries({ queryKey: qk.fitness() });
     },
   });
 
