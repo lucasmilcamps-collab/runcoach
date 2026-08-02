@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { GenerationProgress } from '@/components/generation-progress';
 import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -405,12 +406,10 @@ export default function PlanSetupScreen() {
             })}
           </Field>
 
-          {generation.isGenerating ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              Génération en cours… l’IA construit et vérifie chaque semaine. Compte deux à cinq
-              minutes pour un plan long — tu peux quitter l’écran, le plan t’attendra.
-            </ThemedText>
-          ) : null}
+          <GenerationProgress
+            phase={generation.phase}
+            elapsedSeconds={generation.elapsedSeconds}
+          />
           {errorMessage ? (
             <ThemedText type="small" themeColor="flare">
               {errorMessage}

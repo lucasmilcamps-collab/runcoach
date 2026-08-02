@@ -119,3 +119,72 @@ def test_the_budget_is_sized_for_a_real_plan():
         plan_service._TOTAL_DEADLINE_S - plan_service._ANTHROPIC_TIMEOUT_S
         >= plan_service._REPAIR_RESERVE_S
     )
+
+
+async def test_job_timestamps_carry_their_timezone(db):
+    """Mongo hands datetimes back naive, and a naive datetime serializes with no
+    offset — which a browser reads as local time. The client shows how long a
+    generation has been running off `created_at`, so a dropped timezone silently
+    shifted that by the athlete's UTC offset."""
+    user_id = await _seed_user(db)
+    job_id = await job_service.create_job(db, user_id, plan_service.PLAN_JOB_TYPE)
+
+    job = await job_service.get_job(db, job_id, user_id)
+    assert job.created_at.tzinfo is not None
+    assert job.updated_at.tzinfo is not None
+    # And it is the instant it was written, not that instant reinterpreted.
+    assert abs((datetime.now(UTC) - job.created_at).total_seconds()) < 60
+
+
+async def test_a_finished_generation_notifies_the_athlete(db):
+    """Minutes of spinner is the problem; a push is what lets the app be closed."""
+    user_id = await _seed_user(db)
+    patched, _ = _patched(_mock_response(_valid_plan_dict()))
+    sent = AsyncMock(return_value=1)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patched,
+        patch("app.services.push_service.send_to_user", sent),
+    ):
+        await plan_service.start_generation(db, user_id, _request())
+        await _drain_jobs()
+
+    assert sent.await_count == 1
+    notification = sent.await_args.args[2]
+    assert notification.url == "/plan"
+    assert "prêt" in notification.title
+
+
+async def test_a_failed_generation_notifies_too(db):
+    """Someone waiting on a plan that will never arrive needs to know at least
+    as much as someone whose plan is ready."""
+    user_id = await _seed_user(db)
+    sent = AsyncMock(return_value=1)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", ""),
+        patch("app.services.push_service.send_to_user", sent),
+    ):
+        await plan_service.start_generation(db, user_id, _request())
+        await _drain_jobs()
+
+    assert sent.await_count == 1
+    assert "interrompue" in sent.await_args.args[2].title
+
+
+async def test_a_push_failure_never_fails_the_generation(db):
+    """A browser that refused a notification is not a plan that didn't generate."""
+    user_id = await _seed_user(db)
+    patched, _ = _patched(_mock_response(_valid_plan_dict()))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patched,
+        patch(
+            "app.services.push_service.send_to_user", AsyncMock(side_effect=RuntimeError("gone"))
+        ),
+    ):
+        job = await plan_service.start_generation(db, user_id, _request())
+        await _drain_jobs()
+
+    finished = await job_service.get_job(db, job.id, user_id)
+    assert finished.status == JobStatus.DONE
+    assert await db.plans.count_documents({"user_id": user_id, "status": "ready"}) == 1

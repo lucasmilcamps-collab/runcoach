@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { CardColumns } from '@/components/card-columns';
 import { EmptyState } from '@/components/empty-state';
+import { GenerationProgress } from '@/components/generation-progress';
 import { Icon } from '@/components/icon';
 import { OfflineBanner } from '@/components/offline-banner';
 import { PlanWeekPager } from '@/components/plan-view';
@@ -144,6 +145,12 @@ export default function PlanScreen() {
               network, and the age of what's below it is the first thing to
               know. */}
           <OfflineBanner />
+
+          {/* Not tied to the replan banner below: after the PWA is reloaded
+              mid-generation this is the screen the user lands on, and the hook
+              picks the job back up here. Without this, a generation that is
+              still running would show nothing at all. */}
+          <GenerationProgress phase={replan.phase} elapsedSeconds={replan.elapsedSeconds} />
 
           {ready ? (
             <View style={styles.historyRow}>

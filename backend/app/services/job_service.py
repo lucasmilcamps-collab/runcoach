@@ -66,13 +66,21 @@ async def get_job(db: AsyncIOMotorDatabase, job_id: str, user_id: str) -> JobRes
         id=str(doc["_id"]),
         type=doc["type"],
         status=job_status,
-        created_at=doc["created_at"],
-        updated_at=doc["updated_at"],
+        # Mongo hands datetimes back naive, and a naive datetime serializes with
+        # no offset — which a browser then reads as *local* time. The client
+        # shows how long a generation has been running, so that silently shifted
+        # the elapsed time by the athlete's UTC offset.
+        created_at=_as_utc(doc["created_at"]),
+        updated_at=_as_utc(doc["updated_at"]),
         error_message=error_message,
         result_summary=doc.get("result_summary"),
     )
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Stored UTC, read back naive — re-attach the timezone it was written with."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
 def _is_stale(updated_at: datetime) -> bool:
-    aware = updated_at.replace(tzinfo=UTC) if updated_at.tzinfo is None else updated_at
-    return datetime.now(UTC) - aware > _STALE_AFTER
+    return datetime.now(UTC) - _as_utc(updated_at) > _STALE_AFTER
