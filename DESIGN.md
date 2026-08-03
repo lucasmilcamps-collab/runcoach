@@ -110,8 +110,10 @@ Every text colour listed clears 4.5:1 on `surface`, `raised` **and** `inset` in 
 
 Training zones Z1→Z5 are the one place colour encodes a scale rather than a state, and the scale runs between two signals that already exist: from Récup at Z1 to Go at Z5.
 
-- Graphite: `#5B87B3 → #4E96A9 → #45A297 → #4AAC8B → #57B87C`
-- Sable: `#3D6A94 → #2F7383 → #2A7C74 → #2C845F → #3A8B4C`
+- Graphite: `#6E9CCB → #66ACC5 → #5EBCBF → #56B9A4 → #4FB286`
+- Sable: `#2F5B87 → #2C6980 → #297678 → #267161 → #23694A`
+
+The ends are not *near* Récup and Go, they **are** Récup and Go — the steps are interpolated between that appearance's own two signal tokens, so the rule the ramp states is literally the ramp.
 
 Two hues, sequential, never a rainbow — and it never passes through Prudence, because a hard session is not a warning. Colour on the ramp is always paired with the zone number or a bar height; it never carries the value alone.
 

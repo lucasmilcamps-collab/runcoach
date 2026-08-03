@@ -77,6 +77,7 @@ npm test
 - **Async partout** dans le backend (Motor, httpx). Pas de client Mongo synchrone.
 - **Pydantic v2** : modèles de requête/réponse séparés des documents Mongo (`XCreate`, `XResponse`, `XDocument`).
 - **Tests** : tout service métier a des tests unitaires ; les calculs de charge/zones (training-science) ont des tests avec valeurs de référence connues.
+- **Tests mobile** (`cd mobile && npm test`, jest-expo) : la logique dérivée et les promesses du design system, pas les composants. Deux suites à garder vertes — `lib/__tests__/week-ledger.test.ts` (frontières de semaine, réalisé qui remplace le prévu, bandes de surcharge alignées sur `plan_adaptation`) et `constants/__tests__/theme.test.ts` (contrastes AA dans les deux apparences, parité des filets, rampe d'intensité). Changer un hexa de `theme.ts` sans faire tourner cette seconde suite, c'est casser l'accessibilité dans le thème qu'on ne regarde pas.
 - **Frontend** : TypeScript strict, composants fonctionnels, état serveur via TanStack Query, état local via Zustand.
 - Commits conventionnels : `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
 

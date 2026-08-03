@@ -93,8 +93,13 @@ export const Palettes: Record<Appearance, Palette> = { graphite, sable };
  * hard session is not a warning (DESIGN.md).
  */
 export const ZoneRamp: Record<Appearance, readonly [string, string, string, string, string]> = {
-  graphite: ['#5B87B3', '#4E96A9', '#45A297', '#4AAC8B', '#57B87C'],
-  sable: ['#3D6A94', '#2F7383', '#2A7C74', '#2C845F', '#3A8B4C'],
+  // Interpolated in HSL between this appearance's own Récup and Go, so Z1 *is*
+  // Récup and Z5 *is* Go rather than approximately them. The hand-picked ramp
+  // that preceded this overshot past Go at Z5 and came back on a yellower
+  // green — true enough to eyeball in Graphite, 20° off in Sable, which is the
+  // kind of drift only a test catches.
+  graphite: ['#6E9CCB', '#66ACC5', '#5EBCBF', '#56B9A4', '#4FB286'],
+  sable: ['#2F5B87', '#2C6980', '#297678', '#267161', '#23694A'],
 };
 
 /**

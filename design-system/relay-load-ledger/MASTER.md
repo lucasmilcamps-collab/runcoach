@@ -57,7 +57,7 @@ Every text token clears **4.5:1 on `surface`, `raised` and `inset`** in both app
 
 **One Meaning Per Ink.** Never reuse a signal because a block "needed a warm accent". A missed session is `rule`, never `alerte`: skipping a run is a fact the plan absorbs, not an error.
 
-**Intensity ramp** (`ZoneRamp` in `theme.ts`, read via `useZoneRamp()`): Z1→Z5 runs from Récup blue to Go green — two hues, sequential, never through Prudence, because a hard session is not a warning. Always paired with the zone number or a bar height.
+**Intensity ramp** (`ZoneRamp` in `theme.ts`, read via `useZoneRamp()`): Z1→Z5 is interpolated between that appearance's own Récup and Go, so Z1 *is* Récup and Z5 *is* Go — two hues, sequential, never through Prudence, because a hard session is not a warning. Always paired with the zone number or a bar height.
 
 ### Typography (from `themed-text.tsx` — use `<ThemedText type=…>`, don't hand-set sizes)
 
