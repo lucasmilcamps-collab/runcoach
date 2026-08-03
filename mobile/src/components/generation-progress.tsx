@@ -1,7 +1,9 @@
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import type { GenerationPhase } from '@/lib/use-plan-generation';
 
 /**
@@ -24,6 +26,8 @@ export function GenerationProgress({
   phase: GenerationPhase;
   elapsedSeconds: number | null;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   if (phase === 'idle') return null;
 
   const heading = phase === 'queued' ? 'En attente…' : 'Génération en cours…';
@@ -31,22 +35,22 @@ export function GenerationProgress({
   return (
     <View style={styles.card} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
       <View style={styles.headRow}>
-        <ActivityIndicator size="small" color={Colors.blaze} />
-        <ThemedText type="waypointLabel" themeColor="blaze" style={styles.heading}>
+        <ActivityIndicator size="small" color={theme.ink} />
+        <ThemedText type="label" themeColor="ink" style={styles.heading}>
           {heading}
         </ThemedText>
         {elapsedSeconds != null ? (
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             {formatElapsed(elapsedSeconds)}
           </ThemedText>
         ) : null}
       </View>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {phase === 'queued'
           ? 'Ta demande est dans la file. Le modèle va écrire 12 à 16 semaines de séances : compte trois à six minutes.'
           : 'Le modèle écrit 12 à 16 semaines de séances, puis chaque semaine est vérifiée. Compte trois à six minutes — c’est normal.'}
       </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         Tu peux fermer l’app : la génération continue et tu seras notifié quand le plan est prêt.
       </ThemedText>
     </View>
@@ -62,12 +66,12 @@ function formatElapsed(totalSeconds: number): string {
   return `${minutes} min ${seconds.toString().padStart(2, '0')}`;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   card: {
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: t.raised,
     borderRadius: Rounded.md,
     borderWidth: 1,
-    borderColor: Colors.contourFaint,
+    borderColor: t.rule,
     padding: Spacing.three,
     gap: Spacing.two,
   },
@@ -79,4 +83,4 @@ const styles = StyleSheet.create({
   heading: {
     flex: 1,
   },
-});
+}));

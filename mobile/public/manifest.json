@@ -1,15 +1,15 @@
 {
-  "name": "Mosa",
-  "short_name": "Mosa",
-  "description": "Tous tes sports, une seule foulée : des plans de course générés par IA qui s'ajustent à ta récupération réelle (Garmin).",
+  "name": "Relay",
+  "short_name": "Relay",
+  "description": "Relay orchestre ta semaine : course, renfo et sports co comptent dans la m\u00eame charge, et le plan s'ajuste \u00e0 ta r\u00e9cup\u00e9ration r\u00e9elle.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "lang": "fr",
-  "background_color": "#14140F",
-  "theme_color": "#14140F",
+  "background_color": "#16181A",
+  "theme_color": "#16181A",
   "icons": [
     {
       "src": "/icons/icon-192.png",

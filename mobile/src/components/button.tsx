@@ -1,7 +1,9 @@
-import { ActivityIndicator, Pressable, StyleSheet, type PressableProps } from 'react-native';
+import { ActivityIndicator, Pressable, type PressableProps } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 
 type ButtonProps = Omit<PressableProps, 'children'> & {
   label: string;
@@ -9,7 +11,26 @@ type ButtonProps = Omit<PressableProps, 'children'> & {
   loading?: boolean;
 };
 
-export function Button({ label, variant = 'primary', loading = false, disabled, style, ...rest }: ButtonProps) {
+/**
+ * The primary action is a neutral high-contrast fill — Ink on Graphite,
+ * near-black on Sable — never one of the signal inks.
+ *
+ * That is the rule the whole palette rests on (DESIGN.md, The Signal Is Never A
+ * Command): Go, Prudence and Récup say something about the athlete's training
+ * load, and the moment a button is green, "green" stops meaning "this is today's
+ * key session" and starts meaning "tap me". A screen can then carry three
+ * signals at once without any of them competing with its one action.
+ */
+export function Button({
+  label,
+  variant = 'primary',
+  loading = false,
+  disabled,
+  style,
+  ...rest
+}: ButtonProps) {
+  const styles = useStyles();
+  const theme = useTheme();
   const isDisabled = disabled || loading;
 
   return (
@@ -22,20 +43,21 @@ export function Button({ label, variant = 'primary', loading = false, disabled, 
         variant === 'primary' && styles.primary,
         variant === 'ghost' && styles.ghost,
         isDisabled && styles.disabled,
-        state.pressed && !isDisabled && (variant === 'primary' ? styles.primaryPressed : styles.ghostPressed),
+        state.pressed &&
+          !isDisabled &&
+          (variant === 'primary' ? styles.primaryPressed : styles.ghostPressed),
         typeof style === 'function' ? style(state) : style,
       ]}
       {...rest}>
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? Colors.background : Colors.text} />
+        <ActivityIndicator color={variant === 'primary' ? theme.surface : theme.ink} />
       ) : (
         <ThemedText
           type="link"
-          // Disabled is checked first: a disabled primary keeps the blaze fill's
-          // near-black label on the faint disabled fill otherwise — 1.23:1, all
-          // but invisible. The old order meant this branch was only ever
-          // reachable for the ghost variant.
-          themeColor={isDisabled ? 'textSecondary' : variant === 'primary' ? 'background' : 'text'}
+          // Disabled is checked first: a disabled primary would otherwise keep
+          // the Ink fill's surface-coloured label on the muted disabled fill,
+          // which is all but invisible.
+          themeColor={isDisabled ? 'inkMuted' : variant === 'primary' ? 'surface' : 'ink'}
           // The Pressable centres the text block, not the lines inside it — so a
           // label that wraps ("Synchroniser Garmin" in a half-width button) came
           // out ragged-left against a centred box.
@@ -47,7 +69,7 @@ export function Button({ label, variant = 'primary', loading = false, disabled, 
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   label: {
     textAlign: 'center',
   },
@@ -59,21 +81,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   primary: {
-    backgroundColor: Colors.blaze,
+    backgroundColor: t.ink,
   },
   primaryPressed: {
-    backgroundColor: Colors.blazeDeep,
+    backgroundColor: t.inkPressed,
   },
   ghost: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: Colors.contour,
+    borderColor: t.ruleStrong,
   },
   ghostPressed: {
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: t.inset,
   },
   disabled: {
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.inset,
     borderWidth: 0,
   },
-});
+}));

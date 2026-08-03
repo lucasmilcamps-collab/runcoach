@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import type { PhaseSpan } from '@/lib/plan-overview';
 import { PHASE_LABELS } from '@/lib/plan-format';
 
@@ -9,10 +10,9 @@ import { PHASE_LABELS } from '@/lib/plan-format';
  * The plan's phases as one continuous bar, each segment as wide as the phase is
  * long, with the phase you're in right now brought forward.
  *
- * Campus draws this as an arc of tiles; here it stays a straight run, because
- * the app already reads a plan as a trail travelled left to right — the week
- * stepper on Accueil uses the same axis, and two different geometries for "how
- * far along am I" would be two metaphors for one idea.
+ * One straight run, on the same left-to-right axis as every other week-scaled
+ * read-out in the app: two different geometries for "how far along am I" would
+ * be two metaphors for one idea.
  */
 export function PlanPhaseBar({
   phases,
@@ -21,6 +21,7 @@ export function PlanPhaseBar({
   phases: PhaseSpan[];
   weekCurrent: number | null;
 }) {
+  const styles = useStyles();
   const totalWeeks = phases.reduce((n, phase) => n + phase.weeks, 0) || 1;
 
   return (
@@ -57,10 +58,10 @@ export function PlanPhaseBar({
             weekCurrent != null && weekCurrent >= phase.firstWeek && weekCurrent <= phase.lastWeek;
           return (
             <View key={`${phase.name}-${phase.firstWeek}`} style={styles.label}>
-              <ThemedText type="waypointLabel" themeColor={isCurrent ? 'text' : 'textSecondary'}>
+              <ThemedText type="label" themeColor={isCurrent ? 'ink' : 'inkMuted'}>
                 {PHASE_LABELS[phase.name]}
               </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="inkMuted">
                 {phase.weeks} sem.
               </ThemedText>
             </View>
@@ -71,7 +72,7 @@ export function PlanPhaseBar({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     gap: Spacing.two,
   },
@@ -83,10 +84,10 @@ const styles = StyleSheet.create({
   segment: {
     flexBasis: 0,
     borderRadius: Rounded.sm,
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.rule,
   },
   segmentCurrent: {
-    backgroundColor: Colors.contour,
+    backgroundColor: t.ruleStrong,
   },
   labels: {
     flexDirection: 'row',
@@ -96,4 +97,4 @@ const styles = StyleSheet.create({
   label: {
     gap: Spacing.half,
   },
-});
+}));

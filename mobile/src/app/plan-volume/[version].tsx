@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { Chip } from '@/components/chip';
 import { DetailScreen } from '@/components/detail-screen';
 import { PlanVolumeChart } from '@/components/plan-volume-chart';
 import { StatTiles } from '@/components/stat-tiles';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { getPlanOverview, getPlanVersion } from '@/lib/api/plans';
 import type { Plan, PlanOverview } from '@/lib/api/plans';
 import { formatDuration, frKm } from '@/lib/plan-format';
@@ -17,6 +19,8 @@ import type { VolumeMetric, WeekVolume } from '@/lib/plan-overview';
 import { qk } from '@/lib/query-keys';
 
 export default function PlanVolumeScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const { version } = useLocalSearchParams<{ version: string }>();
   const versionNumber = Number(version);
   const enabled = Number.isFinite(versionNumber);
@@ -44,10 +48,10 @@ export default function PlanVolumeScreen() {
       blurb="La charge de course que le plan demande, semaine par semaine. Les kilomètres sont estimés à partir de l’allure cible — les minutes, elles, sont ce que le plan prescrit.">
       {planQuery.isLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={Colors.contour} />
+          <ActivityIndicator color={theme.ruleStrong} />
         </View>
       ) : planQuery.isError || !plan ? (
-        <ThemedText type="default" themeColor="flare">
+        <ThemedText type="default" themeColor="alerte">
           Impossible de charger le volume de ce plan.
         </ThemedText>
       ) : (
@@ -73,6 +77,7 @@ function Body({
   metric: VolumeMetric;
   onMetric: (metric: VolumeMetric) => void;
 }) {
+  const styles = useStyles();
   const weeks = weeklyVolume(plan);
   const values = weeks.map((w) => volumeValue(w, metric));
   const total = values.reduce((a, b) => a + b, 0);
@@ -89,7 +94,7 @@ function Body({
 
   if (peak <= 0) {
     return (
-      <ThemedText type="default" themeColor="textSecondary">
+      <ThemedText type="default" themeColor="inkMuted">
         Ce plan ne porte pas d’allure cible sur ses séances : impossible d’en estimer le volume.
       </ThemedText>
     );
@@ -122,7 +127,7 @@ function Body({
       </View>
 
       <View style={styles.card}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Vue d’ensemble
         </ThemedText>
         <PlanVolumeChart
@@ -133,7 +138,7 @@ function Body({
       </View>
 
       <View style={styles.card}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Semaine par semaine
         </ThemedText>
         {weeks.map((week, position) => (
@@ -164,17 +169,18 @@ function WeekRow({
   isCurrent: boolean;
   range: string | null;
 }) {
+  const styles = useStyles();
   const value = volumeValue(week, metric);
 
   return (
     <View style={styles.row}>
       <View style={styles.rowMain}>
-        <ThemedText type="default" themeColor={isCurrent ? 'text' : 'textSecondary'}>
+        <ThemedText type="default" themeColor={isCurrent ? 'ink' : 'inkMuted'}>
           Semaine {week.index}
           {week.isDeload ? ' · Décharge' : ''}
         </ThemedText>
         {range ? (
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkMuted">
             {range}
           </ThemedText>
         ) : null}
@@ -202,14 +208,15 @@ function fmt(value: number, metric: VolumeMetric): string {
   return metric === 'km' ? `${frKm(value)} km` : formatDuration(Math.round(value));
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   metrics: {
     flexDirection: 'row',
     gap: Spacing.two,
   },
   card: {
-    backgroundColor: Colors.backgroundElement,
+    borderWidth: 1,
+    borderColor: t.rule,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
@@ -220,7 +227,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 44,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
     paddingTop: Spacing.two,
   },
   rowMain: {
@@ -231,22 +238,22 @@ const styles = StyleSheet.create({
     width: 64,
     height: 6,
     borderRadius: Rounded.sm,
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.rule,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
     borderRadius: Rounded.sm,
-    backgroundColor: Colors.contour,
+    backgroundColor: t.ruleStrong,
   },
   fillDeload: {
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.rule,
   },
   fillCurrent: {
-    backgroundColor: Colors.text,
+    backgroundColor: t.ink,
   },
   value: {
     minWidth: 72,
     textAlign: 'right',
   },
-});
+}));

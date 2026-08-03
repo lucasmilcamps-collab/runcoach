@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 
 export type Stat = {
   label: string;
@@ -13,27 +14,33 @@ export type Stat = {
 };
 
 /**
- * A two-up grid of figures. Used by the plan detail screens, where each one
- * breaks a single card of the summary into the four numbers behind it.
+ * A two-up register of figures, used by the detail screens where each one breaks
+ * a single summary block into the numbers behind it.
+ *
+ * Cells are divided by rules rather than boxed as cards: they are columns of one
+ * table, not four separate objects, and a card around each would say otherwise
+ * (DESIGN.md).
  */
 export function StatTiles({ stats }: { stats: Stat[] }) {
+  const styles = useStyles();
+
   return (
     <View style={styles.grid}>
       {stats.map((stat) => (
         <View key={stat.label} style={styles.tile}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             {stat.label}
           </ThemedText>
           <View style={styles.valueRow}>
-            <ThemedText type="subtitle">{stat.value}</ThemedText>
+            <ThemedText type="figure">{stat.value}</ThemedText>
             {stat.unit ? (
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="inkMuted">
                 {stat.unit}
               </ThemedText>
             ) : null}
           </View>
           {stat.hint ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               {stat.hint}
             </ThemedText>
           ) : null}
@@ -43,7 +50,7 @@ export function StatTiles({ stats }: { stats: Stat[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -54,14 +61,14 @@ const styles = StyleSheet.create({
     // value squeeze its neighbour instead of wrapping.
     flexGrow: 1,
     flexBasis: '45%',
-    backgroundColor: Colors.background,
-    borderRadius: Rounded.md,
-    padding: Spacing.three,
-    gap: Spacing.half,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
+    gap: Spacing.one,
   },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: Spacing.one,
   },
-});
+}));

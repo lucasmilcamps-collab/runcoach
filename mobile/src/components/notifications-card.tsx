@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { sendTestPush } from '@/lib/api/push';
 import { disablePush, enablePush, pushPermission, pushSupported, type PushState } from '@/lib/push';
 
@@ -13,6 +14,7 @@ import { disablePush, enablePush, pushPermission, pushSupported, type PushState 
  * is installed to the home screen (iOS 16.4+) — surfaced here if subscribe fails.
  */
 export function NotificationsCard() {
+  const styles = useStyles();
   const [state, setState] = useState<PushState>(() => pushPermission());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | undefined>();
@@ -44,7 +46,7 @@ export function NotificationsCard() {
     setMessage(undefined);
     try {
       const { sent } = await sendTestPush();
-      setMessage(sent > 0 ? 'Test envoyé — regardez vos notifications.' : 'Aucun appareil abonné.');
+      setMessage(sent > 0 ? 'Test envoyé — regarde tes notifications.' : 'Aucun appareil abonné.');
     } catch {
       setMessage('Échec de l’envoi du test.');
     } finally {
@@ -68,20 +70,20 @@ export function NotificationsCard() {
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Notifications
         </ThemedText>
         {granted ? (
-          <ThemedText type="waypointLabel" themeColor="hydro">
+          <ThemedText type="label" themeColor="ink">
             Activées
           </ThemedText>
         ) : null}
       </View>
 
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {granted
-          ? 'Vous recevrez chaque matin votre séance du jour, et une alerte quand le plan mérite un réajustement.'
-          : 'Recevez votre séance du jour et les alertes de réajustement, directement sur cet appareil.'}
+          ? 'Tu recevras chaque matin ta séance du jour, et une alerte quand le plan mérite un réajustement.'
+          : 'Reçois ta séance du jour et les alertes de réajustement, directement sur cet appareil.'}
       </ThemedText>
 
       {granted ? (
@@ -99,7 +101,7 @@ export function NotificationsCard() {
       )}
 
       {message ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {message}
         </ThemedText>
       ) : null}
@@ -107,9 +109,9 @@ export function NotificationsCard() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   card: {
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: t.raised,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
@@ -122,4 +124,4 @@ const styles = StyleSheet.create({
   actions: {
     gap: Spacing.two,
   },
-});
+}));

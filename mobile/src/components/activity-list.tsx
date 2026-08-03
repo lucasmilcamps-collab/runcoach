@@ -1,25 +1,28 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { Icon } from '@/components/icon';
+import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, deleteActivity } from '@/lib/api/activities';
 import { pressable } from '@/lib/pressable';
 import { qk } from '@/lib/query-keys';
+import { makeStyles } from '@/lib/themed-styles';
 
 function formatDuration(durationS: number): string {
   const minutes = Math.round(durationS / 60);
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest.toString().padStart(2, '0')}`;
 }
 
 function formatDistance(distanceM: number): string {
-  return `${(distanceM / 1000).toFixed(2)} km`;
+  return `${(distanceM / 1000).toFixed(2).replace('.', ',')} km`;
 }
 
 function formatPace(durationS: number, distanceM: number): string {
@@ -37,31 +40,40 @@ function formatDate(isoString: string): string {
 
 /** First-import placeholder shown while a sync runs and there's no data yet. */
 export function SyncingCard() {
+  const styles = useStyles();
+  const theme = useTheme();
+
   return (
     <View style={styles.syncingCard}>
-      <ActivityIndicator color={Colors.blaze} />
-      <ThemedText type="small" themeColor="textSecondary">
+      <ActivityIndicator color={theme.inkMuted} />
+      <ThemedText type="small" themeColor="inkMuted">
         Ça peut prendre quelques minutes la première fois.
       </ThemedText>
     </View>
   );
 }
 
+/**
+ * The log: one row per activity, divided by rules.
+ *
+ * A logbook, not a stack of cards — every row is the same kind of thing, and
+ * boxing each one made a list of forty objects out of a single table.
+ */
 export function ActivityList({ activities }: { activities: Activity[] }) {
+  const styles = useStyles();
+
   return (
     <View style={styles.activityList}>
-      {activities.map((activity, index) => (
-        <ActivityRow
-          key={activity.id}
-          activity={activity}
-          isLast={index === activities.length - 1}
-        />
+      {activities.map((activity) => (
+        <ActivityRow key={activity.id} activity={activity} />
       ))}
     </View>
   );
 }
 
-function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean }) {
+function ActivityRow({ activity }: { activity: Activity }) {
+  const styles = useStyles();
+  const theme = useTheme();
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const hasDistance = activity.distance_m != null && activity.distance_m > 0;
@@ -81,31 +93,34 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
       disabled={!hasDetail}
       onPress={() => setOpen((v) => !v)}
       accessibilityRole={hasDetail ? 'button' : undefined}
-      style={pressable([styles.activityRow, isLast && styles.activityRowLast])}>
+      accessibilityState={hasDetail ? { expanded: open } : undefined}
+      style={pressable(styles.activityRow)}>
       <View style={styles.activityRowTop}>
+        {/* The glyph is what lets a log of forty entries be scanned for "which
+            of these were runs?" — the sport is named beside it, so it is a
+            scanning aid rather than the label. */}
+        <SportIcon sport={activity.sport} size={20} />
         <View style={styles.activityRowMain}>
           <View style={styles.activityLabelRow}>
-            <ThemedText type="default">{activityLabel(activity)}</ThemedText>
-            {hasDetail ? (
-              <Icon
-                name={open ? 'chevron-down' : 'chevron-right'}
-                size={16}
-                color={Colors.textSecondary}
-              />
-            ) : null}
+            <ThemedText type="default" numberOfLines={1}>
+              {activityLabel(activity)}
+            </ThemedText>
             {activity.manual ? (
-              <ThemedText type="waypointLabel" themeColor="hydro">
+              <ThemedText type="label" themeColor="inkMuted">
                 Manuel
               </ThemedText>
             ) : null}
           </View>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             {formatDate(activity.start_time)}
           </ThemedText>
         </View>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="figure" style={styles.duration}>
           {formatDuration(activity.duration_s)}
         </ThemedText>
+        {hasDetail ? (
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={16} color={theme.inkMuted} />
+        ) : null}
       </View>
 
       {open ? (
@@ -122,8 +137,12 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
           {activity.avg_hr != null ? (
             <Detail label="FC moyenne" value={`${activity.avg_hr} bpm`} />
           ) : null}
-          {activity.max_hr != null ? <Detail label="FC max" value={`${activity.max_hr} bpm`} /> : null}
-          {activity.rpe != null ? <Detail label="Effort (RPE)" value={`${activity.rpe}/10`} /> : null}
+          {activity.max_hr != null ? (
+            <Detail label="FC max" value={`${activity.max_hr} bpm`} />
+          ) : null}
+          {activity.rpe != null ? (
+            <Detail label="Effort (RPE)" value={`${activity.rpe}/10`} />
+          ) : null}
           {activity.note ? <Detail label="Note" value={activity.note} /> : null}
           {activity.manual ? (
             <Pressable
@@ -132,7 +151,7 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
               accessibilityRole="button"
               accessibilityLabel="Supprimer cette séance"
               style={pressable(styles.deleteButton)}>
-              <ThemedText type="waypointLabel" themeColor="flare">
+              <ThemedText type="link" themeColor="alerte">
                 {deleteMutation.isPending ? 'Suppression…' : 'Supprimer cette séance'}
               </ThemedText>
             </Pressable>
@@ -144,43 +163,48 @@ function ActivityRow({ activity, isLast }: { activity: Activity; isLast: boolean
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
+  const styles = useStyles();
+
   return (
     <View style={styles.detailRow}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
-      <ThemedText type="small">{value}</ThemedText>
+      <ThemedText type="figure" style={styles.detailValue}>
+        {value}
+      </ThemedText>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   syncingCard: {
-    backgroundColor: Colors.backgroundElement,
+    borderWidth: 1,
+    borderColor: t.rule,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
     alignItems: 'center',
   },
   activityList: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
+    borderBottomWidth: 1,
+    borderBottomColor: t.rule,
   },
   activityRow: {
-    paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.contourFaint,
+    // Rule on top of every row: the list closes on its container's own bottom
+    // edge instead of leaving a line hanging under the last entry.
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
   activityRowTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  activityRowLast: {
-    borderBottomWidth: 0,
+    gap: Spacing.three,
+    minHeight: 44,
   },
   activityRowMain: {
+    flex: 1,
     gap: Spacing.half,
   },
   activityLabelRow: {
@@ -188,20 +212,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
   },
+  duration: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   deleteButton: {
-    paddingTop: Spacing.two,
+    minHeight: 44,
+    justifyContent: 'center',
     alignSelf: 'flex-start',
   },
   activityDetail: {
-    gap: Spacing.half,
+    gap: Spacing.one,
     paddingTop: Spacing.two,
     marginTop: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    gap: Spacing.three,
   },
-});
+  detailValue: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+}));

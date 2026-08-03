@@ -16,7 +16,7 @@ def test_hr_zone_block_becomes_heart_rate_zone_target():
         structure=[Block(label="Bloc seuil", duration_min=20, hr_zone=4)],
     )
     workout, name = gws.build_workout(req)
-    assert name == "Mosa — Seuil"
+    assert name == "Relay — Seuil"
     step = _dump(workout)["workoutSegments"][0]["workoutSteps"][0]
     assert step["targetType"]["workoutTargetTypeKey"] == "heart.rate.zone"
     assert step["zoneNumber"] == 4
@@ -58,7 +58,7 @@ def test_warmup_repeat_and_cooldown_structure():
         week_number=3,
     )
     workout, name = gws.build_workout(req)
-    assert name == "Mosa — Fractionné (S3)"
+    assert name == "Relay — Fractionné (S3)"
     steps = _dump(workout)["workoutSegments"][0]["workoutSteps"]
     assert steps[0]["stepType"]["stepTypeKey"] == "warmup"
     assert steps[1]["stepType"]["stepTypeKey"] == "repeat"

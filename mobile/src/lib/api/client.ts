@@ -6,7 +6,12 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 /** Set by the service worker on a response it served from its cache, carrying
  * the date that copy was stored (public/sw.js). Absent on anything that came
  * off the network — which is how the app knows the difference. */
-const CACHED_AT_HEADER = 'X-Mosa-Cached-At';
+const CACHED_AT_HEADER = 'X-Relay-Cached-At';
+/** The header the pre-rename worker stamped. An installed PWA keeps serving its
+ * old service worker until the next load activates the new one, so for that one
+ * session the app would otherwise read every cached response as fresh — the
+ * exact failure the offline banner exists to prevent. */
+const LEGACY_CACHED_AT_HEADER = 'X-Mosa-Cached-At';
 
 /** Mirrors the backend's `HTTPException(detail={code, message})` shape (api-conventions). */
 export class ApiError extends Error {
@@ -58,7 +63,12 @@ async function request<T>(path: string, options: RequestOptions = {}, isRetry = 
   if (method === 'GET') {
     // Only reads can be served from the cache, and only a read tells us
     // anything about connectivity — a write never reaches the worker's cache.
-    useOfflineStore.getState().report(response.headers.get(CACHED_AT_HEADER));
+    useOfflineStore
+      .getState()
+      .report(
+        response.headers.get(CACHED_AT_HEADER) ??
+          response.headers.get(LEGACY_CACHED_AT_HEADER),
+      );
   }
 
   if (response.status === 401 && auth && !isRetry) {

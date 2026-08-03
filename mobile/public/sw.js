@@ -1,5 +1,5 @@
 /*
- * Mosa service worker — Web Push + offline reads.
+ * Relay service worker — Web Push + offline reads.
  *
  * ── Why there is an offline story at all ──────────────────────────────────
  * The web build IS the product: an installed PWA on iOS. DESIGN.md says this
@@ -26,7 +26,7 @@
  *     shown as if it were current is worse than no session at all: the whole
  *     premise of this app is that the plan adapts to what actually happened.
  *     So the network always gets the first word, and anything served off the
- *     shelf is stamped with X-Mosa-Cached-At (when it was stored) so the UI can
+ *     shelf is stamped with X-Relay-Cached-At (when it was stored) so the UI can
  *     say "hors-ligne, données du …" rather than lie by omission.
  *
  * Everything else — every write (validate, skip, link an activity), auth, and
@@ -39,7 +39,7 @@
  * ── Versioning ───────────────────────────────────────────────────────────
  * A mis-versioned service worker serves dead assets forever, and an installed
  * PWA has no visible reload button to break the loop. So: every cache name
- * carries CACHE_VERSION, `activate` deletes every mosa- cache outside the
+ * carries CACHE_VERSION, `activate` deletes every relay- (and legacy mosa-) cache outside the
  * current set, and skipWaiting + clients.claim let a new worker take over on
  * the next load instead of waiting for every tab to close.
  *
@@ -48,16 +48,16 @@
  */
 
 const CACHE_VERSION = 'v1';
-const SHELL_CACHE = `mosa-shell-${CACHE_VERSION}`;
-const DATA_CACHE = `mosa-data-${CACHE_VERSION}`;
+const SHELL_CACHE = `relay-shell-${CACHE_VERSION}`;
+const DATA_CACHE = `relay-data-${CACHE_VERSION}`;
 const CURRENT_CACHES = [SHELL_CACHE, DATA_CACHE];
 
 /** Stamped on a response served from the data cache: when it was stored, as an
  * ISO date. Read by lib/api/client.ts, which drives the offline banner. */
-const CACHED_AT_HEADER = 'X-Mosa-Cached-At';
+const CACHED_AT_HEADER = 'X-Relay-Cached-At';
 /** Written alongside the cached copy so the above can be answered without
  * keeping a second index in sync with the cache. */
-const STORED_AT_HEADER = 'X-Mosa-Stored-At';
+const STORED_AT_HEADER = 'X-Relay-Stored-At';
 
 /**
  * The API reads worth holding for a network-less morning. Deliberately short:
@@ -91,7 +91,11 @@ self.addEventListener('activate', (event) => {
       .then((names) =>
         Promise.all(
           names
-            .filter((name) => name.startsWith('mosa-') && !CURRENT_CACHES.includes(name))
+            .filter(
+              (name) =>
+                (name.startsWith('relay-') || name.startsWith('mosa-')) &&
+                !CURRENT_CACHES.includes(name),
+            )
             .map((name) => caches.delete(name)),
         ),
       )
@@ -212,7 +216,7 @@ self.addEventListener('push', (event) => {
   } catch (e) {
     data = {};
   }
-  const title = data.title || 'Mosa';
+  const title = data.title || 'Relay';
   const options = {
     body: data.body || '',
     icon: '/icons/icon-192.png',

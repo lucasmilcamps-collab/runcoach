@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
 import { pressable } from '@/lib/pressable';
@@ -29,6 +29,7 @@ function parseHr(value: string): number | null {
 }
 
 export default function FitnessProfileScreen() {
+  const styles = useStyles();
   const queryClient = useQueryClient();
   const fitnessQuery = useQuery({ queryKey: qk.fitness(), queryFn: getFitness });
 
@@ -65,11 +66,11 @@ export default function FitnessProfileScreen() {
 
     const nextMaxError =
       max == null || max < HR_MAX_MIN || max > HR_MAX_MAX
-        ? `Entrez une FC max réaliste (${HR_MAX_MIN}–${HR_MAX_MAX}).`
+        ? `Entre une FC max réaliste (${HR_MAX_MIN}–${HR_MAX_MAX}).`
         : undefined;
     const nextRestError =
       rest == null || rest < HR_REST_MIN || rest > HR_REST_MAX
-        ? `Entrez une FC de repos réaliste (${HR_REST_MIN}–${HR_REST_MAX}).`
+        ? `Entre une FC de repos réaliste (${HR_REST_MIN}–${HR_REST_MAX}).`
         : max != null && rest != null && max - rest < MIN_RESERVE
           ? 'La FC max doit être nettement au-dessus de la FC de repos.'
           : undefined;
@@ -85,7 +86,7 @@ export default function FitnessProfileScreen() {
     saveMutation.error instanceof ApiError
       ? saveMutation.error.message
       : saveMutation.isError
-        ? 'Impossible d’enregistrer. Réessayez.'
+        ? 'Impossible d’enregistrer. Réessaie.'
         : undefined;
 
   return (
@@ -94,15 +95,14 @@ export default function FitnessProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <ScreenCrest />
           <View style={styles.header}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
+            <ThemedText type="label" themeColor="inkMuted">
               Fréquence cardiaque
             </ThemedText>
             <ThemedText type="title">Vos repères cardiaques</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
-              Garmin ne fournit pas votre fréquence de repos (montre non portée en continu ?).
-              Renseignez vos deux repères : ils servent à calculer vos zones et votre charge, et une
+            <ThemedText type="default" themeColor="inkMuted">
+              Garmin ne fournit pas ta fréquence de repos (montre non portée en continu ?).
+              Renseigne tes deux repères : ils servent à calculer tes zones et ta charge, et une
               synchronisation Garmin ne les écrasera pas.
             </ThemedText>
           </View>
@@ -134,19 +134,19 @@ export default function FitnessProfileScreen() {
               placeholder="ex. 50"
               maxLength={3}
             />
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               Astuce : la FC de repos se mesure le matin au réveil, allongé. La FC max est la plus
               haute vue en fin d’effort intense.
             </ThemedText>
             {serverError ? (
-              <ThemedText type="small" themeColor="flare">
+              <ThemedText type="small" themeColor="alerte">
                 {serverError}
               </ThemedText>
             ) : null}
           </View>
 
           <View style={styles.form}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
+            <ThemedText type="label" themeColor="inkMuted">
               Repère principal
             </ThemedText>
             <Segmented
@@ -157,7 +157,7 @@ export default function FitnessProfileScreen() {
                 { value: 'hr', label: 'Fréquence cardiaque' },
               ]}
             />
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               {primaryMetric === 'pace'
                 ? 'Chaque séance affiche l’allure en premier ; la zone FC reste indiquée, en plafond sur les séances faciles.'
                 : 'Chaque séance affiche la zone FC en premier ; l’allure reste indiquée en secondaire.'}
@@ -188,6 +188,7 @@ function Segmented({
   onChange: (v: PrimaryMetric) => void;
   options: { value: PrimaryMetric; label: string }[];
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.segmented}>
       {options.map((opt) => {
@@ -199,7 +200,7 @@ function Segmented({
             accessibilityRole="button"
             accessibilityState={{ selected }}
             style={pressable([styles.segment, selected && styles.segmentSelected])}>
-            <ThemedText type={selected ? 'link' : 'default'} themeColor={selected ? 'blaze' : 'text'}>
+            <ThemedText type={selected ? 'link' : 'default'} themeColor={selected ? 'ink' : 'inkMuted'}>
               {opt.label}
             </ThemedText>
           </Pressable>
@@ -209,7 +210,7 @@ function Segmented({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: {
     flex: 1,
   },
@@ -223,19 +224,19 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.three,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
+    borderColor: t.ruleStrong,
+    backgroundColor: t.raised,
   },
   segmentSelected: {
-    // Outline-selected, matching the shared Chip: the screen's one blaze fill
+    // Outline-selected, matching the shared Chip: the screen's one filled button
     // stays with the primary action (DESIGN.md, The One Blaze Rule).
     borderWidth: 1.5,
-    borderColor: Colors.blaze,
-    backgroundColor: Colors.backgroundSelected,
+    borderColor: t.ink,
+    backgroundColor: t.inset,
   },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -260,4 +261,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

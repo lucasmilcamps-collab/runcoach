@@ -249,7 +249,7 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
     """Pure mapping from a session to a Garmin RunningWorkout + its name.
     Kept import-free of the network so it's unit-testable."""
     label = _SESSION_LABELS.get(req.session_type, "Séance")
-    name = f"Mosa — {label}"
+    name = f"Relay — {label}"
     if req.week_number:
         name = f"{name} (S{req.week_number})"
 

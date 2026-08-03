@@ -1,15 +1,15 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { GenerationProgress } from '@/components/generation-progress';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { pressable } from '@/lib/pressable';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
 import { ApiError } from '@/lib/api/client';
@@ -26,6 +26,7 @@ const SEVERITIES: { value: Severity; label: string; hint: string }[] = [
 const DAYS_OFF = [0, 3, 5, 7, 10, 14, 21];
 
 export default function InjuryReportScreen() {
+  const styles = useStyles();
 
   const [area, setArea] = useState('');
   const [severity, setSeverity] = useState<Severity>('gene');
@@ -48,13 +49,12 @@ export default function InjuryReportScreen() {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ScreenCrest />
           <View style={styles.header}>
-            <ThemedText type="waypointLabel" themeColor="flare">
+            <ThemedText type="label" themeColor="alerte">
               Signaler une blessure
             </ThemedText>
             <ThemedText type="title">Adapter mon plan</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="inkMuted">
               Le plan sera régénéré en reprise progressive : une période allégée puis une remontée
               douce de la charge. Ce n’est pas un avis médical — en cas de doute ou de douleur qui
               persiste, consulte un professionnel de santé.
@@ -81,10 +81,10 @@ export default function InjuryReportScreen() {
                   accessibilityRole="button"
                   accessibilityState={{ selected: severity === s.value }}
                   style={pressable([styles.severityRow, severity === s.value && styles.severityRowSelected])}>
-                  <ThemedText type="default" themeColor={severity === s.value ? 'blaze' : 'text'}>
+                  <ThemedText type="default" themeColor={severity === s.value ? 'ink' : 'inkMuted'}>
                     {s.label}
                   </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <ThemedText type="small" themeColor="inkMuted">
                     {s.hint}
                   </ThemedText>
                 </Pressable>
@@ -110,7 +110,7 @@ export default function InjuryReportScreen() {
             elapsedSeconds={generation.elapsedSeconds}
           />
           {errorMessage ? (
-            <ThemedText type="small" themeColor="flare">
+            <ThemedText type="small" themeColor="alerte">
               {errorMessage}
             </ThemedText>
           ) : null}
@@ -136,9 +136,10 @@ export default function InjuryReportScreen() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
       {children}
@@ -146,11 +147,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -169,12 +170,13 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
+    borderColor: t.rule,
+    backgroundColor: 'transparent',
     gap: Spacing.half,
   },
   severityRowSelected: {
-    borderColor: Colors.blaze,
+    backgroundColor: t.inset,
+    borderColor: t.ruleStrong,
   },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   actions: {
@@ -184,4 +186,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

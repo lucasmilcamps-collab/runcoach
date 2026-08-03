@@ -1,29 +1,34 @@
 ---
-name: Mosa
-description: Night-trail waymarking for a solo, recovery-adaptive running coach
+name: Relay
+description: A load ledger for one athlete's whole week — calm performance, dual anthracite/sable, colour reserved for training-load signals
 colors:
-  ground: "#14140F"
-  ground-elevated: "#1F2018"
-  contour: "#8A6F47"
-  contour-faint: "#8A6F4733"
-  parchment: "#F1ECDD"
-  parchment-muted: "#A79F8C"
-  blaze: "#E8792C"
-  blaze-deep: "#C05F1B"
-  hydro: "#2FA8A0"
-  flare: "#F26D71"
+  surface: "#16181A"
+  raised: "#1D2023"
+  inset: "#24282C"
+  rule: "#2E3338"
+  rule-strong: "#6B747D"
+  ink: "#E9E7E3"
+  ink-muted: "#9BA1A7"
+  go: "#4FB286"
+  prudence: "#D9A23F"
+  recup: "#6E9CCB"
+  alerte: "#E4776A"
 typography:
   body:
     fontFamily: "System (SF Pro / Roboto / system-ui)"
     fontWeight: 400
   label:
-    fontFamily: "IBM Plex Mono"
+    fontFamily: "Azeret Mono"
     fontWeight: 500
-    letterSpacing: "0.04em"
+    letterSpacing: "0.06em"
+  figure:
+    fontFamily: "Azeret Mono"
+    fontWeight: 500
+    fontVariantNumeric: "tabular-nums"
 rounded:
-  sm: "8px"
-  md: "14px"
-  lg: "20px"
+  sm: "6px"
+  md: "10px"
+  lg: "14px"
 spacing:
   half: "2px"
   one: "4px"
@@ -34,211 +39,188 @@ spacing:
   six: "64px"
 components:
   button-primary:
-    backgroundColor: "{colors.blaze}"
-    textColor: "{colors.ground}"
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.surface}"
     rounded: "{rounded.md}"
     padding: "16px 24px"
   button-primary-pressed:
-    backgroundColor: "{colors.blaze-deep}"
+    backgroundColor: "{colors.ink-muted}"
   button-ghost:
     backgroundColor: "transparent"
-    textColor: "{colors.parchment}"
+    borderColor: "{colors.rule-strong}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.md}"
     padding: "16px 24px"
 ---
 
-# Design System: Mosa
+# Design System: Relay
 
 ## Overview
 
-**Creative North Star: "Night-Trail Waymarking"**
+**Creative North Star: "The Load Ledger"**
 
-Mosa's first surface is a trailhead read at dusk: a topographic world rendered dark, where thin contour-line hairlines trace the ground and a single "you are here" waymarker in trail-blaze orange advances as you move through onboarding. The mechanism this world carries: a plan that reads your terrain (real recovery data) and adjusts the route in front of you, not a fixed course laid down in advance. Nothing here is a stock fitness-app gradient hero or a clinical dashboard card grid — it is signage, not decoration.
+Relay is not a running app with cross-training bolted on; it is the register where every discipline an athlete practises — course, renfo, padel, basket — posts to the same account, and the interface exists to arbitrate between them. The world it borrows from is the technical register: a machinist's job card, a commissaire's exchange-zone sheet, a lab logbook. Ruled lines, one column grid, figures set in a tabular mono, nothing decorative that isn't also structural.
 
-Dark is the resting state (project convention, not a category default): the app is read at 6am before a run or mid-recovery in bed, not under gallery lighting. Contour lines carry structure the way hairline rules carry structure in an editorial grid, but they are drawn from a real cartographic vocabulary: sienna-brown hairlines on near-black olive ground, exactly as a relief map reads under a headlamp.
+The name is the thesis. A relay is a handover: Tuesday's basket match hands its fatigue to Wednesday's tempo, and the plan is the sequence of those handovers, not a list of runs. The app's job is to say what the previous leg left behind.
+
+**What this world replaces, deliberately.** The previous identity (Mosa, "Night-Trail Waymarking") read the plan as a route through terrain, with contour hairlines and a blaze-orange waymarker. That metaphor said *journey*; this product's problem is *arbitrage*. The map is gone: no contours, no pins, no trail, no blaze. Nothing from that system survives except the spacing rhythm and the discipline about accessible contrast.
 
 **Key Characteristics:**
-- Dark, warm-neutral ground with sienna contour hairlines as the only structural ornament
-- One accent does all the work: trail-blaze orange marks the current position, the primary action, and nothing else
-- A second, narrow-use accent (hydro teal) exists only to mean "connected / data flowing" — never decorative
-- IBM Plex Mono appears only where the app is being precise about a measurement or a position (step count, a coordinate-style label) — body text stays on the native system font
+- Two appearances, both first-class: **Graphite** (soft anthracite, never pure black) and **Sable** (very light sand, never pure white). Chosen by the system, overridable by the athlete.
+- Colour never means brand. It means training load, and only that: three signal inks with one meaning each, plus one error ink.
+- Structure comes from hairline rules and tonal steps, never from cast shadows or a wall of same-size cards.
+- Figures are set in Azeret Mono with tabular numerals so columns of numbers align down a week; sentences stay on the platform's own face.
 
 ## Colors
 
-Restrained strategy: a warm-dark neutral ground carries the surface, one saturated accent carries every action and position marker.
-
-### Primary
-- **Trail Blaze** (`#E8792C`): the "you are here" waymarker, every primary button, every active/selected state. Nothing else in the system may use this hue — its rarity is what makes it readable as "act here."
-- **Trail Blaze Deep** (`#C05F1B`): pressed/active state of Trail Blaze surfaces.
-
-### Secondary
-- **Hydro Teal** (`#2FA8A0`): reserved for one meaning only — a live, successful data connection (Garmin connected, sync running). Borrowed from the hydrology-blue convention on real topo maps.
-
-### Tertiary
-- **Flare Red** (`#F26D71`): errors and destructive actions only. Distinct enough from Trail Blaze that "act here" and "something's wrong" are never visually confused.
-
-### Neutral
-- **Night Ground** (`#14140F`): base background. Warm near-black, not a pure or cool black.
-- **Elevated Ground** (`#1F2018`): cards, sheets, input fields, anything one tonal step above the base — depth by tone, not by shadow.
-- **Contour** (`#8A6F47`): hairline dividers, waypoint-path strokes, input borders at rest. The system's one recurring line weight/color.
-- **Contour Faint** (`#8A6F4733`, 20% alpha): decorative contour texture where a hairline would be too loud (e.g. background topographic linework behind the welcome screen).
-- **Parchment** (`#F1ECDD`): primary text on dark ground. Warm off-white, never pure white.
-- **Parchment Muted** (`#A79F8C`): secondary/caption text, placeholder text.
+Restrained strategy: a neutral ground carries the entire surface, and saturated colour is spent exclusively on training-load state.
 
 ### Named Rules
-**The One Blaze Rule.** Trail Blaze orange appears on at most one element's fill per screen at rest (the primary CTA or the active waypoint pin). Everything else that needs emphasis uses weight, a Contour outline, or Parchment at full opacity instead of reaching for the accent.
 
-The brand mark is outside this rule: a lockup shown once, at the top of an onboarding screen, is identity rather than an offer to act, and it never sits where a control would.
+**The Signal Is Never A Command.** Go, Prudence and Récup describe the athlete's state — they are read-outs. A button, a link, a selected tab or any other "act here" affordance is therefore **never** filled with a signal ink; the primary action is a neutral high-contrast fill (Ink on Graphite, near-black on Sable). This is the rule that keeps the palette honest: the moment a CTA is green, "green" stops meaning "this is today's key session" and starts meaning "click me". It also means a screen can carry three signals at once without competing with its own action.
+
+**One Meaning Per Ink.** Each signal is defined by what it says about load, not by where it looks good. Reusing Prudence because a card "needed a warm accent" is the failure this rule names.
+
+### Signal inks
+
+| Ink | Graphite | Sable | Means, and only this |
+|---|---|---|---|
+| **Go** | `#4FB286` | `#23694A` | The session that carries the week's stimulus — today's key workout, a completed quality session, a green light to train hard. |
+| **Prudence** | `#D9A23F` | `#7A5509` | Accumulated fatigue, surcharge risk, a session the engine has downgraded. Caution, never failure. |
+| **Récup** | `#6E9CCB` | `#2F5B87` | Deliberate ease: recovery days, deload weeks, rest. A quiet colour for a day that is *supposed* to be quiet. |
+| **Alerte** | `#E4776A` | `#A63C31` | Errors and destructive actions only. Never a fourth load state. |
+
+A missed session is **not** Alerte. Skipping a run is a fact the plan adapts to; drawing it in the error colour tells the athlete they failed at something the product exists to absorb. Missed sessions are drawn in Rule.
+
+### Neutrals
+
+| Token | Graphite | Sable | Role |
+|---|---|---|---|
+| `surface` | `#16181A` | `#F2EEE6` | The ground. Soft anthracite / very light sand — no pure black, no pure white. |
+| `raised` | `#1D2023` | `#FBF9F5` | Cards, sheets, fields. One tonal step, in the direction the appearance implies. |
+| `inset` | `#24282C` | `#E5DFD2` | Selected and pressed surfaces, chart tracks. |
+| `rule` | `#2E3338` | `#DBD4C6` | The hairline. The system's one structural line. |
+| `rule-strong` | `#6B747D` | `#857D6C` | Borders that carry state or an affordance (fields, ghost buttons) — ≥3:1 on every ground, per WCAG 1.4.11. |
+| `ink` | `#E9E7E3` | `#1B1D1F` | Primary text, and the fill of the primary button. Warm off-white / warm near-black. |
+| `ink-muted` | `#9BA1A7` | `#5A5F64` | Secondary text, labels, placeholders. AA on all three grounds. |
+
+Every text colour listed clears 4.5:1 on `surface`, `raised` **and** `inset` in both appearances — verified, not assumed. Secondary text is never a lighter grey improvised at the call site.
+
+### The intensity ramp
+
+Training zones Z1→Z5 are the one place colour encodes a scale rather than a state, and the scale runs between two signals that already exist: from Récup at Z1 to Go at Z5.
+
+- Graphite: `#5B87B3 → #4E96A9 → #45A297 → #4AAC8B → #57B87C`
+- Sable: `#3D6A94 → #2F7383 → #2A7C74 → #2C845F → #3A8B4C`
+
+Two hues, sequential, never a rainbow — and it never passes through Prudence, because a hard session is not a warning. Colour on the ramp is always paired with the zone number or a bar height; it never carries the value alone.
 
 ## Typography
 
-**Display/Label Font:** IBM Plex Mono (with monospace fallback)
-**Body Font:** System — SF Pro on iOS, Roboto on Android, system-ui on web
+**Body:** System — SF Pro on iOS, Roboto on Android, system-ui on web. Dynamic Type and platform conventions stay intact.
+**Signage and figures:** Azeret Mono (500). A low-contrast geometric mono with the squared-off, drawn-to-a-grid character of machine lettering — the register's own hand.
 
-**Character:** The system font carries every sentence a user reads and every native control, so Dynamic Type and platform conventions stay intact. IBM Plex Mono appears only for things that are literally a measurement or a position — a step counter, a waypoint index — the way a topo map sets grid references and elevation figures in a technical face distinct from its place names.
+Two jobs, one face:
+
+- **Labels** — uppercase, 0.06em tracking. Section kickers, column heads, stat names. Short signage, never a sentence.
+- **Figures** — tabular numerals. Every number the athlete is meant to compare: durations, distances, loads, paces, form values, percentages. Tabular is the functional reason the mono is here at all: a week of loads stacked in a column must align on the decimal, and a proportional face makes "112" narrower than "998".
 
 ### Hierarchy
-Six steps, and only six — every size in the app comes from this table (`ThemedText`). A screen that needs a size between two of them needs a different layout, not a seventh step.
 
-- **Title** (system font, semibold, 28/34): screen titles ("Bienvenue", "Connecter Garmin").
-- **Subtitle** (system font, medium, 20/26): the one figure a card is answering (80 %, 34,3 km, a stat value), a card's lead sentence, a session name in a hero.
-- **Body** (system font, regular, 16/22, max ~70ch on web): all reading text, form labels, list rows, the line under a screen title.
-- **Link** (system font, semibold, 16/22): button labels and the title of a tappable card — Body's weight, never its own size.
-- **Caption** (system font, regular, 13/18): helper text, error text, secondary metadata, the sentence explaining what a card is for.
-- **Waypoint Label** (IBM Plex Mono, medium, 12/16, tracking 0.04em, uppercase): section labels, the "01 / 04" step counter, any coordinate-style micro-label. Never used for a full sentence.
+Six steps, and only six. A screen that wants a size between two of them wants a different layout.
 
-**One 28 per screen.** The largest step marks the single loudest element on a page, and a page has exactly one: usually its title, and on Accueil — which has no title — the week ring. A card's hero figure is Subtitle, never Title: at 28 it tied with the screen's own name, and made a number on a summary *larger* than the same number on the detail screen behind it, inverting the hierarchy between a summary and its depth.
-
-**The line under a screen title is Body, everywhere.** It is the same sentence doing the same job on every screen; dropping it to Caption on one screen is the kind of difference that reads as sloppiness rather than as emphasis.
+- **Title** (system, 600, 28/34) — screen titles. One per screen, and only one.
+- **Subtitle** (system, 600, 20/26) — the sentence a block leads with; a card's heading.
+- **Body** (system, 400, 16/22, ≤70ch on web) — everything read as prose.
+- **Action** (system, 600, 16/22) — button labels and tappable card titles. Body's size at Action's weight, never its own size.
+- **Caption** (system, 400, 13/18) — helper text, metadata, the line explaining what a figure means.
+- **Label** (Azeret Mono, 500, 12/16, +0.06em, uppercase) — signage.
+- **Figure** (Azeret Mono, 500, tabular, sized at the call site from 13 to 32) — numbers under comparison.
 
 ### Named Rules
-**The Signage-Not-Sentence Rule.** IBM Plex Mono never carries a full sentence or a paragraph; the moment it would wrap past a few characters, it has left signage and become body text, and switches to the system font.
+
+**The Measurement Rule.** Azeret Mono appears where something is measured, counted or labelled as a column head. It never sets a sentence, and it is never reached for to make a block look technical — the mono is a tabular tool, not a costume.
+
+**A figure never appears alone.** Every number carries a Label naming it and, where the number is a judgement, a plain-French line stating the conclusion. "Forme +14" is a reading; "Frais — bon jour pour une séance intense" is what the athlete came for. Nothing measured yet reads "—", never "0": nothing measured and nothing achieved are different statements.
 
 ## Layout
 
-Generous vertical rhythm (Spacing scale below). Primary actions anchor to the bottom safe area as heavy, latching commitments (native call-to-action placement), never floating mid-content. The waypoint stepper sits above the screen title on every screen in the onboarding flow, so the trail position is always the first thing read.
+**Three blocks per screen, at most.** The brief this system was built from is explicit: an athlete opening the app is arbitrating, not browsing. Accueil answers *what do I do today*, *what has this week already cost me*, *what should I move* — and stops. A fourth block on a home screen means one of the three wasn't doing its job.
 
-**One alignment axis.** On a wide screen every element of a dashboard — the hero, both card columns, the week trail and the tab bar — starts and ends on the same two vertical lines. Anything that opts out (a bar stretched edge to edge, a block left outside the grid, a row whose contents drift to its extremes) reads as broken even when each piece is individually fine.
+**The rule, not the card, carries structure.** Blocks are separated by a 1px Rule hairline and vertical rhythm, not by giving every group a raised box with a radius. A raised surface is earned by something that is genuinely a distinct object (a session, a field, a sheet), not by a heading with text under it. Nested cards do not exist in this system.
 
-**Three width caps, one per kind of screen.** Forms and dialogs (login, plan setup, add activity, réglages…) cap at **560** — a field or a full-width button stretched to 800 reads as unfinished on desktop. Reading/list surfaces stay single-column at **800** to keep line length in HIG/Material-friendly bounds. Dashboard surfaces (Accueil, Séances) cap at **1000** and lay their summary cards out in **two columns at ≥720px** via `CardColumns` — on desktop web a single 800px strip flanked by dead space wasted the viewport, and the two summary cards read better side by side. Below the breakpoint everything stacks, unchanged. Cards are distributed by index parity so one tall card doesn't drag the layout, and a lone card falls back to full width rather than sitting in a half-width strip.
+Spacing scale: half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, everywhere.
 
-**Side by side means the same height.** Both columns end on one line: a card that stops a hundred pixels short of its neighbour reads as a layout that gave up, not as a deliberate pair. Each card takes a share of its column's leftover height and absorbs it *in kind* — the fitness curve grows into it, the week ring re-centres in it, the load bars settle around theirs. A card that swallows the space as a strip of empty padding under its content has not solved the problem, it has moved it.
+**One alignment axis.** On a wide screen the header, every block, the ledger and the tab bar start and end on the same two vertical lines. A bar stretched edge to edge while its neighbours sit in the column reads as broken even when each piece is fine on its own.
 
-Spacing scale (matches `src/constants/theme.ts`): half 2 · one 4 · two 8 · three 16 · four 24 · five 32 · six 64. More space above a heading than below it, throughout.
+**Three width caps, one per kind of screen.** Forms and dialogs cap at **560**; reading and list surfaces stay single-column at **800**; ledger/dashboard surfaces cap at **1040** and split into two columns at ≥720px. Below the breakpoint everything stacks.
+
+**Side by side means the same height.** Two columns end on one line; a block that stops short of its neighbour reads as a layout that gave up. Each absorbs its leftover height in kind — the ledger's columns grow, a trend line grows into its plot — never as a strip of empty padding under the content.
 
 ## Elevation & Depth
 
-Flat-by-default: depth comes from the Night Ground → Elevated Ground tonal step, never from drop shadows. The one exception is the active waypoint pin, which carries a soft, low-opacity warm glow (a headlamp-lit marker on a dark map), not a hard drop shadow.
-
-### Named Rules
-**The Tonal-Not-Cast Rule.** Elevation is a fill-color step (Night Ground → Elevated Ground), never a `box-shadow`/native shadow, except the single named glow on the active waypoint marker.
+Flat by default: depth is the `surface → raised → inset` tonal step. No cast shadows anywhere in the app, in either appearance — a soft drop shadow under every card is the surface habit this world replaces with a hairline. Sheets and modals are the sole exception and take a real shadow with an offset and a soft blur, because they genuinely float above the page.
 
 ## Shapes
 
-Rounded (`8` / `14` / `20`): soft enough to feel like routed signage edges, never pill-shaped or fully circular except the waypoint pin itself (a true circle, the one place a perfect circle is earned — it is literally a map pin). Contour-hairline borders (1px, Contour color) outline input fields and ghost buttons instead of a filled background.
+Moderate corners: `6` / `10` / `14`. Nothing is pill-shaped; the one true circle is the avatar, which is a portrait frame and reads wrong at any other radius. Rounded rectangles are drawn with a hairline border rather than a fill wherever the object is a container rather than a control.
 
 ## Components
 
 ### Buttons
-- **Shape:** rounded `md` (14px).
-- **Primary:** Trail Blaze fill, Night Ground text, semibold, full-width at the bottom safe area. Pressed → Trail Blaze Deep.
-- **Ghost/Secondary:** transparent fill, 1px Contour border, Parchment text. Used for "Se connecter" / "Plus tard" style secondary actions.
-- **Disabled:** Contour Faint fill, Parchment Muted text, no press feedback.
+- **Primary:** Ink fill, Surface label, Action weight, `md` radius, full width at the bottom of the screen. Pressed → Ink Muted. Never a signal ink (The Signal Is Never A Command).
+- **Ghost:** transparent, 1px Rule Strong border, Ink label. Pressed → Inset fill.
+- **Disabled:** Inset fill, Ink Muted label, no press feedback.
+- **One primary per screen.** Everything else actionable shares one compact ghost row. Stacking full-width buttons makes them all look equally important and buries the one that matters.
 
-### Touch targets on a PWA
-Every control reserves **44×44 in the layout** — padding, or a transparent frame around a deliberately small visual. `hitSlop` is not an option here: it has no effect on react-native-web, and the web build *is* the product (an installed iOS PWA), so a control that leans on it is only as big as it looks. Measured before this rule existed: the plan's "Historique" link was 97×16, the week dots 28×28, the back buttons 36×36.
+### Touch targets
+Every control reserves **44×44 in the layout** — real padding or a transparent frame, never `hitSlop`, which is inert on react-native-web and the web build *is* the product (an installed PWA).
 
-### Screen Crest (the signature, everywhere)
-**The Mosa mark at large scale**, set into the top-right corner of every screen behind the header — the app's letterhead. One component (`screen-crest.tsx`), one drawing, one placement.
+### The Ledger (the signature component)
+Seven day-columns on one shared baseline, one per day of the current week. Each day stacks its disciplines as segments whose height is that session's load, so a Tuesday with a basket match and a Wednesday with a tempo are compared on the same axis — which is the product's whole argument made into a drawing. Planned load is drawn as a hairline outline, realised load as a fill. Today's column carries a Rule Strong baseline tick; nothing else is highlighted.
 
-It was two topographic contour blobs: a motif from the design world rather than from the brand, so the thing on every screen and the thing on the app icon had nothing to do with each other. Same two tiles now, same diagonal, same corner radius ratio — the crest and the icon are one shape at two scales.
+**Cross-training is never subordinated.** Same width, same baseline, same treatment as a run — a different segment tone and a named sport. It is load, not noise. Collapsing padel and basket into a single "autres" segment is the one thing this component may never do.
 
-**The overlap is filled.** It is what makes the drawing read as the mark rather than as two loose squares, and it is the only solid area on a page outside a card — so it sits below the strokes in strength, never level with them.
+**The ledger states its conclusion in words.** Above it: the surcharge verdict in plain French ("Charge modérée — le match de mardi pèse encore"). The drawing shows the shape; the sentence gives the size and the direction, so the magnitude never rests on an axis the reader can't see.
 
-**Restrained, not invisible** (strokes at 24–34%, overlap at 14%). It should read as the app's paper, not as content: behind everything, never intercepting touches, and carrying no Blaze — an accent repeated on every screen stops meaning "act here".
+### Arbitrage (the block that closes Accueil)
+One suggestion, its reason, and one action. "Décale le renfo jambes à demain — le match d'hier soir laisse la charge haute." The reason is not optional: an adjustment the athlete can't audit is an adjustment they will override, and every suggestion the engine makes is deterministic and explainable (`plan_adaptation`). Never more than one suggestion at a time — a list of suggestions is a to-do list, not an arbitration.
 
-**Both tiles fit, or it isn't the mark.** A frame too small for the diagonal reduces one tile to an L-shaped offcut; the frame is sized for the whole motif and clips only enough of each corner to seat it. It scales down on phones, where a full-size crest ran behind the name and the week range in the header. It sits inside the content column, not against the viewport edge, so it holds the same alignment axis as everything else on wide screens, and the frame clips its own bleed — hanging the drawing on negative offsets added up to 36px of horizontal scroll on every screen.
+### Session rows
+Every session carries **two redundant cues**: a sport glyph and a sport-aware name. Runs are named by their training type (Footing, Tempo, Sortie longue) because that is the meaningful distinction between two runs; everything else is named by its sport, because "Cross-training" hides exactly what distinguishes a basket session from a padel one.
 
-**Considered and rejected:** making the motif *encode* something (contour density by plan phase). Invisible in practice, and it would break the constancy that makes a signature readable as one. The crest is identity, not information.
+### Chips / segmented controls
+Selected is an **outline plus weight**, never a signal fill: 1.5px Rule Strong border, Ink label, Action weight, on the Inset ground. Selection never rests on colour alone, and carries `accessibilityState`.
 
-### Sport identity on a session
-A training week mixes running with padel, basket, vélo and renfo, and the athlete's first question scanning it is *"which of these are runs?"*. Every session therefore carries **two redundant cues**: a sport glyph (`sport-icon.tsx`, same 24px/1.75 stroke vocabulary as the rest of the icon set) and a **sport-aware name**.
+### Inputs / fields
+Raised fill, 1px Rule Strong border, Ink text, Ink Muted placeholder. Focus shifts the border to Ink at 1.5px — neutral, because focus is chrome and not a signal. Error shifts it to Alerte with an Alerte caption naming the problem and the way out, never a generic "invalide".
 
-**Name runs by their training type, everything else by its sport.** "Footing" and "Tempo" are the meaningful distinction between two runs; "Cross-training" is a label that hides the one thing that distinguishes a basket session from a padel one. The sport is already on every session — the UI simply wasn't using it.
-
-Cross-training is never visually subordinated to running: same card, same weight, different glyph and name. It is load, not noise.
-
-### Action footers
-A screen gets **one** full-width blaze button — the commitment it exists for. Everything else that happens to be actionable shares a single compact ghost row (44pt, sized to the row). Stacking every action as its own full-width block makes them all look equally important and buries the one that matters; it also grows without limit as features are added.
-
-Before adding a button, check it isn't already reachable: a "Voir la semaine" action that only calls `back()` duplicates the header's back arrow and earns nothing.
-
-### Chips / Segmented controls
-Selectable chips (objectives, weekdays, durations, RPE, days-off) share one component. **Selected is an outline, not a fill:** 1.5px accent border, accent text, semibold weight, on the `backgroundSelected` tone. The setup forms show a dozen chips at once — filling each one with Trail Blaze drowned the screen's primary button in orange, which is exactly what The One Blaze Rule exists to prevent. The single blaze *fill* on a form belongs to its CTA. Selection never rests on color alone (border + text + weight, plus `accessibilityState`), and the plan-setup "variable day" state takes the Hydro tone with an `≈` prefix so the two selected states are distinguishable without color.
-
-### Inputs / Fields
-- **Style:** Elevated Ground fill, 1px Contour border, Parchment text, Parchment Muted placeholder.
-- **Focus:** border shifts to Trail Blaze at 1.5px, no glow.
-- **Error:** border shifts to Flare Red; a Flare Red caption line names the problem beneath the field (never a generic "invalid").
-
-### Waypoint Stepper (signature component)
-Four waypoint dots (Welcome → Login → Connect Garmin → Dashboard) connected by a thin Contour path. The current step's dot is a Trail Blaze *stroke* with the named glow — not a fill, so it never competes with the screen's primary button for the One Blaze Rule's one allowed fill. Completed steps fill Parchment Muted solid; upcoming steps stay hollow (Contour outline only). A Waypoint Label ("01/04", in Parchment, not Blaze) sits beside the current dot. This is the one component every onboarding screen shares — it only appears during onboarding, never as permanent chrome on the dashboard once the trail is complete.
-
-### Readiness Hero (Accueil's lead)
-The Accueil screen opens with the one question a Home tab exists to answer: **"suis-je prêt à courir, et qu'est-ce que je fais aujourd'hui ?"** — answered in plain French before any number. The plain-language form verdict ("Reposé — bon jour pour une séance intense.") leads; the computed value is demoted to a supporting `Forme +14 · Frais` line; today's (form-adjusted) session sits below a hairline as the single next move, tappable through to Séances. No blaze *fill* lives here — only the "Aujourd'hui" text kicker — so the One Blaze Rule's one fill stays with the current-week waymarker.
-
-**The verdict lives in exactly one place.** `formBand()` (`lib/fitness-format.ts`) is the single source of the band, its wording and its color; the hero states it and the Forme card never repeats it. A screen that says "Forme +14 · Frais" twice reads as unfinished.
-
-### Plan summary (what opening a plan lands on)
-Opening a plan from Mes plans lands on a summary, not on its 60 sessions: **Objectif** (goal, chrono départ → projeté), **Régularité**, **Volume**, **Cycles**, **Le plan**. The full week-by-week list is one tap behind "Voir toutes les séances" — it answers a question you only ask after the ones the summary answers.
-
-Each card leads with the one figure it exists to give (80%, 34,3 km au pic) and a plain-French line saying what it's for. Three read-outs, three deliberately different forms:
-
-- **Régularité** — one cell per committed run, one column per week. Done / manquée / à venir differ by fill *and* outline, never by colour alone, with a legend naming all three. Missed sessions are drawn in contour, never in Flare Red: skipping a run is a fact the plan adapts to, not an error to flag. A week is only scored once it is over — shading an unfinished week as "missed" would be a lie, and it stays out of the percentage's denominator.
-- **Volume** — bars, from a zero baseline, rounded at the data end only. Weekly volume is a discrete tally per week and the job is comparing weeks, which is what bars are for; the height *is* the value, so the baseline cannot start anywhere else. (Contrast the fitness curve, a rolling average, which is a line on a fitted window — the form follows the data, not the house style.) Deload weeks are lighter, not absent: the shorter bar says "less", the tone says it was planned.
-- **Cycles** — one segmented bar, each segment as wide as its phase is long, with the current phase brought forward. The names sit in a plain wrapping row **below** it, never in columns matching the segments: a phase's width says how many weeks it lasts and has nothing to do with how long its name is.
-
-**One level deeper, and only one.** Régularité, Volume and Cycles each carry a "Voir le détail" in the same place — the bottom of the card — opening a screen that breaks that one card into the four figures behind it (`StatTiles`), the same visualisation at full size, and a week-by-week list. The summary answers *what*; the detail answers *how much, and when*. A figure never appears without a line saying what it means, and a stat with nothing measured yet reads "—", never "0 %": nothing measured and nothing achieved are different statements. Volume's Distance/Durée toggle exists because minutes are what the plan prescribes and kilometres are derived from target pace — burying either would misrepresent which is the real instruction. Phase descriptions come from the project's training-science reference, never from invented copy.
-
-### Week Runs (what this week asks of you)
-Under the week trail on Accueil: the current week's running sessions, one 44pt row each — day, name, duration and estimated distance — opening straight onto the session. The trail says *where* you are in the plan and the hero says what to do *today*; between them, "what does this week ask of me?" had no answer short of opening Séances.
-
-**Runs only, and that is the point.** It sits a few blocks below "Ta charge cette semaine", which lists every sport with the same bar treatment because cross-training *is* load. These two are not in tension: one answers "what has my body absorbed this week?", the other "what does the running plan ask of me?". Folding padel into the second would blur both. A deload week wears a Décharge chip — without it, a light week reads as falling behind rather than as planned recovery.
-
-### Load Breakdown (the thesis, made literal)
-"Ta charge cette semaine" lists every sport logged this week — running *and* padel/basket/bike — with the **same bar treatment**, because the product's whole thesis is that cross-training is load, not noise. Bars are sienna Contour, never a second accent: this is a read-out, not a call to act. Cross-training is never visually subordinated to running, and never collapsed into a single "activities" total.
-
-### Charts: baselines, and saying it in words
-The 90-day fitness trend is a **line**, not bars. Bars and filled areas state their value through their height, so they are only ever drawn from a zero baseline; a line carries no such claim and may be scaled to the data's own range. CTL lives inside a narrow band, and a zero baseline pressed three months of training into the top fifth of the plot — so the line gets a fitted window, with a floor on how far it will zoom (a couple of points of drift must keep looking like drift, never a mountain range).
-
-**A chart states its conclusion in words.** The curve shows the shape; a plain-French line above it ("En hausse · +14 sur 90 jours", "Stable sur 90 jours") gives the direction and the size of the move, so the magnitude never rests on a scaled axis the reader can't see. Chart marks stay in Contour with the endpoint in Parchment — never Blaze: a read-out is not a call to act.
-
-### The mark
-**Mosa — "Tous tes sports, une seule foulée."** Two rounded tiles that overlap, the overlap drawn in Parchment: one Blaze tile for running, one Contour tile for everything else, and between them the part where they stop being separate. A mosaic is many pieces reading as one picture, which is the product's whole argument — running and the rest of your week are one training load, not a headline plus some noise.
-
-Two tiles and not four, deliberately. Four in a grid say *four things side by side*, the opposite of the promise; and two shapes are what still reads at 16px in a browser tab. The mark uses the app's own palette, not the warm light one from the identity board — only the name and the mark changed, the system did not.
-
-The wordmark is set in IBM Plex Mono with wide tracking rather than a display face. The type system reserves that font for measurements and positions, and a wordmark is the app's own signage; bringing in a fourth typeface would be the first step of replacing the type system.
-
-### Tab header (who you are, and when)
-The three main tabs share one header: the avatar (60pt, → Réglages), then the athlete's name and the current week range, as a **left-aligned group**. It replaced a centred "RUNCOACH" wordmark with the avatar floating alone in the far corner — a small circle adrift in a wide empty band, above an app announcing daily which app you had opened. The wordmark is gone from the tabs; the tab bar already says where you are.
-
-**The header is pinned, and collapses.** It sits outside the scroll view — pinned by layout, not by `position: sticky`, so native and the installed PWA behave identically. Past ~20px of scroll it drops to a 49pt strip: a 40pt avatar and the week range on one line, closed by a hairline. Full height is 76pt; permanently reserving that on a phone, on top of the 62pt tab bar, would hand ~18% of the screen to chrome. The collapse buys back 27pt and keeps the only route into Réglages reachable from anywhere in a long list. The threshold has hysteresis (collapse at 20, expand at 6) — a single threshold flickers while a finger rests on it.
-
-**No gauge on the avatar.** It is identity, not a read-out: every figure it could carry (week position, form, adherence) is already stated on Accueil, twice in some cases. A ring there would be a third telling.
+### Charts
+- **Bars from a zero baseline, always.** A bar states its value through its height, so the baseline cannot start anywhere else. The ledger and the volume chart are bars.
+- **Lines may be scaled to their data.** A line makes no claim about height, so the 90-day fitness curve gets a fitted window with a floor on the zoom — a couple of points of drift must keep looking like drift, never a mountain range.
+- Chart marks stay in Ink Muted and Rule with the endpoint in Ink, unless the mark's job is to state a load state, which is the one case a signal ink is correct in a chart.
 
 ### Navigation
-No tab bar during onboarding (it is a linear trail, not a set of destinations). Once the trailhead flow completes, the app switches to native tab navigation for the main product, styled with the same Night Ground / Trail Blaze vocabulary but documented separately once that surface is built.
+Native tab navigation (Accueil / Séances / Activités) once onboarding completes; no tab bar during onboarding, which is a linear sequence rather than a set of destinations. The tab bar's active state is Ink with heavier weight — not a signal ink.
+
+### Appearance switching
+Graphite and Sable follow the system by default, with an explicit override in Réglages (Système / Clair / Sombre). The scene decides the default rather than a house preference: this app is read at 6h before a run in a dark room, and again at 22h after a match — the system's own choice is the only honest answer, so neither appearance is a "real" theme with the other as a fallback. Every token resolves per appearance; a component that hard-codes a hex is a bug.
+
+### The mark
+**Relay — "Tous tes sports comptent."** Two bars on one baseline: the first ends, the second picks up where it left off and continues past it, with the exchange drawn as the gap between them. A relay handover, and the product's argument in two strokes — one discipline's effort passing into the next, one continuous line of load rather than a headline plus some noise.
+
+Two bars and not a baton or a runner: the mark has to survive at 16px in a browser tab, and a figurative silhouette does not. The wordmark is set in Azeret Mono with wide tracking — the app's own signage face, rather than a display face the type system would then have to justify.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep Trail Blaze to one filled element per screen (The One Blaze Rule).
-- **Do** render depth as a tonal step (Night Ground → Elevated Ground), never a cast shadow (The Tonal-Not-Cast Rule).
-- **Do** keep IBM Plex Mono to short signage labels only (The Signage-Not-Sentence Rule).
-- **Do** use Hydro Teal exclusively to mean "connected/live data" — nowhere else.
+- **Do** keep every signal ink to its one meaning, and keep them off buttons (The Signal Is Never A Command).
+- **Do** carry structure on hairlines and tonal steps; a card is earned by being an object.
+- **Do** set every comparable number in Azeret Mono with tabular figures, and name it with a Label.
+- **Do** design and test both appearances. Neither is the fallback.
 
 ### Don't:
-- **Don't** add a gradient hero, stock runner photography, or confetti/celebration animation on the welcome screen — that is the category rut this world explicitly refuses.
-- **Don't** use Flare Red for anything but errors/destructive actions, even when a designer's instinct reaches for red as a second accent.
-- **Don't** turn the Waypoint Stepper into a literal illustrated map (terrain textures, drawn mountains) — it stays abstract signage, not an illustration.
+- **Don't** bring back the map: no contour lines, no waypoint pins, no trail metaphor, no blaze orange.
+- **Don't** put a drop shadow under a card, or nest a card inside a card.
+- **Don't** draw a missed session in Alerte, or fill a CTA with Go.
+- **Don't** add a fourth block to Accueil. If something new must be seen daily, it displaces one of the three.

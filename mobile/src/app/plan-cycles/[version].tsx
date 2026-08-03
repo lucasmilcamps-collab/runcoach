@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { DetailScreen } from '@/components/detail-screen';
 import { PlanPhaseBar } from '@/components/plan-phase-bar';
 import { StatTiles } from '@/components/stat-tiles';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { getPlanOverview, getPlanVersion } from '@/lib/api/plans';
 import type { Plan, PlanOverview, PlanPhase } from '@/lib/api/plans';
 import { PHASE_LABELS, formatDuration, frKm } from '@/lib/plan-format';
@@ -14,6 +16,8 @@ import { PHASE_PURPOSE, phaseSpans, weeklyVolume, weekRangeLabel } from '@/lib/p
 import { qk } from '@/lib/query-keys';
 
 export default function PlanCyclesScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const { version } = useLocalSearchParams<{ version: string }>();
   const versionNumber = Number(version);
   const enabled = Number.isFinite(versionNumber);
@@ -38,10 +42,10 @@ export default function PlanCyclesScreen() {
       blurb="Un plan n’est pas une suite de semaines interchangeables : chaque bloc a un travail à lui, et n’a de sens que posé sur le précédent.">
       {planQuery.isLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={Colors.contour} />
+          <ActivityIndicator color={theme.ruleStrong} />
         </View>
       ) : planQuery.isError || !plan ? (
-        <ThemedText type="default" themeColor="flare">
+        <ThemedText type="default" themeColor="alerte">
           Impossible de charger les cycles de ce plan.
         </ThemedText>
       ) : (
@@ -52,6 +56,7 @@ export default function PlanCyclesScreen() {
 }
 
 function Body({ plan, overview }: { plan: Plan; overview: PlanOverview | null }) {
+  const styles = useStyles();
   const spans = phaseSpans(plan);
   const volumes = weeklyVolume(plan);
   const weekCurrent = overview?.week_current ?? null;
@@ -99,6 +104,7 @@ function PhaseCard({
   positionOf: Map<number, number>;
   startDate: string | null;
 }) {
+  const styles = useStyles();
   const first = phase.weeks[0].index;
   const last = phase.weeks[phase.weeks.length - 1].index;
   const isCurrent = weekCurrent != null && weekCurrent >= first && weekCurrent <= last;
@@ -117,24 +123,24 @@ function PhaseCard({
   return (
     <View style={styles.card}>
       <View style={styles.phaseHead}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Cycle {position} sur {total}
         </ThemedText>
         {isCurrent ? (
           <View style={styles.badge}>
-            <ThemedText type="waypointLabel" themeColor="text">
+            <ThemedText type="label" themeColor="ink">
               En cours
             </ThemedText>
           </View>
         ) : null}
       </View>
       <ThemedText type="subtitle">{PHASE_LABELS[phase.name]}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {first === last ? `Semaine ${first}` : `Semaines ${first} à ${last}`}
       </ThemedText>
       {/* Straight from the project's training-science reference, not marketing
           copy: what this block is for, and why it comes where it comes. */}
-      <ThemedText type="default" themeColor="textSecondary">
+      <ThemedText type="default" themeColor="inkMuted">
         {PHASE_PURPOSE[phase.name]}
       </ThemedText>
 
@@ -156,18 +162,18 @@ function PhaseCard({
               <View style={styles.rowMain}>
                 <ThemedText
                   type="default"
-                  themeColor={week.index === weekCurrent ? 'text' : 'textSecondary'}>
+                  themeColor={week.index === weekCurrent ? 'ink' : 'inkMuted'}>
                   Semaine {week.index}
                   {week.is_deload ? ' · Décharge' : ''}
                 </ThemedText>
                 {startDate != null && pos != null ? (
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <ThemedText type="small" themeColor="inkMuted">
                     {weekRangeLabel(startDate, pos)}
                   </ThemedText>
                 ) : null}
               </View>
               {volume && volume.km > 0 ? (
-                <ThemedText type="default" themeColor="textSecondary">
+                <ThemedText type="default" themeColor="inkMuted">
                   {frKm(volume.km)} km
                 </ThemedText>
               ) : null}
@@ -179,10 +185,11 @@ function PhaseCard({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   card: {
-    backgroundColor: Colors.backgroundElement,
+    borderWidth: 1,
+    borderColor: t.rule,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
@@ -194,7 +201,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   badge: {
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.rule,
     borderRadius: Rounded.sm,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.half,
@@ -209,11 +216,11 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 40,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
     paddingTop: Spacing.two,
   },
   rowMain: {
     flex: 1,
     gap: Spacing.half,
   },
-});
+}));

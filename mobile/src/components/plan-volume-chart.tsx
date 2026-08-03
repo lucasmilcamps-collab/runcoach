@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { volumeValue } from '@/lib/plan-overview';
 import type { VolumeMetric, WeekVolume } from '@/lib/plan-overview';
 
@@ -28,6 +29,7 @@ export function PlanVolumeChart({
   weekCurrent: number | null;
   metric?: VolumeMetric;
 }) {
+  const styles = useStyles();
   const peak = Math.max(...weeks.map((w) => volumeValue(w, metric)), 1);
 
   return (
@@ -60,10 +62,10 @@ export function PlanVolumeChart({
         })}
       </View>
       <View style={styles.axis}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           S{weeks[0]?.index ?? 1}
         </ThemedText>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           S{weeks[weeks.length - 1]?.index ?? 1}
         </ThemedText>
       </View>
@@ -76,7 +78,7 @@ function label(weeks: WeekVolume[], peak: number, metric: VolumeMetric): string 
   return `Volume prévu sur ${weeks.length} semaines, jusqu’à ${Math.round(peak)} ${unit} par semaine.`;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     gap: Spacing.two,
   },
@@ -97,18 +99,20 @@ const styles = StyleSheet.create({
     // bar off its baseline, and the baseline is the whole claim a bar makes.
     borderTopLeftRadius: Rounded.sm,
     borderTopRightRadius: Rounded.sm,
-    backgroundColor: Colors.contour,
+    backgroundColor: t.ruleStrong,
   },
   barDeload: {
-    backgroundColor: Colors.contourFaint,
+    // Lighter, not missing: a shorter bar already says "less", and the tone says
+    // the drop was planned.
+    backgroundColor: t.rule,
   },
   barCurrent: {
-    // Where you are reads through brightness, not the blaze accent — this card
-    // is a read-out, not a call to act.
-    backgroundColor: Colors.text,
+    // Where you are reads through brightness, never a signal ink — this is a
+    // read-out, not a call to act.
+    backgroundColor: t.ink,
   },
   axis: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-});
+}));

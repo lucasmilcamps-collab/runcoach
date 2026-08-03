@@ -1,16 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { GenerationProgress } from '@/components/generation-progress';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
+import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
 import { weekRangeLabel } from '@/lib/plan-overview';
@@ -89,9 +89,9 @@ function startChoiceLabel(index: number, monday: Date): string {
   return SHORT_DATE.format(monday);
 }
 
-/** A weekday in the fixed-sport grid: off → fixed → flexible. "Flexible" takes
- * the hydro tone and an "≈" prefix so the two selected states never differ by
- * color alone. */
+/** A weekday in the fixed-sport grid: off → fixed → flexible. "Flexible" takes a
+ * dashed border and an "≈" prefix — the two selected states differ by shape and
+ * by label, never by colour, and never by colour alone. */
 function DayChip({
   label,
   state,
@@ -105,7 +105,7 @@ function DayChip({
     <Chip
       label={state === 'flexible' ? `≈ ${label}` : label}
       selected={state !== 'off'}
-      tone={state === 'flexible' ? 'hydro' : 'blaze'}
+      variant={state === 'flexible' ? 'dashed' : 'solid'}
       onPress={onPress}
       accessibilityLabel={
         state === 'off' ? label : `${label}, ${state === 'fixed' ? 'fixe' : 'variable'}`
@@ -132,6 +132,7 @@ function groupFixed(request: PlanRequest | null): Map<SportType, FixedDays> {
 }
 
 export default function PlanSetupScreen() {
+  const styles = useStyles();
   const queryClient = useQueryClient();
   const prefill = queryClient.getQueryData<PlanResponse>(qk.plan())?.request ?? null;
 
@@ -239,14 +240,13 @@ export default function PlanSetupScreen() {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ScreenCrest />
           <View style={styles.header}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
+            <ThemedText type="label" themeColor="inkMuted">
               Mon plan
             </ThemedText>
             <ThemedText type="title">Configurer mon plan</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
-              Le plan s’adapte à votre forme et votre fatigue réelles. Vous pourrez le régénérer à
+            <ThemedText type="default" themeColor="inkMuted">
+              Le plan s’adapte à ta forme et à ta fatigue réelles. Tu pourras le régénérer à
               tout moment en changeant ces réglages.
             </ThemedText>
           </View>
@@ -276,7 +276,7 @@ export default function PlanSetupScreen() {
           ) : null}
 
           <Field label="Début du plan">
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               La semaine 1 commence toujours un lundi. Générer en fin de semaine et démarrer tout
               de suite, c’est hériter d’une semaine déjà passée aux trois quarts.
             </ThemedText>
@@ -293,7 +293,7 @@ export default function PlanSetupScreen() {
             </View>
             {/* The chips say "next Monday"; this says which days that actually
                 covers, so the choice is never made on a guess. */}
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               Semaine 1 : {weekRangeLabel(toIsoDate(startChoices[startIndex]), 0)}
             </ThemedText>
           </Field>
@@ -307,13 +307,13 @@ export default function PlanSetupScreen() {
           </Field>
 
           <Field label="Séances de course par semaine">
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               Je m’engage sur {minRuns} séance{minRuns > 1 ? 's' : ''} par semaine — elles seront
               marquées « clés » — et je peux en faire jusqu’à {maxRuns} si la semaine le permet.
             </ThemedText>
             <View style={styles.dualRow}>
               <View style={styles.dualCol}>
-                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                <ThemedText type="label" themeColor="inkMuted">
                   Je m’engage sur
                 </ThemedText>
                 <View style={styles.chipRow}>
@@ -323,7 +323,7 @@ export default function PlanSetupScreen() {
                 </View>
               </View>
               <View style={styles.dualCol}>
-                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                <ThemedText type="label" themeColor="inkMuted">
                   Jusqu’à
                 </ThemedText>
                 <View style={styles.chipRow}>
@@ -345,7 +345,7 @@ export default function PlanSetupScreen() {
             </View>
             {strengthOn ? (
               <>
-                <ThemedText type="small" themeColor="textSecondary">
+                <ThemedText type="small" themeColor="inkMuted">
                   Le plan réserve le créneau et l’intention (~20 min) ; tu fais la séance dans
                   Freeletics.
                 </ThemedText>
@@ -364,7 +364,7 @@ export default function PlanSetupScreen() {
           </Field>
 
           <Field label="Cross-training prescrit">
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               Ajoute des séances de cross-training au plan. (Tes sports pratiqués comptent déjà dans
               ta charge, quoi qu’il arrive.)
             </ThemedText>
@@ -378,10 +378,10 @@ export default function PlanSetupScreen() {
           </Field>
 
           <Field label="Sports fixes (optionnel)">
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               Un sport récurrent : le plan est construit autour (pas de séance intense le lendemain).
-              Appuie sur un jour pour le rendre <ThemedText themeColor="blaze">fixe</ThemedText>, encore
-              une fois pour <ThemedText themeColor="hydro">variable</ThemedText> (un des jours variables
+              Appuie sur un jour pour le rendre <ThemedText themeColor="ink">fixe</ThemedText>, encore
+              une fois pour <ThemedText themeColor="recup">variable</ThemedText> (un des jours variables
               suffit, ex. le match du week-end), encore une fois pour l’enlever.
             </ThemedText>
             {FIXED_SPORT_OPTIONS.map((option) => {
@@ -411,7 +411,7 @@ export default function PlanSetupScreen() {
             elapsedSeconds={generation.elapsedSeconds}
           />
           {errorMessage ? (
-            <ThemedText type="small" themeColor="flare">
+            <ThemedText type="small" themeColor="alerte">
               {errorMessage}
             </ThemedText>
           ) : null}
@@ -427,9 +427,10 @@ export default function PlanSetupScreen() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
       {children}
@@ -437,11 +438,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -467,4 +468,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

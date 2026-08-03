@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
@@ -10,26 +10,22 @@ import { GenerationProgress } from '@/components/generation-progress';
 import { Icon } from '@/components/icon';
 import { OfflineBanner } from '@/components/offline-banner';
 import { PlanWeekPager } from '@/components/plan-view';
-import { ScreenCrest } from '@/components/screen-crest';
-import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
-import { Colors, MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
+import { MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
   createPlan,
   getCurrentPlan,
   getPlanProgress,
-  getTodaySession,
   PlanProgress,
   PlanRequest,
   PlanResponse,
-  RecoverySummary,
-  TodaySession,
 } from '@/lib/api/plans';
-import { SESSION_LABELS, formatDuration, sessionTitle } from '@/lib/plan-format';
 import { pressable } from '@/lib/pressable';
 import { qk } from '@/lib/query-keys';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
@@ -38,70 +34,12 @@ import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { computeWeekProgress, currentWeekRangeLabel, findWeek } from '@/lib/week-progress';
 
-function formatSleep(hours: number): string {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return m === 0 ? `${h} h` : `${h} h ${m.toString().padStart(2, '0')}`;
-}
-
-/** Overnight recovery readings behind today's adjustment — transparency for why
- * a session was kept or lightened. Only shows metrics Garmin actually provided. */
-function RecoveryStats({ recovery }: { recovery: RecoverySummary }) {
-  const items: { key: string; label: string; value: string; hint?: string }[] = [];
-  if (recovery.hrv != null) {
-    items.push({
-      key: 'hrv',
-      label: 'HRV',
-      value: `${Math.round(recovery.hrv)} ms`,
-      hint: recovery.hrv_baseline != null ? `base ${Math.round(recovery.hrv_baseline)}` : undefined,
-    });
-  }
-  if (recovery.resting_hr != null) {
-    items.push({
-      key: 'rhr',
-      label: 'FC repos',
-      value: `${Math.round(recovery.resting_hr)} bpm`,
-      hint:
-        recovery.resting_hr_baseline != null
-          ? `base ${Math.round(recovery.resting_hr_baseline)}`
-          : undefined,
-    });
-  }
-  if (recovery.sleep_hours != null) {
-    items.push({ key: 'sleep', label: 'Sommeil', value: formatSleep(recovery.sleep_hours) });
-  }
-  if (recovery.body_battery != null) {
-    items.push({ key: 'bb', label: 'Body Battery', value: `${recovery.body_battery}` });
-  }
-  if (items.length === 0) return null;
-
-  return (
-    <View style={styles.recoveryRow}>
-      {items.map((it) => (
-        <View key={it.key} style={styles.recoveryStat}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {it.label}
-          </ThemedText>
-          <ThemedText type="default">{it.value}</ThemedText>
-          {it.hint ? (
-            <ThemedText type="small" themeColor="textSecondary">
-              {it.hint}
-            </ThemedText>
-          ) : null}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 export default function PlanScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const query = useQuery({
     queryKey: qk.plan(),
     queryFn: getCurrentPlan,
-  });
-  const todayQuery = useQuery({
-    queryKey: qk.planToday(),
-    queryFn: getTodaySession,
   });
   const progressQuery = useQuery({
     queryKey: qk.planProgress(),
@@ -133,7 +71,6 @@ export default function PlanScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <ScreenCrest />
         <TopBar subtitle={ready ? currentWeekRangeLabel() : undefined} compact={compact} />
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
@@ -159,10 +96,10 @@ export default function PlanScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Mes plans — le plan actif et les précédents"
                 style={pressable(styles.historyLink)}>
-                <ThemedText type="waypointLabel" themeColor="blaze">
+                <ThemedText type="label" themeColor="ink">
                   Mes plans
                 </ThemedText>
-                <Icon name="chevron-right" size={16} color={Colors.blaze} />
+                <Icon name="chevron-right" size={16} color={theme.ink} />
               </Pressable>
             </View>
           ) : null}
@@ -174,8 +111,6 @@ export default function PlanScreen() {
               isReplanning={replan.isGenerating}
             />
           ) : null}
-
-          {todayQuery.data?.has_plan ? <TodayCard today={todayQuery.data} /> : null}
 
           {/* Weekly overview + chrono forecast pair up on wide viewports. */}
           {ready ? (
@@ -195,10 +130,10 @@ export default function PlanScreen() {
 
           {ready && query.data?.feasibility_warning ? (
             <View style={styles.warnBanner}>
-              <ThemedText type="waypointLabel" themeColor="flare">
+              <ThemedText type="label" themeColor="prudence">
                 Objectif ambitieux
               </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
+              <ThemedText type="small" themeColor="inkMuted">
                 {query.data.feasibility_warning}
               </ThemedText>
             </View>
@@ -206,13 +141,13 @@ export default function PlanScreen() {
 
           {query.isLoading ? (
             <View style={styles.centered}>
-              <ActivityIndicator color={Colors.contour} />
+              <ActivityIndicator color={theme.ruleStrong} />
             </View>
           ) : noPlan ? (
             <EmptyPlan />
           ) : query.isError ? (
-            <ThemedText type="default" themeColor="flare">
-              Impossible de charger votre plan. Réessayez.
+            <ThemedText type="default" themeColor="alerte">
+              Impossible de charger ton plan. Réessaie.
             </ThemedText>
           ) : query.data ? (
             <PlanBody response={query.data} currentWeek={progressQuery.data?.week_current ?? null} />
@@ -226,6 +161,7 @@ export default function PlanScreen() {
 }
 
 function PlanActions() {
+  const styles = useStyles();
   return (
     <View style={styles.actions}>
       <Button
@@ -253,12 +189,13 @@ function ReplanBanner({
   onReplan: () => void;
   isReplanning: boolean;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.replanBanner}>
-      <ThemedText type="waypointLabel" themeColor="flare">
+      <ThemedText type="label" themeColor="prudence">
         Plan à réajuster
       </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Régénérer les semaines
         restantes à partir de ta forme actuelle ?
       </ThemedText>
@@ -279,25 +216,27 @@ function fmtTime(min: number): string {
 }
 
 function ForecastCard({ estimated, projected }: { estimated: number; projected: number | null }) {
+  const styles = useStyles();
+  const theme = useTheme();
   const improves = projected != null && projected < estimated;
   return (
     <View style={styles.forecastCard}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         Prévision de chrono
       </ThemedText>
       <View style={styles.forecastRow}>
         <View style={styles.forecastCol}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             Actuel estimé
           </ThemedText>
           <ThemedText type="subtitle">{fmtTime(estimated)}</ThemedText>
         </View>
-        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+        <Icon name="chevron-right" size={20} color={theme.inkMuted} />
         <View style={styles.forecastCol}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             Fin de plan
           </ThemedText>
-          <ThemedText type="subtitle" themeColor={improves ? 'blaze' : 'text'}>
+          <ThemedText type="subtitle" themeColor={improves ? 'ink' : 'inkMuted'}>
             {projected != null ? fmtTime(projected) : '—'}
           </ThemedText>
         </View>
@@ -306,70 +245,12 @@ function ForecastCard({ estimated, projected }: { estimated: number; projected: 
   );
 }
 
-function TodayCard({ today }: { today: TodaySession }) {
-  const weekTag = today.week_index ? ` · Semaine ${today.week_index}` : '';
-
-  if (!today.has_session) {
-    return (
-      <View style={styles.todayCard}>
-        <ThemedText type="waypointLabel" themeColor="blaze">
-          Aujourd’hui{weekTag}
-        </ThemedText>
-        <ThemedText type="default">{today.message ?? 'Repos aujourd’hui.'}</ThemedText>
-        {today.recovery ? <RecoveryStats recovery={today.recovery} /> : null}
-      </View>
-    );
-  }
-
-  const adj = today.adjustment;
-  const primary = today.sessions[0] ?? null;
-  const addons = today.sessions.slice(1);
-  const shownType = adj?.adjusted ? adj.suggested_type : (primary?.type ?? 'easy');
-
-  return (
-    <View style={styles.todayCard}>
-      <ThemedText type="waypointLabel" themeColor="blaze">
-        Aujourd’hui{weekTag}
-      </ThemedText>
-      <View style={styles.todayTitleRow}>
-        <View style={styles.todayTitleLeft}>
-          <SportIcon sport={primary?.sport ?? 'RUN'} size={22} />
-          <ThemedText type="subtitle">
-            {sessionTitle({ sport: primary?.sport ?? 'RUN', type: shownType })}
-          </ThemedText>
-        </View>
-        {primary ? (
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {formatDuration(primary.duration_min)}
-          </ThemedText>
-        ) : null}
-      </View>
-      {addons.map((s, i) => (
-        <ThemedText key={i} type="small" themeColor="textSecondary">
-          + {sessionTitle(s)} · {formatDuration(s.duration_min)}
-        </ThemedText>
-      ))}
-      {adj?.adjusted ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Prévu : {SESSION_LABELS[adj.original_type]}
-        </ThemedText>
-      ) : null}
-      {adj ? (
-        <ThemedText type="small" themeColor={adj.adjusted ? 'hydro' : 'textSecondary'}>
-          {adj.reason}
-        </ThemedText>
-      ) : null}
-      {today.recovery ? <RecoveryStats recovery={today.recovery} /> : null}
-    </View>
-  );
-}
-
 function EmptyPlan() {
   return (
     <EmptyState
       title="Aucun plan pour l’instant"
-      description="Créez un plan course à pied qui s’adapte à votre forme réelle et intègre vos autres sports comme charge d’entraînement."
-      pin="summit">
+      description="Construis un plan de course qui s’adapte à ta forme réelle et compte tes autres sports comme de la charge, pas comme du bruit."
+      variant="ledger">
       <Button label="Créer mon plan" onPress={() => router.push('/plan-setup')} />
     </EmptyState>
   );
@@ -382,14 +263,15 @@ function PlanBody({
   response: PlanResponse;
   currentWeek: number | null;
 }) {
+  const styles = useStyles();
   if (response.status === 'failed') {
     return (
       <View style={styles.card}>
-        <ThemedText type="default" themeColor="flare">
+        <ThemedText type="default" themeColor="alerte">
           La génération a échoué.
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {response.error_message ?? 'Réessayez dans quelques instants.'}
+        <ThemedText type="small" themeColor="inkMuted">
+          {response.error_message ?? 'Réessaie dans quelques instants.'}
         </ThemedText>
       </View>
     );
@@ -398,10 +280,10 @@ function PlanBody({
   return <PlanWeekPager plan={response.plan} currentWeek={currentWeek} />;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
   },
   container: {
@@ -436,38 +318,30 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingTop: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   actionBtn: { flex: 1 },
-  todayCard: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
-    gap: Spacing.two,
-    borderLeftWidth: 2,
-    borderLeftColor: Colors.blaze,
-  },
   replanBanner: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
+    backgroundColor: t.prudenceWash,
+    borderRadius: Rounded.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: t.prudence,
+    padding: Spacing.three,
     gap: Spacing.three,
-    borderLeftWidth: 2,
-    borderLeftColor: Colors.flare,
   },
   warnBanner: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
+    backgroundColor: t.prudenceWash,
+    borderRadius: Rounded.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: t.prudence,
+    padding: Spacing.three,
     gap: Spacing.one,
-    borderLeftWidth: 2,
-    borderLeftColor: Colors.flare,
   },
   forecastCard: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
     gap: Spacing.three,
+    paddingTop: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
   forecastRow: {
     flexDirection: 'row',
@@ -493,15 +367,12 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.three,
     marginTop: Spacing.one,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   recoveryStat: {
     gap: Spacing.half,
   },
   card: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
     gap: Spacing.two,
   },
-});
+}));

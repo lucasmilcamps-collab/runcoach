@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
@@ -8,9 +8,10 @@ import { Icon } from '@/components/icon';
 import { PlanAdherenceGrid } from '@/components/plan-adherence-grid';
 import { PlanPhaseBar } from '@/components/plan-phase-bar';
 import { PlanVolumeChart } from '@/components/plan-volume-chart';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { getPlanOverview, getPlanVersion } from '@/lib/api/plans';
 import type { Plan, PlanOverview } from '@/lib/api/plans';
 import { frKm } from '@/lib/plan-format';
@@ -33,6 +34,8 @@ function formatDate(iso: string): string {
 }
 
 export default function PlanVersionScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const { version } = useLocalSearchParams<{ version: string }>();
   const versionNumber = Number(version);
   const enabled = Number.isFinite(versionNumber);
@@ -57,12 +60,11 @@ export default function PlanVersionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ScreenCrest />
         <View style={styles.topbar}>
           <BackButton />
         </View>
         <View style={styles.header}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             Mes plans
           </ThemedText>
           <ThemedText type="title">Plan {version}</ThemedText>
@@ -70,10 +72,10 @@ export default function PlanVersionScreen() {
 
         {planQuery.isLoading ? (
           <View style={styles.centered}>
-            <ActivityIndicator color={Colors.contour} />
+            <ActivityIndicator color={theme.ruleStrong} />
           </View>
         ) : planQuery.isError || !plan ? (
-          <ThemedText type="default" themeColor="flare">
+          <ThemedText type="default" themeColor="alerte">
             Impossible de charger ce plan.
           </ThemedText>
         ) : (
@@ -108,13 +110,15 @@ function Card({
   detail?: { pathname: string; version: number; label: string };
   children: React.ReactNode;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.card}>
       <View style={styles.cardHead}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           {title}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {blurb}
         </ThemedText>
       </View>
@@ -130,10 +134,10 @@ function Card({
           accessibilityRole="button"
           accessibilityLabel={detail.label}
           style={pressable(styles.link)}>
-          <ThemedText type="link" themeColor="text">
+          <ThemedText type="link" themeColor="ink">
             Voir le détail
           </ThemedText>
-          <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+          <Icon name="chevron-right" size={20} color={theme.inkMuted} />
         </Pressable>
       ) : null}
     </View>
@@ -148,11 +152,12 @@ function Card({
  * also made this 80% *bigger* than the same 80% on its own detail screen, which
  * inverts the hierarchy between a summary and the depth behind it. */
 function Hero({ value, unit }: { value: string; unit?: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.hero}>
       <ThemedText type="subtitle">{value}</ThemedText>
       {unit ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {unit}
         </ThemedText>
       ) : null}
@@ -169,13 +174,14 @@ function GoalCard({
   response: { estimated_time_min: number | null; projected_time_min: number | null } | undefined;
   overview: PlanOverview | null;
 }) {
+  const styles = useStyles();
   const estimated = response?.estimated_time_min ?? null;
   const projected = response?.projected_time_min ?? null;
 
   return (
     <Card title="Objectif" blurb="Ce que ce plan visait, et le chrono qu’il projetait.">
       <ThemedText type="subtitle">{plan.goal.description}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {[
           plan.goal.distance_km ? `${frKm(plan.goal.distance_km)} km` : null,
           plan.goal.race_date ? formatDate(plan.goal.race_date) : null,
@@ -189,7 +195,7 @@ function GoalCard({
           <Chrono label="Départ" value={fmtTime(estimated)} />
           {/* An arrow, not a chevron: a chevron means "tap to go there" all over
               this app, and nothing here is tappable. */}
-          <ThemedText type="subtitle" themeColor="textSecondary">
+          <ThemedText type="subtitle" themeColor="inkMuted">
             →
           </ThemedText>
           <Chrono label="Projeté" value={projected != null ? fmtTime(projected) : '—'} bright />
@@ -200,12 +206,13 @@ function GoalCard({
 }
 
 function Chrono({ label, value, bright }: { label: string; value: string; bright?: boolean }) {
+  const styles = useStyles();
   return (
     <View style={styles.chronoItem}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         {label}
       </ThemedText>
-      <ThemedText type="subtitle" themeColor={bright ? 'text' : 'textSecondary'}>
+      <ThemedText type="subtitle" themeColor={bright ? 'ink' : 'inkMuted'}>
         {value}
       </ThemedText>
     </View>
@@ -221,10 +228,12 @@ function RegularityCard({
   isLoading: boolean;
   version: number;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   if (isLoading) {
     return (
       <View style={[styles.card, styles.centered]}>
-        <ActivityIndicator color={Colors.contour} />
+        <ActivityIndicator color={theme.ruleStrong} />
       </View>
     );
   }
@@ -245,13 +254,13 @@ function RegularityCard({
         label: 'Voir le détail de la régularité',
       }}>
       {notStarted ? (
-        <ThemedText type="default" themeColor="textSecondary">
+        <ThemedText type="default" themeColor="inkMuted">
           Aucune semaine terminée pour l’instant.
         </ThemedText>
       ) : (
         <View style={styles.heroRow}>
           <Hero value={`${pct}%`} />
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkMuted">
             {overview.completed} séances clés sur {overview.planned}
           </ThemedText>
         </View>
@@ -270,6 +279,7 @@ function VolumeCard({
   overview: PlanOverview | null;
   version: number;
 }) {
+  const styles = useStyles();
   const weeks = weeklyVolume(plan);
   const peak = Math.max(...weeks.map((w) => w.km), 0);
   // Every run in this plan is prescribed in minutes with no target pace, so
@@ -326,6 +336,8 @@ function SettingsCard({
   overview: PlanOverview | null;
   version: number;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const runs = runsPerWeek(plan);
 
   return (
@@ -348,19 +360,20 @@ function SettingsCard({
         accessibilityRole="button"
         accessibilityLabel="Voir toutes les séances de ce plan"
         style={pressable(styles.link)}>
-        <ThemedText type="link" themeColor="text">
+        <ThemedText type="link" themeColor="ink">
           Voir toutes les séances
         </ThemedText>
-        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+        <Icon name="chevron-right" size={20} color={theme.inkMuted} />
       </Pressable>
     </Card>
   );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.row}>
-      <ThemedText type="default" themeColor="textSecondary">
+      <ThemedText type="default" themeColor="inkMuted">
         {label}
       </ThemedText>
       <ThemedText type="default">{value}</ThemedText>
@@ -368,10 +381,10 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
   },
   content: {
@@ -386,7 +399,11 @@ const styles = StyleSheet.create({
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   card: {
-    backgroundColor: Colors.backgroundElement,
+    // Outlined, not filled: these are objects (each opens its own detail
+    // screen), but a stack of filled panels reads as a wall rather than a
+    // register.
+    borderWidth: 1,
+    borderColor: t.rule,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
@@ -430,6 +447,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.one,
     paddingTop: Spacing.three,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
-});
+}));

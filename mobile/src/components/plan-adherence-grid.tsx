@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import type { WeekAdherence } from '@/lib/api/plans';
 
 const MaxCell = 14;
@@ -21,10 +22,11 @@ type CellState = 'done' | 'missed' | 'upcoming';
  * greyscale and to a colour-blind reader. A legend names them, because a grid
  * of squares explains nothing on its own.
  *
- * Missed sessions are drawn in contour, not the error colour. Skipping a run is
+ * Missed sessions are drawn as an outline, never in the Alerte ink. Skipping a run is
  * not a fault to flag in red; it is a fact the plan can adapt to.
  */
 export function PlanAdherenceGrid({ weeks }: { weeks: WeekAdherence[] }) {
+  const styles = useStyles();
   const [width, setWidth] = useState(0);
 
   function onLayout(event: LayoutChangeEvent) {
@@ -51,7 +53,7 @@ export function PlanAdherenceGrid({ weeks }: { weeks: WeekAdherence[] }) {
         // are drawn in, which is the part a non-sighted reader has no other way
         // to reconstruct — and which the on-screen legend only tells you if you
         // can see the swatches.
-        accessibilityHint="Une colonne par semaine, un carré par séance clé prévue : plein pour une séance faite, contour pour une manquée, estompé pour une séance à venir.">
+        accessibilityHint="Une colonne par semaine, un carré par séance clé prévue : plein pour une séance faite, en contour pour une manquée, estompé pour une séance à venir.">
         {width > 0
           ? weeks.map((week) => (
               <View key={week.week_index} style={styles.column}>
@@ -78,10 +80,10 @@ export function PlanAdherenceGrid({ weeks }: { weeks: WeekAdherence[] }) {
           : null}
       </View>
       <View style={styles.axis}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           S{weeks[0]?.week_index ?? 1}
         </ThemedText>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           S{weeks[weeks.length - 1]?.week_index ?? 1}
         </ThemedText>
       </View>
@@ -100,10 +102,11 @@ function cellState(week: WeekAdherence, slot: number): CellState {
 }
 
 function LegendItem({ state, label }: { state: CellState; label: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.legendItem}>
       <View style={[styles.cell, styles.legendSwatch, styles[state]]} />
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
     </View>
@@ -117,7 +120,7 @@ function label(weeks: WeekAdherence[]): string {
   return `${done} séances clés faites sur ${planned} prévues, semaine par semaine.`;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     gap: Spacing.two,
   },
@@ -134,16 +137,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   done: {
-    backgroundColor: Colors.contour,
-    borderColor: Colors.contour,
+    backgroundColor: t.ruleStrong,
+    borderColor: t.rule,
   },
   missed: {
     backgroundColor: 'transparent',
-    borderColor: Colors.contour,
+    borderColor: t.rule,
   },
   upcoming: {
     backgroundColor: 'transparent',
-    borderColor: Colors.contourFaint,
+    borderColor: t.rule,
   },
   legendSwatch: {
     width: 10,
@@ -163,4 +166,4 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-});
+}));

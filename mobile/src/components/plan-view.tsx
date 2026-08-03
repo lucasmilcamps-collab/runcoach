@@ -1,13 +1,15 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
-import { DifficultyBolts } from '@/components/difficulty-bolts';
 import { Icon } from '@/components/icon';
+import { IntensityNotch } from '@/components/intensity-notch';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { pressable } from '@/lib/pressable';
+import { makeStyles } from '@/lib/themed-styles';
 import type { Plan, PlanPhase, PlanSession, PlanWeek } from '@/lib/api/plans';
 import {
   DAY_LABELS,
@@ -34,13 +36,15 @@ function flattenWeeks(plan: Plan): FlatWeek[] {
 /** Read-only rendering of a full plan (goal + phases → weeks → sessions), all
  * weeks stacked. Used by the version-history detail screen. */
 export function PlanView({ plan }: { plan: Plan }) {
+  const styles = useStyles();
+
   return (
     <View style={styles.planBody}>
-      <GoalCard plan={plan} />
+      <GoalBlock plan={plan} />
 
       {plan.phases.map((phase, pi) => (
         <View key={`${phase.name}-${pi}`} style={styles.phase}>
-          <ThemedText type="waypointLabel" themeColor="blaze">
+          <ThemedText type="label" themeColor="inkMuted">
             {PHASE_LABELS[phase.name]}
           </ThemedText>
           {phase.weeks.map((week) => (
@@ -61,6 +65,8 @@ export function PlanView({ plan }: { plan: Plan }) {
 /** One week at a time, opened on the real current week (from plan progress),
  * with ‹ › navigation across the whole plan. Used by the Séances tab. */
 export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: number | null }) {
+  const styles = useStyles();
+  const theme = useTheme();
   const weeks = useMemo(() => flattenWeeks(plan), [plan]);
   const [selected, setSelected] = useState(0);
 
@@ -75,47 +81,55 @@ export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: 
   const clamped = Math.min(Math.max(selected, 0), weeks.length - 1);
   const { week, phase } = weeks[clamped];
   const isCurrent = week.index === currentWeek;
-  const atFirst = clamped === 0;
-  const atLast = clamped === weeks.length - 1;
 
   return (
     <View style={styles.planBody}>
       <View style={styles.pager}>
-        <NavArrow dir="prev" disabled={atFirst} onPress={() => setSelected(clamped - 1)} />
+        <NavArrow dir="prev" disabled={clamped === 0} onPress={() => setSelected(clamped - 1)} />
         <View style={styles.pagerCenter}>
-          <ThemedText type="waypointLabel" themeColor="blaze">
+          <ThemedText type="label" themeColor="inkMuted">
             {PHASE_LABELS[phase]}
+            {isCurrent ? ' · en cours' : ''}
           </ThemedText>
-          <ThemedText type="subtitle">
-            Semaine {week.index} <ThemedText themeColor="textSecondary">/ {weeks.length}</ThemedText>
-          </ThemedText>
-          <View style={styles.pagerMeta}>
-            {isCurrent ? (
-              <View style={styles.currentTag}>
-                <View style={styles.currentDot} />
-                <ThemedText type="waypointLabel" themeColor="blaze">
-                  En cours
-                </ThemedText>
-              </View>
-            ) : null}
-            <WeekLoad week={week} />
+          <View style={styles.pagerTitle}>
+            <ThemedText type="figure" style={styles.weekNumber}>
+              {week.index}
+            </ThemedText>
+            <ThemedText type="small" themeColor="inkMuted">
+              / {weeks.length} semaines
+            </ThemedText>
           </View>
+          <WeekLoad week={week} />
         </View>
-        <NavArrow dir="next" disabled={atLast} onPress={() => setSelected(clamped + 1)} />
+        <NavArrow
+          dir="next"
+          disabled={clamped === weeks.length - 1}
+          onPress={() => setSelected(clamped + 1)}
+        />
       </View>
+
+      {/* The week's own baseline: the pager sits above the rule, the sessions
+          hang under it, so a week reads as one block rather than a header
+          floating over a list. */}
+      <View style={[styles.rule, { backgroundColor: theme.ruleStrong }]} />
 
       <WeekSessions week={week} />
     </View>
   );
 }
 
-function GoalCard({ plan }: { plan: Plan }) {
+function GoalBlock({ plan }: { plan: Plan }) {
+  const styles = useStyles();
+
   return (
-    <View style={styles.goalCard}>
+    <View style={styles.goal}>
+      <ThemedText type="label" themeColor="inkMuted">
+        Objectif
+      </ThemedText>
       <ThemedText type="subtitle">{plan.goal.description}</ThemedText>
       {plan.goal.race_date ? (
-        <ThemedText type="small" themeColor="textSecondary">
-          Objectif le {plan.goal.race_date}
+        <ThemedText type="small" themeColor="inkMuted">
+          Le {plan.goal.race_date}
         </ThemedText>
       ) : null}
     </View>
@@ -123,12 +137,16 @@ function GoalCard({ plan }: { plan: Plan }) {
 }
 
 function WeekLoad({ week }: { week: PlanWeek }) {
+  const theme = useTheme();
+
+  // Décharge is a Récup state: the week is *supposed* to be light, and reading
+  // it as falling behind is exactly the misreading this label exists to stop.
   return week.is_deload ? (
-    <ThemedText type="waypointLabel" themeColor="hydro">
-      Deload
+    <ThemedText type="label" style={{ color: theme.recup }}>
+      Décharge
     </ThemedText>
   ) : (
-    <ThemedText type="waypointLabel" themeColor="textSecondary">
+    <ThemedText type="label" themeColor="inkMuted">
       Charge {Math.round(week.target_load)}
     </ThemedText>
   );
@@ -143,36 +161,42 @@ function NavArrow({
   disabled: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles();
+  const theme = useTheme();
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       accessibilityLabel={dir === 'prev' ? 'Semaine précédente' : 'Semaine suivante'}
       style={pressable([styles.navArrow, disabled && styles.navArrowDisabled])}>
       <Icon
         name={dir === 'prev' ? 'chevron-left' : 'chevron-right'}
-        size={24}
-        color={disabled ? Colors.textSecondary : Colors.text}
+        size={22}
+        color={disabled ? theme.inkMuted : theme.ink}
       />
     </Pressable>
   );
 }
 
 function WeekSessions({ week }: { week: PlanWeek }) {
+  const styles = useStyles();
   // The generator doesn't emit sessions in calendar order, so sort before
   // rendering — this also makes "Séance n/N" count through the week in order.
   const ordered = sortSessionsByDay(week.sessions);
   // Addons (e.g. a strength block) share a day and aren't numbered as sessions.
   const total = ordered.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
   let counter = 0;
+
   return (
     <View style={styles.sessionList}>
       {ordered.map((session, si) => {
         const isPrimary = session.type !== 'rest' && session.slot === 'primary';
         const position = isPrimary ? (counter += 1) : 0;
         return (
-          <SessionCard
+          <SessionRow
             key={si}
             session={session}
             weekNumber={week.index}
@@ -185,7 +209,16 @@ function WeekSessions({ week }: { week: PlanWeek }) {
   );
 }
 
-function SessionCard({
+/**
+ * One session, as a row on a rule rather than a card.
+ *
+ * A week is a table of days, and boxing each day in its own rounded rectangle
+ * made twelve objects out of one list (DESIGN.md: a card is earned by being an
+ * object). The day sits in a fixed left column so the week reads down a single
+ * axis, and every row carries both cues that let it be scanned — the sport glyph
+ * and the sport-aware name.
+ */
+function SessionRow({
   session,
   weekNumber,
   position,
@@ -196,17 +229,19 @@ function SessionCard({
   position: number;
   total: number;
 }) {
+  const styles = useStyles();
+  const theme = useTheme();
   const isKey = session.priority === 'key';
   const isAddon = session.slot === 'addon';
-  const isSkipped = session.skipped;
 
   if (session.type === 'rest') {
     return (
-      <View style={styles.restCard}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.restDay}>
+      <View style={styles.row}>
+        <ThemedText type="label" themeColor="inkMuted" style={styles.day}>
           {DAY_LABELS[session.day]}
         </ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
+        <View style={[styles.tick, { backgroundColor: theme.recup }]} />
+        <ThemedText type="default" themeColor="inkMuted" style={styles.name}>
           Repos
         </ThemedText>
       </View>
@@ -214,7 +249,6 @@ function SessionCard({
   }
 
   const distanceKm = estimateDistanceKm(session.duration_min, session.pace_range);
-  const difficulty = sessionDifficulty(session.type);
   const meta =
     distanceKm != null
       ? `${formatDuration(session.duration_min)} · ${frKm(distanceKm)} km`
@@ -229,66 +263,43 @@ function SessionCard({
 
   return (
     <Pressable
-      style={pressable([styles.sessionCard, isSkipped && styles.sessionCardSkipped])}
+      style={pressable([styles.row, session.skipped && styles.rowSkipped])}
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={`${sessionTitle(session)}, ${meta}, séance ${position} sur ${total}${
-        isAddon ? '' : isKey ? ', séance clé' : ', séance optionnelle'
-      }${isSkipped ? ', sautée' : ''}`}>
-      <View style={styles.sessionHead}>
-        <View style={styles.sessionHeadLeft}>
-          {/* Key vs optional is the one thing to read off a week that turned out
-              busier than planned, so both states are labelled: an unlabelled
-              card would only say "not key" by the absence of a pill, which is
-              not something you notice while scanning. */}
-          {isSkipped ? (
-            <View style={styles.optionalPill}>
-              <ThemedText type="waypointLabel" themeColor="textSecondary">
-                Sautée
-              </ThemedText>
-            </View>
-          ) : !isAddon ? (
-            <View style={isKey ? styles.keyPill : styles.optionalPill}>
-              <ThemedText type="waypointLabel" themeColor={isKey ? 'blaze' : 'textSecondary'}>
-                {isKey ? 'Clé' : 'Optionnelle'}
-              </ThemedText>
-            </View>
-          ) : null}
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            {DAY_LABELS[session.day]}
-            {isAddon ? ' · Complément' : ` · Séance ${position}/${total}`}
-          </ThemedText>
-        </View>
-        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
-      </View>
-
-      {/* One line carries the whole session: glyph + sport-aware name (the two
-          cues that let a week be scanned for "which of these are runs?"), then
-          its numbers. A labelled stats block underneath cost a third of the
-          card's height to say "Durée" and "Difficulté" above values that
-          already read as a duration and an intensity — the card is a list row,
-          the detail screen is where the breakdown belongs. */}
-      <View style={styles.sessionTitleRow}>
-        <SportIcon sport={session.sport} size={20} />
-        <ThemedText type="link" numberOfLines={1} style={styles.sessionName}>
+      accessibilityLabel={`${sessionTitle(session)}, ${DAY_LABELS[session.day]}, ${meta}${
+        isAddon ? ', complément' : `, séance ${position} sur ${total}`
+      }${isKey ? ', séance clé' : ''}${session.skipped ? ', sautée' : ''}`}>
+      <ThemedText type="label" themeColor="inkMuted" style={styles.day}>
+        {DAY_LABELS[session.day]}
+      </ThemedText>
+      {/* Key is a load state — the session carrying the week's stimulus — so it
+          gets the Go ink. Optional gets nothing: the absence of the tick is the
+          statement, and a second colour would make "not key" look like a warning. */}
+      <View
+        style={[styles.tick, { backgroundColor: isKey ? theme.go : 'transparent' }]}
+      />
+      <SportIcon sport={session.sport} size={20} />
+      <View style={styles.nameBlock}>
+        <ThemedText type="link" numberOfLines={1}>
           {sessionTitle(session)}
+          {session.skipped ? ' · sautée' : ''}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {meta}
-        </ThemedText>
-        <DifficultyBolts level={difficulty} />
+        {session.rationale ? (
+          <ThemedText type="small" themeColor="inkMuted" numberOfLines={1}>
+            {session.rationale}
+          </ThemedText>
+        ) : null}
       </View>
-
-      {session.rationale ? (
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-          {session.rationale}
-        </ThemedText>
-      ) : null}
+      <ThemedText type="figure" themeColor="inkMuted" style={styles.meta}>
+        {meta}
+      </ThemedText>
+      <IntensityNotch level={sessionDifficulty(session.type)} />
+      <Icon name="chevron-right" size={18} color={theme.inkMuted} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   planBody: { gap: Spacing.four },
   phase: { gap: Spacing.two },
   weekBlock: { gap: Spacing.two },
@@ -297,13 +308,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-
-  goalCard: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
-    gap: Spacing.two,
+  rule: {
+    height: 1,
+    backgroundColor: t.rule,
   },
+
+  goal: { gap: Spacing.one },
 
   pager: {
     flexDirection: 'row',
@@ -312,83 +322,38 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   pagerCenter: { flex: 1, alignItems: 'center', gap: Spacing.half },
-  pagerMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    marginTop: Spacing.half,
-  },
-  currentTag: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
-  currentDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.blaze },
+  pagerTitle: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two },
+  weekNumber: { fontSize: 28, lineHeight: 34 },
+
   navArrow: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: Rounded.md,
     borderWidth: 1,
-    borderColor: Colors.contour,
+    borderColor: t.ruleStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navArrowDisabled: { borderColor: Colors.contourFaint, opacity: 0.5 },
+  navArrowDisabled: { borderColor: t.rule, opacity: 0.5 },
 
-  sessionList: { gap: Spacing.two },
-  sessionTitleRow: {
+  sessionList: { gap: 0 },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
+    minHeight: 56,
+    paddingVertical: Spacing.two,
+    // Rule on top of each row, never below: the list closes on its container's
+    // own edge instead of leaving a line hanging under the last item.
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
-  // Takes the leftover width so the numbers stay pinned right and a long name
-  // truncates instead of pushing them off the row.
-  sessionName: { flex: 1 },
-  sessionCard: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.three,
-    gap: Spacing.one,
-  },
-  sessionHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sessionHeadLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  keyPill: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 2,
-    borderRadius: Rounded.sm,
-    borderWidth: 1,
-    borderColor: '#E8792C66',
-    backgroundColor: '#E8792C1f',
-  },
-
   // A skipped session stays in the week — hiding it would hide the decision —
   // but recedes: it is no longer something to act on.
-  sessionCardSkipped: { opacity: 0.55 },
-
-  // Same shape as the key pill so the two read as one control, but outlined and
-  // unaccented: optional is the quieter of the two states, not a second alarm.
-  optionalPill: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 2,
-    borderRadius: Rounded.sm,
-    borderWidth: 1,
-    borderColor: Colors.contourFaint,
-    backgroundColor: 'transparent',
-  },
-
-  restCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    borderRadius: Rounded.md,
-    borderWidth: 1,
-    borderColor: Colors.contourFaint,
-  },
-  restDay: { width: 32 },
-});
+  rowSkipped: { opacity: 0.5 },
+  day: { width: 34 },
+  tick: { width: 3, height: 22, borderRadius: 2 },
+  nameBlock: { flex: 1, gap: Spacing.half },
+  name: { flex: 1 },
+  meta: { fontSize: 13, lineHeight: 18 },
+}));

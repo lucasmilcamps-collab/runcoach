@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActivityList, SyncingCard } from '@/components/activity-list';
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { listActivities } from '@/lib/api/activities';
 import { useCompactHeader } from '@/hooks/use-compact-header';
 import { useTabScrollPadding } from '@/hooks/use-tab-scroll-padding';
@@ -18,6 +19,8 @@ import { useAuthStore } from '@/lib/stores/auth-store';
 import { useGarminSync } from '@/lib/use-garmin-sync';
 
 export default function ActivitiesScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const bottomPad = useTabScrollPadding();
   const { compact, onScroll } = useCompactHeader();
   const garminConnected = useAuthStore((s) => s.garminConnected);
@@ -41,7 +44,6 @@ export default function ActivitiesScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <ScreenCrest />
         <TopBar subtitle={subtitle} compact={compact} />
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
@@ -50,14 +52,14 @@ export default function ActivitiesScreen() {
           showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             {errorMessage ? (
-              <ThemedText type="small" themeColor="flare" style={styles.centerText}>
+              <ThemedText type="small" themeColor="alerte" style={styles.centerText}>
                 {errorMessage}
               </ThemedText>
             ) : null}
             {backgroundSyncing ? (
               <View style={styles.syncChip}>
-                <ActivityIndicator size="small" color={Colors.blaze} />
-                <ThemedText type="small" themeColor="textSecondary">
+                <ActivityIndicator size="small" color={theme.ink} />
+                <ThemedText type="small" themeColor="inkMuted">
                   Synchronisation Garmin…
                 </ThemedText>
               </View>
@@ -68,9 +70,9 @@ export default function ActivitiesScreen() {
 
           {!garminConnected ? (
             <EmptyState
-              title="Reliez votre Garmin"
-              description="Connectez Garmin pour importer vos activités, ou enregistrez une séance à la main."
-              pin="summit">
+              title="Relie ta montre"
+              description="Connecte Garmin pour importer tes activités, ou enregistre une séance à la main."
+              variant="ledger">
               <Button label="Connecter Garmin" onPress={() => router.push('/garmin-connect')} />
               <Button
                 label="Ajouter une séance à la main"
@@ -84,7 +86,7 @@ export default function ActivitiesScreen() {
             <EmptyState
               title="Aucune activité pour l’instant"
               description="Lancez une synchronisation pour importer jusqu’à 90 jours d’historique Garmin, ou enregistrez une séance à la main."
-              pin="edge">
+              variant="handover">
               <Button label="Synchroniser Garmin" loading={isSyncing} onPress={sync} />
               <Button
                 label="Ajouter une séance"
@@ -119,10 +121,10 @@ export default function ActivitiesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
   },
   container: {
@@ -152,7 +154,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingTop: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   actionBtn: { flex: 1 },
-});
+}));

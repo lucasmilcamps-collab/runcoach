@@ -1,6 +1,6 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import type { SportType } from '@/lib/api/types';
 
 /**
@@ -15,14 +15,16 @@ import type { SportType } from '@/lib/api/types';
 export function SportIcon({
   sport,
   size = 22,
-  color = Colors.textSecondary,
+  color,
 }: {
   sport: SportType;
   size?: number;
   color?: string;
 }) {
+  const theme = useTheme();
+  const tint = color ?? theme.inkMuted;
   const stroke = {
-    stroke: color,
+    stroke: tint,
     strokeWidth: 1.75,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
@@ -79,11 +81,11 @@ export function SportIcon({
       ) : null}
 
       {/* Anything the backend files under OTHER (ski, natation, rando…) gets the
-          neutral waypoint mark rather than a wrong sport's glyph. */}
+          neutral dot rather than a wrong sport's glyph. */}
       {sport === 'OTHER' ? (
         <>
           <Circle cx={12} cy={12} r={7.2} {...stroke} />
-          <Circle cx={12} cy={12} r={1.9} fill={color} />
+          <Circle cx={12} cy={12} r={1.9} fill={tint} />
         </>
       ) : null}
     </Svg>

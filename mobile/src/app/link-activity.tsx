@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { EmptyState } from '@/components/empty-state';
 import { BackButton } from '@/components/back-button';
 import { Icon } from '@/components/icon';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, listActivities } from '@/lib/api/activities';
 import { setSessionLink } from '@/lib/api/plans';
@@ -45,6 +46,8 @@ function frDistance(distanceM: number | null): string | null {
 }
 
 export default function LinkActivityScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const params = useLocalSearchParams<{
     week?: string;
     day?: string;
@@ -87,33 +90,32 @@ export default function LinkActivityScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <ScreenCrest />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <BackButton />
 
           <View style={styles.header}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
+            <ThemedText type="label" themeColor="inkMuted">
               Valider la séance
             </ThemedText>
             <ThemedText type="title">Lier une activité</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="inkMuted">
               Choisis l’activité de ta montre qui correspond à cette séance.
             </ThemedText>
           </View>
 
           {invalid ? (
-            <ThemedText type="default" themeColor="flare">
+            <ThemedText type="default" themeColor="alerte">
               Séance introuvable.
             </ThemedText>
           ) : activitiesQuery.isLoading ? (
             <View style={styles.centered}>
-              <ActivityIndicator color={Colors.contour} />
+              <ActivityIndicator color={theme.ruleStrong} />
             </View>
           ) : candidates.length === 0 ? (
             <EmptyState
               title="Aucune activité à proximité"
               description="Aucune activité enregistrée autour de cette date. Synchronise Garmin, ou saisis la séance à la main."
-              pin="edge">
+              variant="handover">
               <Button label="Saisir à la main" onPress={() => router.replace('/add-activity')} />
             </EmptyState>
           ) : (
@@ -158,6 +160,8 @@ function ActivityOption({
   pending: boolean;
   onPress: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const distance = frDistance(activity.distance_m);
   const offset = sessionDate ? dayDiff(activity.start_time, sessionDate) : 0;
   const offsetLabel =
@@ -174,43 +178,44 @@ function ActivityOption({
         <View style={styles.optionTop}>
           <ThemedText type="default">{activityLabel(activity)}</ThemedText>
           {activity.manual ? (
-            <ThemedText type="waypointLabel" themeColor="hydro">
+            <ThemedText type="label" themeColor="recup">
               Manuel
             </ThemedText>
           ) : null}
         </View>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {frDate(activity.start_time)} · {frDuration(activity.duration_s)}
           {distance ? ` · ${distance}` : ''}
         </ThemedText>
-        <ThemedText type="waypointLabel" themeColor={offset === 0 ? 'blaze' : 'textSecondary'}>
+        <ThemedText type="label" themeColor={offset === 0 ? 'ink' : 'inkMuted'}>
           {offsetLabel}
         </ThemedText>
       </View>
       {pending ? (
-        <ActivityIndicator size="small" color={Colors.blaze} />
+        <ActivityIndicator size="small" color={theme.ink} />
       ) : (
-        <Icon name="chevron-right" size={20} color={Colors.textSecondary} />
+        <Icon name="chevron-right" size={20} color={theme.inkMuted} />
       )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: Spacing.four },
+const useStyles = makeStyles((t) => ({
+  safeArea: { flex: 1, backgroundColor: t.surface, paddingHorizontal: Spacing.four },
   container: { flex: 1, maxWidth: MaxContentWidth, alignSelf: 'center', width: '100%' },
   scroll: { gap: Spacing.four, paddingTop: Spacing.three, paddingBottom: Spacing.six },
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
-  list: { gap: Spacing.three },
+  list: { gap: 0, borderBottomWidth: 1, borderBottomColor: t.rule },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
+    minHeight: 56,
+    paddingVertical: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
   optionMain: { flex: 1, gap: Spacing.half },
   optionTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-});
+}));

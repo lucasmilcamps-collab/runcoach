@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { TextInput, View, type TextInputProps } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 
 type TextFieldProps = TextInputProps & {
   label: string;
@@ -18,22 +20,22 @@ export function TextField({
   accessibilityLabel,
   ...rest
 }: TextFieldProps) {
+  const styles = useStyles();
+  const theme = useTheme();
   const [focused, setFocused] = useState(false);
 
-  const borderColor = error ? Colors.flare : focused ? Colors.blaze : Colors.contour;
+  // Focus is neutral Ink, not a signal ink: focus is chrome, and a green ring
+  // here would read as a load state (DESIGN.md).
+  const borderColor = error ? theme.alerte : focused ? theme.ink : theme.ruleStrong;
 
   return (
     <View style={styles.container}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         {label}
       </ThemedText>
       <TextInput
-        style={[
-          styles.input,
-          { borderColor, borderWidth: focused ? 1.5 : 1 },
-          style,
-        ]}
-        placeholderTextColor={Colors.textSecondary}
+        style={[styles.input, { borderColor, borderWidth: focused ? 1.5 : 1 }, style]}
+        placeholderTextColor={theme.inkMuted}
         // The visible label is a sibling <Text>, which assistive tech has no way
         // to associate with this input — so name the input explicitly, and let
         // the error be announced with it rather than read as loose text.
@@ -50,7 +52,7 @@ export function TextField({
         {...rest}
       />
       {error ? (
-        <ThemedText type="small" themeColor="flare">
+        <ThemedText type="small" themeColor="alerte">
           {error}
         </ThemedText>
       ) : null}
@@ -58,7 +60,7 @@ export function TextField({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   container: {
     gap: Spacing.one,
   },
@@ -66,8 +68,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: Rounded.sm,
     paddingHorizontal: Spacing.three,
-    backgroundColor: Colors.backgroundElement,
-    color: Colors.text,
+    backgroundColor: t.raised,
+    color: t.ink,
     fontSize: 16,
   },
-});
+}));
