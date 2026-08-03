@@ -3,7 +3,8 @@ import { Text, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
-import { Colors, MaxContentWidthWide } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { MaxContentWidthWide } from '@/constants/theme';
 
 /**
  * Three tabs (Accueil / Séances / Activités). Settings and the detail screens
@@ -20,6 +21,7 @@ function tabIcon(name: IconName) {
 }
 
 export default function TabsLayout() {
+  const theme = useTheme();
   // The bar height must include the bottom safe-area inset (iPhone home
   // indicator, drawn under the app because of viewport-fit=cover +
   // black-translucent): without it the labels sit behind the indicator and
@@ -30,8 +32,8 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.blaze,
-        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarActiveTintColor: theme.ink,
+        tabBarInactiveTintColor: theme.inkMuted,
         // The active tab must not rely on color alone (WCAG 1.4.1): the focused
         // label also carries more weight, so it reads as active without color.
         tabBarLabel: ({ focused, color, children }) => (
@@ -40,8 +42,8 @@ export default function TabsLayout() {
           </Text>
         ),
         tabBarStyle: {
-          backgroundColor: Colors.backgroundElement,
-          borderTopColor: Colors.contour,
+          backgroundColor: theme.raised,
+          borderTopColor: theme.ruleStrong,
           borderTopWidth: 1,
           height: 62 + insets.bottom,
           paddingTop: 6,

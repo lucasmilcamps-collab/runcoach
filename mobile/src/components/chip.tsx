@@ -1,29 +1,25 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
 import { pressable } from '@/lib/pressable';
-
-export type ChipTone = 'blaze' | 'hydro';
+import { makeStyles } from '@/lib/themed-styles';
 
 /**
  * The app's one selectable chip (objectives, weekdays, durations, RPE…).
  *
- * Selected state is an **outline**, not a blaze fill: these controls appear a
- * dozen at a time on the setup forms, and filling each one drowned the screen's
- * primary action in orange (DESIGN.md, The One Blaze Rule — the single blaze
- * fill per screen belongs to the CTA). Selection is carried by three cues at
- * once — accent border, accent text, heavier weight — so it never rests on
- * color alone, plus `accessibilityState` for assistive tech.
- *
- * `tone` picks the accent: blaze for a normal selection, hydro for the
- * "flexible / variable" day state in the plan setup.
+ * Selected is an **outline plus weight**, never a filled accent: these appear a
+ * dozen at a time on the setup forms, and a signal ink spent on "you picked
+ * this" is a signal ink that no longer means anything about training load
+ * (DESIGN.md). Selection is carried by three cues at once — a stronger border,
+ * a raised ground and a heavier label — so it never rests on colour alone, plus
+ * `accessibilityState` for assistive tech.
  */
 export function Chip({
   label,
   selected,
   onPress,
-  tone = 'blaze',
+  variant = 'solid',
   disabled = false,
   fill = false,
   accessibilityLabel,
@@ -31,7 +27,10 @@ export function Chip({
   label: string;
   selected: boolean;
   onPress: () => void;
-  tone?: ChipTone;
+  /** 'dashed' marks a selection that is deliberately loose — the plan setup's
+   * "jour variable". A second selected state has to be distinguishable from the
+   * first without colour, so the difference is the border's shape. */
+  variant?: 'solid' | 'dashed';
   /** Not choosable — e.g. the day a session already sits on. Still shows its
    * selected state, so "you are here" reads without being an offer. */
   disabled?: boolean;
@@ -40,8 +39,7 @@ export function Chip({
   fill?: boolean;
   accessibilityLabel?: string;
 }) {
-  const accent = tone === 'hydro' ? 'hydro' : 'blaze';
-  const color = selected ? accent : disabled ? 'textSecondary' : 'text';
+  const styles = useStyles();
 
   return (
     <Pressable
@@ -55,16 +53,18 @@ export function Chip({
         fill && styles.chipFill,
         disabled && !selected && styles.chipDisabled,
         selected && styles.chipSelected,
-        selected && { borderColor: Colors[accent] },
+        selected && variant === 'dashed' && styles.chipDashed,
       ])}>
-      <ThemedText type={selected ? 'link' : 'default'} themeColor={color}>
+      <ThemedText
+        type={selected ? 'link' : 'default'}
+        themeColor={disabled && !selected ? 'inkMuted' : 'ink'}>
         {label}
       </ThemedText>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   chip: {
     minHeight: 44,
     // A one-character label ("2", "9") only comes to 43pt wide from its padding
@@ -76,12 +76,16 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: Colors.contour,
-    backgroundColor: Colors.backgroundElement,
+    borderColor: t.rule,
+    backgroundColor: 'transparent',
   },
   chipSelected: {
     borderWidth: 1.5,
-    backgroundColor: Colors.backgroundSelected,
+    borderColor: t.ruleStrong,
+    backgroundColor: t.inset,
+  },
+  chipDashed: {
+    borderStyle: 'dashed',
   },
   chipFill: {
     // Width comes from the row, so the label-hugging padding would only stop
@@ -91,6 +95,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.one,
   },
   chipDisabled: {
-    borderColor: Colors.contourFaint,
+    borderColor: t.rule,
+    backgroundColor: 'transparent',
   },
-});
+}));

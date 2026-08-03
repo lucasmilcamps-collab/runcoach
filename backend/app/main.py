@@ -16,7 +16,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Mosa API", lifespan=lifespan)
+app = FastAPI(title="Relay API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

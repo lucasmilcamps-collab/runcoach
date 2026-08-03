@@ -1,47 +1,52 @@
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Logo } from '@/components/logo';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
-import { WaypointStepper } from '@/components/waypoint-stepper';
-import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
+import { LegStepper } from '@/components/leg-stepper';
+import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 
 export default function WelcomeScreen() {
+  const styles = useStyles();
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScreenCrest />
 
       <View style={styles.content}>
-        <WaypointStepper currentStep={0} />
+        <LegStepper currentStep={0} />
 
         <View style={styles.hero}>
           {/* The only screen that introduces the app, and so the only one that
               carries the full lockup — everywhere else the avatar heads the
               page and the tab bar says where you are. */}
           <Logo size={44} />
-          <ThemedText type="title">Tous tes sports, une seule foulée.</ThemedText>
-          <ThemedText type="default" themeColor="textSecondary">
-            Mosa lit vos données Garmin réelles — récupération, sommeil, Body Battery — et
-            recalcule votre plan course à pied en tenant compte de vos autres sports.
+          <ThemedText type="title">Tous tes sports comptent.</ThemedText>
+          <ThemedText type="default" themeColor="inkMuted">
+            Le padel du mardi et le match de jeudi pèsent sur la sortie longue du dimanche. Relay
+            lit ta montre — récupération, sommeil, fréquence cardiaque — et arbitre la semaine
+            entre la course, le renfo et tes sports co.
           </ThemedText>
         </View>
       </View>
 
       <View style={styles.actions}>
         <Button label="Commencer" onPress={() => router.push('/login')} />
-        <Button label="J'ai déjà un compte" variant="ghost" onPress={() => router.push('/login?mode=signin')} />
+        <Button
+          label="J’ai déjà un compte"
+          variant="ghost"
+          onPress={() => router.push('/login?mode=signin')}
+        />
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -64,4 +69,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

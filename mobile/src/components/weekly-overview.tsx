@@ -1,24 +1,31 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { formatDuration } from '@/lib/plan-format';
+import { makeStyles } from '@/lib/themed-styles';
 import type { WeekProgress } from '@/lib/week-progress';
 
-/** "Ton aperçu hebdomadaire": what was actually done this calendar week. */
+/** What was actually done this calendar week — three figures on one rule, as a
+ * register line rather than three cards. */
 export function WeeklyOverview({ progress }: { progress: WeekProgress }) {
+  const styles = useStyles();
+
   return (
-    <View style={styles.card}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
-        Ton aperçu hebdomadaire
+    <View style={styles.block}>
+      <ThemedText type="label" themeColor="inkMuted">
+        Cette semaine
       </ThemedText>
       <View style={styles.row}>
-        <Metric label="Activités" value={String(progress.done.count)} unit={`/ ${progress.target.count}`} />
+        <Metric
+          label="Séances"
+          value={String(progress.done.count)}
+          unit={progress.target.count > 0 ? `/ ${progress.target.count}` : undefined}
+        />
         <Metric label="Distance" value={frNumber(progress.done.km)} unit="km" bordered />
         <Metric
           label="Temps"
-          value={progress.done.minutes > 0 ? formatDuration(progress.done.minutes) : '0'}
-          unit={progress.done.minutes >= 60 ? '' : 'min'}
+          value={progress.done.minutes > 0 ? formatDuration(progress.done.minutes) : '0 min'}
           bordered
         />
       </View>
@@ -41,15 +48,17 @@ function Metric({
   unit?: string;
   bordered?: boolean;
 }) {
+  const styles = useStyles();
+
   return (
     <View style={[styles.metric, bordered && styles.metricBordered]}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         {label}
       </ThemedText>
       <View style={styles.valueRow}>
-        <ThemedText type="subtitle">{value}</ThemedText>
+        <ThemedText type="figure">{value}</ThemedText>
         {unit ? (
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkMuted">
             {unit}
           </ThemedText>
         ) : null}
@@ -58,23 +67,23 @@ function Metric({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
+const useStyles = makeStyles((t) => ({
+  block: {
     gap: Spacing.three,
+    paddingTop: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
   row: {
     flexDirection: 'row',
   },
   metric: {
     flex: 1,
-    gap: Spacing.half,
+    gap: Spacing.one,
   },
   metricBordered: {
     borderLeftWidth: 1,
-    borderLeftColor: Colors.contourFaint,
+    borderLeftColor: t.rule,
     paddingLeft: Spacing.three,
   },
   valueRow: {
@@ -82,4 +91,4 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     gap: Spacing.one,
   },
-});
+}));

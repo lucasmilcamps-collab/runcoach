@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Mosa",
-    "slug": "mobile",
+    "name": "Relay",
+    "slug": "relay",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "relay",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#14140F",
+        "backgroundColor": "#16181A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -27,9 +27,14 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#14140F",
+          "backgroundColor": "#F2EEE6",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 76,
+          "dark": {
+            "backgroundColor": "#16181A",
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 76
+          }
         }
       ],
       "expo-secure-store"

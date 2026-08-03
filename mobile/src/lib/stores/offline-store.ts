@@ -5,7 +5,7 @@ type OfflineState = {
    * When the data currently on screen was stored, as an ISO timestamp — or
    * null when the last read came from the network.
    *
-   * The service worker stamps `X-Mosa-Cached-At` on any response it serves from
+   * The service worker stamps `X-Relay-Cached-At` on any response it serves from
    * its cache (see public/sw.js), and the API client reports it here. One flag
    * for the whole app is enough because the fallback is all-or-nothing: with a
    * network, no read is served from cache; without one, every cacheable read

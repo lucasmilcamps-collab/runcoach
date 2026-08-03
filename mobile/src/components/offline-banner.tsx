@@ -1,8 +1,9 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
 import { useOfflineStore } from '@/lib/stores/offline-store';
+import { makeStyles } from '@/lib/themed-styles';
 
 /**
  * "Hors-ligne · données du …" — shown whenever the screen is rendering a copy
@@ -12,13 +13,15 @@ import { useOfflineStore } from '@/lib/stores/offline-store';
  * honest. A plan that adapts to yesterday's recovery is worth nothing if a
  * three-day-old session can be read as this morning's, so the cache never
  * appears without saying how old it is. Nothing here is an error state: the
- * content below is usable, it simply has a date on it.
+ * content below is usable, it simply has a date on it — which is why it takes a
+ * hairline and not the Alerte ink.
  *
- * Renders nothing when the last read came from the network, which is the
- * normal case — including on native, where no service worker exists and
- * `cachedAt` therefore never leaves null.
+ * Renders nothing when the last read came from the network, which is the normal
+ * case — including on native, where no service worker exists and `cachedAt`
+ * therefore never leaves null.
  */
 export function OfflineBanner() {
+  const styles = useStyles();
   const cachedAt = useOfflineStore((s) => s.cachedAt);
   if (!cachedAt) return null;
 
@@ -27,8 +30,11 @@ export function OfflineBanner() {
       style={styles.banner}
       accessibilityRole="alert"
       accessibilityLabel={`Hors-ligne. Données enregistrées le ${formatCachedAt(cachedAt)}.`}>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.text}>
-        Hors-ligne · données du {formatCachedAt(cachedAt)}
+      <ThemedText type="label" themeColor="inkMuted">
+        Hors-ligne
+      </ThemedText>
+      <ThemedText type="small" themeColor="inkMuted" style={styles.text}>
+        données du {formatCachedAt(cachedAt)}
       </ThemedText>
     </View>
   );
@@ -47,7 +53,7 @@ function formatCachedAt(iso: string): string {
   }).format(date);
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -56,13 +62,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    // Contour hairline on the elevated ground, like every other read-out in the
-    // app. Not flare: being offline is a fact about the network, not a fault to
-    // colour red, and the accent belongs to the screen's one action.
-    borderColor: Colors.contourFaint,
-    backgroundColor: Colors.backgroundElement,
+    borderColor: t.rule,
+    backgroundColor: t.raised,
   },
   text: {
     flex: 1,
   },
-});
+}));

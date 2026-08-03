@@ -1,18 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { IntensityNotch } from '@/components/intensity-notch';
 import { BackButton } from '@/components/back-button';
 import { Icon } from '@/components/icon';
-import { ScreenCrest } from '@/components/screen-crest';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Rounded, Spacing } from '@/constants/theme';
+import { useTheme, useZoneRamp } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { activityLabel } from '@/lib/activity-labels';
 import type { Activity } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
@@ -92,20 +94,25 @@ function frLinkedMeta(a: Activity): string {
   return `${date} · ${dur}${dist}`;
 }
 
-function Bolt({ active }: { active: boolean }) {
-  return (
-    <Svg width={11} height={15} viewBox="0 0 11 15">
-      <Path d="M6 0 0 9h4l-1 6 8-10H6z" fill={active ? Colors.blaze : Colors.contourFaint} />
-    </Svg>
-  );
-}
-
 /** Zone label for the HR side, framed as a ceiling on easy days ("≤ Zx"). */
 function hrZoneLabel(type: PlanSession['type'], zone: number): string {
   return hrIsCeiling(type) ? `≤ Z${zone}` : `Z${zone}`;
 }
 
+/** Colour never carries the level on its own — the word beside the notches is
+ * what actually says how hard the session is (DESIGN.md). */
+const DIFFICULTY_WORDS: Record<number, string> = {
+  0: 'Repos',
+  1: 'Facile',
+  2: 'Modérée',
+  3: 'Soutenue',
+  4: 'Difficile',
+};
+
 export default function SessionDetailScreen() {
+  const theme = useTheme();
+  const ramp = useZoneRamp();
+  const styles = useStyles();
   const data = useSessionParam();
   const paceFirst = usePreferencesStore((s) => s.primaryMetric) === 'pace';
   const pushMutation = useMutation({
@@ -176,7 +183,7 @@ export default function SessionDetailScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.fallback}>
-          <ThemedText type="default" themeColor="textSecondary">
+          <ThemedText type="default" themeColor="inkMuted">
             Séance introuvable.
           </ThemedText>
           <Button label="Retour" variant="ghost" onPress={() => router.back()} />
@@ -209,10 +216,10 @@ export default function SessionDetailScreen() {
 
   const pushMessage = (() => {
     if (pushMutation.isSuccess) {
-      return 'Séance envoyée — elle apparaîtra sur votre montre à la prochaine synchro Garmin.';
+      return 'Séance envoyée — elle apparaîtra sur ta montre à la prochaine synchro Garmin.';
     }
     if (pushMutation.error instanceof ApiError) return pushMutation.error.message;
-    if (pushMutation.isError) return 'Envoi impossible. Réessayez.';
+    if (pushMutation.isError) return 'Envoi impossible. Réessaie.';
     return undefined;
   })();
 
@@ -236,15 +243,14 @@ export default function SessionDetailScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <ScreenCrest />
           <View style={styles.topbar}>
             <BackButton />
           </View>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             Semaine {weekNumber} · Séance {position}/{total}
           </ThemedText>
           <View style={styles.titleRow}>
-            <SportIcon sport={session.sport} size={26} color={Colors.text} />
+            <SportIcon sport={session.sport} size={26} color={theme.ink} />
             <ThemedText type="title" style={styles.title}>
               {sessionTitle(session)}
             </ThemedText>
@@ -254,7 +260,7 @@ export default function SessionDetailScreen() {
               screen has to answer without you counting pills across the plan. */}
           <View style={isKey ? styles.pill : styles.pillMuted}>
             <View style={isKey ? styles.pin : styles.pinMuted} />
-            <ThemedText type="waypointLabel" themeColor={isKey ? 'blaze' : 'textSecondary'}>
+            <ThemedText type="label" themeColor={isKey ? 'ink' : 'inkMuted'}>
               {isKey ? 'Séance clé' : 'Séance optionnelle'}
             </ThemedText>
           </View>
@@ -279,9 +285,10 @@ export default function SessionDetailScreen() {
           ) : null}
           <Stat label="Difficulté" bordered={distanceKm != null}>
             <View style={styles.bolts}>
-              {[0, 1, 2, 3].map((i) => (
-                <Bolt key={i} active={i < difficulty} />
-              ))}
+              <IntensityNotch level={difficulty} />
+              <ThemedText type="small" themeColor="inkMuted">
+                {DIFFICULTY_WORDS[difficulty] ?? '—'}
+              </ThemedText>
             </View>
           </Stat>
         </View>
@@ -306,7 +313,7 @@ export default function SessionDetailScreen() {
         {linked ? (
           <View style={styles.linkedCard}>
             <View style={styles.linkedHead}>
-              <ThemedText type="waypointLabel" themeColor="blaze">
+              <ThemedText type="label" themeColor="ink">
                 ✓ Séance validée
               </ThemedText>
               <Pressable
@@ -315,13 +322,13 @@ export default function SessionDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Délier l’activité"
                 style={pressable(styles.unlink)}>
-                <ThemedText type="waypointLabel" themeColor="textSecondary">
+                <ThemedText type="label" themeColor="inkMuted">
                   {unlinkMutation.isPending ? 'Déliaison…' : 'Délier'}
                 </ThemedText>
               </Pressable>
             </View>
             <ThemedText type="default">{activityLabel(linked)}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               {frLinkedMeta(linked)}
             </ThemedText>
           </View>
@@ -330,7 +337,7 @@ export default function SessionDetailScreen() {
         {/* Description */}
         {session.rationale ? (
           <View style={styles.section}>
-            <ThemedText type="default" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="inkMuted">
               {session.rationale}
             </ThemedText>
           </View>
@@ -339,7 +346,7 @@ export default function SessionDetailScreen() {
         {/* Structure */}
         {session.structure.length > 0 ? (
           <View style={styles.section}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary" style={styles.kicker}>
+            <ThemedText type="label" themeColor="inkMuted" style={styles.kicker}>
               Structure
             </ThemedText>
 
@@ -352,7 +359,7 @@ export default function SessionDetailScreen() {
                     style={{
                       width: `${(block.duration_min / structureTotal) * 100}%`,
                       height: `${zoneHeightPct(zone)}%`,
-                      backgroundColor: zoneColor(zone),
+                      backgroundColor: zoneColor(zone, ramp),
                       borderTopLeftRadius: 4,
                       borderTopRightRadius: 4,
                       marginRight: i < session.structure.length - 1 ? 3 : 0,
@@ -373,14 +380,14 @@ export default function SessionDetailScreen() {
                   : `${zoneStr}${paceStr ? ` · ${paceStr}` : ''}`;
               return (
                 <View key={i} style={styles.block}>
-                  <View style={[styles.tick, { backgroundColor: zoneColor(zone) }]} />
+                  <View style={[styles.tick, { backgroundColor: zoneColor(zone, ramp) }]} />
                   <View style={styles.blockMain}>
                     <ThemedText type="default">{block.label}</ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
+                    <ThemedText type="small" themeColor="inkMuted">
                       {subtitle}
                     </ThemedText>
                   </View>
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <ThemedText type="small" themeColor="inkMuted">
                     {formatDuration(block.duration_min)}
                   </ThemedText>
                 </View>
@@ -389,8 +396,13 @@ export default function SessionDetailScreen() {
 
             {targets.length > 0 ? (
               <View style={styles.targets}>
-                {targets.map((t, idx) => (
-                  <Target key={t.label} label={t.label} value={t.value} bordered={idx > 0} />
+                {targets.map((target, idx) => (
+                  <Target
+                    key={target.label}
+                    label={target.label}
+                    value={target.value}
+                    bordered={idx > 0}
+                  />
                 ))}
               </View>
             ) : null}
@@ -403,7 +415,7 @@ export default function SessionDetailScreen() {
         {pushMessage ? (
           <ThemedText
             type="small"
-            themeColor={pushMutation.isSuccess ? 'hydro' : 'flare'}
+            themeColor={pushMutation.isSuccess ? 'recup' : 'alerte'}
             style={styles.pushMessage}>
             {pushMessage}
           </ThemedText>
@@ -495,7 +507,8 @@ export default function SessionDetailScreen() {
 
 /** A secondary action in the footer's compact row: ghost, 44pt, sized to share
  * the row. Deliberately lighter than `Button` — the screen's one full-width
- * blaze commitment is "J'ai fait cette séance" (DESIGN.md, The One Blaze Rule). */
+ * primary action is "J'ai fait cette séance" — everything else here is a
+ * secondary control and stays a ghost (DESIGN.md). */
 function UtilityAction({
   label,
   onPress,
@@ -509,11 +522,13 @@ function UtilityAction({
   busy?: boolean;
   disabled?: boolean;
   selected?: boolean;
-  /** Destructive — carries the flare tone instead of the accent. */
+  /** Destructive — carries the Alerte ink instead of neutral Ink. */
   danger?: boolean;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const isDisabled = disabled || busy;
-  const accent = danger ? 'flare' : 'blaze';
+  const accent = danger ? 'alerte' : 'ink';
   return (
     <Pressable
       onPress={onPress}
@@ -524,16 +539,16 @@ function UtilityAction({
       style={pressable([
         styles.utilityAction,
         selected && styles.utilityActionSelected,
-        selected && { borderColor: Colors[accent] },
+        selected && { borderColor: theme[accent] },
         danger && !selected && styles.utilityActionDanger,
         isDisabled && styles.utilityActionDisabled,
       ])}>
       {busy ? (
-        <ActivityIndicator color={Colors.text} />
+        <ActivityIndicator color={theme.ink} />
       ) : (
         <ThemedText
           type="small"
-          themeColor={selected ? accent : isDisabled ? 'textSecondary' : danger ? 'flare' : 'text'}>
+          themeColor={selected ? accent : isDisabled ? 'inkMuted' : danger ? 'alerte' : 'ink'}>
           {label}
         </ThemedText>
       )}
@@ -552,9 +567,10 @@ function Stat({
   bordered?: boolean;
   children?: React.ReactNode;
 }) {
+  const styles = useStyles();
   return (
     <View style={[styles.stat, bordered && styles.statBordered]}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
       {value ? <ThemedText type="subtitle">{value}</ThemedText> : children}
@@ -563,9 +579,10 @@ function Stat({
 }
 
 function Target({ label, value, bordered }: { label: string; value: string; bordered?: boolean }) {
+  const styles = useStyles();
   return (
     <View style={[styles.target, bordered && styles.targetBordered]}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         {label}
       </ThemedText>
       <ThemedText type="default">{value}</ThemedText>
@@ -573,8 +590,8 @@ function Target({ label, value, bordered }: { label: string; value: string; bord
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.background },
+const useStyles = makeStyles((t) => ({
+  safeArea: { flex: 1, backgroundColor: t.surface },
   scroll: { maxWidth: MaxContentWidth, alignSelf: 'center', width: '100%' },
   fallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.three },
 
@@ -614,23 +631,23 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: Colors.contourFaint,
+    borderColor: t.rule,
     backgroundColor: 'transparent',
   },
-  pin: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.blaze },
-  pinMuted: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.textSecondary },
+  pin: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.ink },
+  pinMuted: { width: 6, height: 6, borderRadius: 3, backgroundColor: t.inkMuted },
 
   stats: {
     flexDirection: 'row',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.four,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   stat: { flex: 1, gap: Spacing.one },
   statBordered: {
     borderLeftWidth: 1,
-    borderLeftColor: Colors.contourFaint,
+    borderLeftColor: t.rule,
     paddingLeft: Spacing.three,
   },
   bolts: { flexDirection: 'row', gap: 3, alignItems: 'center', height: 24 },
@@ -650,7 +667,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingVertical: Spacing.three,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
   },
   tick: { width: 3, alignSelf: 'stretch', borderRadius: 2 },
   blockMain: { flex: 1, gap: Spacing.half },
@@ -658,12 +675,12 @@ const styles = StyleSheet.create({
   targets: {
     flexDirection: 'row',
     marginTop: Spacing.three,
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: t.raised,
     borderRadius: Rounded.md,
     overflow: 'hidden',
   },
   target: { flex: 1, padding: Spacing.three, gap: Spacing.half },
-  targetBordered: { borderLeftWidth: 1, borderLeftColor: Colors.contourFaint },
+  targetBordered: { borderLeftWidth: 1, borderLeftColor: t.rule },
 
   footer: {
     paddingHorizontal: Spacing.four,
@@ -671,7 +688,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.four,
     gap: Spacing.two,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
     width: '100%',
@@ -691,18 +708,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: Colors.contour,
+    borderColor: t.ruleStrong,
   },
   utilityActionSelected: {
     borderWidth: 1.5,
-    borderColor: Colors.blaze,
-    backgroundColor: Colors.backgroundSelected,
+    borderColor: t.ink,
+    backgroundColor: t.inset,
   },
   utilityActionDanger: {
-    borderColor: Colors.flare,
+    borderColor: t.alerte,
   },
   utilityActionDisabled: {
-    borderColor: Colors.contourFaint,
+    borderColor: t.rule,
   },
   statPress: {
     flex: 1,
@@ -722,12 +739,14 @@ const styles = StyleSheet.create({
   },
   linkedCard: {
     marginHorizontal: Spacing.four,
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
+    backgroundColor: t.goWash,
+    borderRadius: Rounded.sm,
+    // A completed session is a Go state — the one thing colour is for here —
+    // stated with a hairline and a wash rather than a heavy coloured rail.
+    borderLeftWidth: 1,
+    borderLeftColor: t.go,
+    padding: Spacing.three,
     gap: Spacing.one,
-    borderLeftWidth: 2,
-    borderLeftColor: Colors.blaze,
   },
   unlink: {
     // hitSlop is inert on web, so the row carries the 44pt itself.
@@ -740,4 +759,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.one,
   },
-});
+}));

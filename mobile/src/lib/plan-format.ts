@@ -92,20 +92,15 @@ export function formatDuration(min: number): string {
   return rest === 0 ? `${h} h` : `${h} h ${rest.toString().padStart(2, '0')}`;
 }
 
-// --- Intensity: the Night-Trail "thermal" ramp (contour → blaze). One accent
-// that heats up with zone, rather than a rainbow (DESIGN.md: one accent). ---
+// --- Intensity: the Z1→Z5 ramp lives in the theme (it resolves per appearance),
+// so these helpers take it rather than owning a second copy of the palette. ---
 
-const ZONE_COLORS: Record<number, string> = {
-  1: '#6B5A3E',
-  2: '#8A6F47',
-  3: '#B5722F',
-  4: '#D66A28',
-  5: '#E8792C',
-};
 const ZONE_HEIGHT_PCT: Record<number, number> = { 1: 22, 2: 36, 3: 55, 4: 78, 5: 100 };
 
-export function zoneColor(zone: number): string {
-  return ZONE_COLORS[Math.min(5, Math.max(1, zone))] ?? ZONE_COLORS[2];
+/** The ramp tone for a zone. `ramp` comes from `useZoneRamp()` — Relay has two
+ * appearances, so an intensity colour cannot be a module constant. */
+export function zoneColor(zone: number, ramp: readonly string[]): string {
+  return ramp[Math.min(5, Math.max(1, Math.round(zone))) - 1] ?? ramp[1];
 }
 
 export function zoneHeightPct(zone: number): number {

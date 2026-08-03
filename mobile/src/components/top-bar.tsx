@@ -1,30 +1,27 @@
 import { useQuery } from '@tanstack/react-query';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import { AvatarButton } from '@/components/avatar-button';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { displayNameFromEmail, getMe } from '@/lib/api/auth';
 import { qk } from '@/lib/query-keys';
+import { makeStyles } from '@/lib/themed-styles';
 
 /**
- * The header of the three main tabs: the avatar, then who you are and which
- * week you're in, as one left-aligned group.
- *
- * It used to centre a "RUNCOACH" wordmark with the avatar floating alone in the
- * far corner — a small circle adrift in a wide empty band, above an app telling
- * you daily which app you had opened. The wordmark is gone from the tabs (the
- * tab bar already says where you are); the avatar now anchors a block carrying
- * the only two things worth a permanent line.
+ * The header of the three main tabs: the avatar, then who you are and which week
+ * you're in, as one left-aligned group. No wordmark — the tab bar already says
+ * where you are, and an app does not need to tell you daily which app you opened.
  *
  * `compact` is the scrolled state: the same row with a smaller avatar and a
  * single line, so a pinned header costs a thin strip rather than a tenth of the
  * screen.
  */
 export function TopBar({ subtitle, compact = false }: { subtitle?: string; compact?: boolean }) {
+  const styles = useStyles();
   // Shares the cache with AvatarButton — same key, so this costs no request.
   const { data } = useQuery({ queryKey: qk.me(), queryFn: getMe, staleTime: Infinity });
-  const name = displayNameFromEmail(data?.email) ?? 'Mosa';
+  const name = displayNameFromEmail(data?.email) ?? 'Relay';
 
   return (
     <View style={[styles.row, compact && styles.rowCompact]}>
@@ -42,7 +39,7 @@ export function TopBar({ subtitle, compact = false }: { subtitle?: string; compa
               {name}
             </ThemedText>
             {subtitle ? (
-              <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+              <ThemedText type="label" themeColor="inkMuted" numberOfLines={1}>
                 {subtitle}
               </ThemedText>
             ) : null}
@@ -53,7 +50,7 @@ export function TopBar({ subtitle, compact = false }: { subtitle?: string; compa
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -67,10 +64,10 @@ const styles = StyleSheet.create({
     // A hairline is what tells a pinned bar from content that happens to sit at
     // the top — without it, a stuck header just looks like it failed to scroll.
     borderBottomWidth: 1,
-    borderBottomColor: Colors.contourFaint,
+    borderBottomColor: t.rule,
   },
   block: {
     flex: 1,
     gap: Spacing.half,
   },
-});
+}));

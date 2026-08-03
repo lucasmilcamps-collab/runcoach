@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { DetailScreen } from '@/components/detail-screen';
 import { PlanAdherenceGrid } from '@/components/plan-adherence-grid';
 import { StatTiles } from '@/components/stat-tiles';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { getPlanOverview } from '@/lib/api/plans';
 import type { PlanOverview, WeekAdherence } from '@/lib/api/plans';
 import { weekRangeLabel } from '@/lib/plan-overview';
@@ -16,6 +18,8 @@ import { qk } from '@/lib/query-keys';
 const RecentWeeks = 4;
 
 export default function PlanRegularityScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const { version } = useLocalSearchParams<{ version: string }>();
   const versionNumber = Number(version);
 
@@ -32,10 +36,10 @@ export default function PlanRegularityScreen() {
       blurb="Ce que le plan demandait semaine par semaine, et ce qui a réellement été couru. Séances de course clés uniquement — une séance optionnelle sautée n’est pas un manquement.">
       {query.isLoading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={Colors.contour} />
+          <ActivityIndicator color={theme.ruleStrong} />
         </View>
       ) : query.isError || !query.data ? (
-        <ThemedText type="default" themeColor="flare">
+        <ThemedText type="default" themeColor="alerte">
           Impossible de charger la régularité de ce plan.
         </ThemedText>
       ) : (
@@ -46,6 +50,7 @@ export default function PlanRegularityScreen() {
 }
 
 function Body({ overview }: { overview: PlanOverview }) {
+  const styles = useStyles();
   const elapsed = overview.weeks.filter((w) => w.is_past);
   const recent = elapsed.slice(-RecentWeeks);
   const recentPlanned = sum(recent, (w) => w.planned);
@@ -92,14 +97,14 @@ function Body({ overview }: { overview: PlanOverview }) {
       </View>
 
       <View style={styles.card}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Vue d’ensemble
         </ThemedText>
         <PlanAdherenceGrid weeks={overview.weeks} />
       </View>
 
       <View style={styles.card}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+        <ThemedText type="label" themeColor="inkMuted">
           Semaine par semaine
         </ThemedText>
         {overview.weeks.map((week, position) => (
@@ -115,14 +120,15 @@ function Body({ overview }: { overview: PlanOverview }) {
 }
 
 function WeekRow({ week, range }: { week: WeekAdherence; range: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.row}>
       <View style={styles.rowMain}>
-        <ThemedText type="default" themeColor={week.is_current ? 'text' : 'textSecondary'}>
+        <ThemedText type="default" themeColor={week.is_current ? 'ink' : 'inkMuted'}>
           Semaine {week.week_index}
           {week.is_deload ? ' · Décharge' : ''}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {range}
         </ThemedText>
       </View>
@@ -134,7 +140,7 @@ function WeekRow({ week, range }: { week: WeekAdherence; range: string }) {
           {week.completed}/{week.planned}
         </ThemedText>
       ) : (
-        <ThemedText type="default" themeColor="textSecondary">
+        <ThemedText type="default" themeColor="inkMuted">
           {week.planned} prévues
         </ThemedText>
       )}
@@ -150,10 +156,11 @@ function pct(part: number, whole: number): number {
   return Math.round((part / whole) * 100);
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
   card: {
-    backgroundColor: Colors.backgroundElement,
+    borderWidth: 1,
+    borderColor: t.rule,
     borderRadius: Rounded.md,
     padding: Spacing.four,
     gap: Spacing.three,
@@ -165,11 +172,11 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     minHeight: 44,
     borderTopWidth: 1,
-    borderTopColor: Colors.contourFaint,
+    borderTopColor: t.rule,
     paddingTop: Spacing.two,
   },
   rowMain: {
     flex: 1,
     gap: Spacing.half,
   },
-});
+}));

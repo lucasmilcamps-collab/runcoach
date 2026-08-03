@@ -1,21 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
+import { Chip } from '@/components/chip';
 import { Icon } from '@/components/icon';
 import { NotificationsCard } from '@/components/notifications-card';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { pressable } from '@/lib/pressable';
 import { cancelPlan, getCurrentPlan } from '@/lib/api/plans';
 import { invalidatePlanReads, qk } from '@/lib/query-keys';
 import { useAuthStore } from '@/lib/stores/auth-store';
+import { usePreferencesStore, type ThemeMode } from '@/lib/stores/preferences-store';
+
+const THEME_MODES: { value: ThemeMode; label: string }[] = [
+  { value: 'system', label: 'Système' },
+  { value: 'light', label: 'Sable' },
+  { value: 'dark', label: 'Graphite' },
+];
 
 export default function SettingsScreen() {
+  const styles = useStyles();
   const garminConnected = useAuthStore((s) => s.garminConnected);
   const queryClient = useQueryClient();
   // Only offer the stop when there is something to stop.
@@ -37,6 +47,8 @@ export default function SettingsScreen() {
     },
   });
   const signOut = useAuthStore((s) => s.signOut);
+  const themeMode = usePreferencesStore((s) => s.themeMode);
+  const setThemeMode = usePreferencesStore((s) => s.setThemeMode);
 
   async function handleSignOut() {
     await signOut();
@@ -46,7 +58,6 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <ScreenCrest />
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
@@ -56,8 +67,8 @@ export default function SettingsScreen() {
 
           <View style={styles.header}>
             <ThemedText type="title">Réglages</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
-              Vos repères, votre compte Garmin et vos notifications.
+            <ThemedText type="default" themeColor="inkMuted">
+              Tes repères, ton compte Garmin et tes notifications.
             </ThemedText>
           </View>
 
@@ -100,9 +111,7 @@ export default function SettingsScreen() {
             <View style={styles.card}>
               <View style={styles.statusRow}>
                 <ThemedText type="default">Connexion</ThemedText>
-                <ThemedText
-                  type="waypointLabel"
-                  themeColor={garminConnected ? 'hydro' : 'textSecondary'}>
+                <ThemedText type="label" themeColor={garminConnected ? 'ink' : 'inkMuted'}>
                   {garminConnected ? 'Connecté' : 'Non connecté'}
                 </ThemedText>
               </View>
@@ -112,6 +121,29 @@ export default function SettingsScreen() {
                 onPress={() => router.push('/garmin-connect')}
                 last
               />
+            </View>
+          </Section>
+
+          <Section title="Apparence">
+            <View style={styles.appearance}>
+              {/* Neither appearance is the fallback: the app is read at 6h in a
+                  dark bedroom and again at 22h after a match, so Système is the
+                  honest default and the other two are overrides (DESIGN.md). */}
+              <View style={styles.appearanceRow}>
+                {THEME_MODES.map((mode) => (
+                  <Chip
+                    key={mode.value}
+                    label={mode.label}
+                    selected={themeMode === mode.value}
+                    onPress={() => setThemeMode(mode.value)}
+                    fill
+                    accessibilityLabel={`Apparence : ${mode.label}`}
+                  />
+                ))}
+              </View>
+              <ThemedText type="small" themeColor="inkMuted">
+                Système suit le réglage clair/sombre de ton téléphone.
+              </ThemedText>
             </View>
           </Section>
 
@@ -129,9 +161,10 @@ export default function SettingsScreen() {
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.section}>
-      <ThemedText type="waypointLabel" themeColor="blaze">
+      <ThemedText type="label" themeColor="ink">
         {title}
       </ThemedText>
       {children}
@@ -152,6 +185,8 @@ function SettingRow({
   danger?: boolean;
   last?: boolean;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -159,24 +194,24 @@ function SettingRow({
       accessibilityLabel={label}
       style={pressable([styles.row, last && styles.rowLast])}>
       <View style={styles.rowMain}>
-        <ThemedText type="default" themeColor={danger ? 'flare' : 'text'}>
+        <ThemedText type="default" themeColor={danger ? 'alerte' : 'ink'}>
           {label}
         </ThemedText>
         {hint ? (
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkMuted">
             {hint}
           </ThemedText>
         ) : null}
       </View>
-      {!danger ? <Icon name="chevron-right" size={20} color={Colors.textSecondary} /> : null}
+      {!danger ? <Icon name="chevron-right" size={20} color={theme.inkMuted} /> : null}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
   },
   container: {
@@ -200,7 +235,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   card: {
-    backgroundColor: Colors.backgroundElement,
+    backgroundColor: t.raised,
     borderRadius: Rounded.md,
   },
   row: {
@@ -211,7 +246,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.contourFaint,
+    borderBottomColor: t.rule,
   },
   rowLast: {
     borderBottomWidth: 0,
@@ -220,6 +255,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.half,
   },
+  appearance: {
+    gap: Spacing.two,
+  },
+  appearanceRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -227,6 +269,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.contourFaint,
+    borderBottomColor: t.rule,
   },
-});
+}));

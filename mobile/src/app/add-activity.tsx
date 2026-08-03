@@ -1,15 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
+import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { createManualActivity, ManualActivityCreate } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
@@ -37,6 +37,7 @@ function nearestDuration(n: number): number {
 }
 
 export default function AddActivityScreen() {
+  const styles = useStyles();
   const queryClient = useQueryClient();
   // Optional prefill when arriving from a plan session ("J'ai fait cette séance").
   const params = useLocalSearchParams<{ sport?: string; duration?: string }>();
@@ -77,7 +78,7 @@ export default function AddActivityScreen() {
 
   const errorMessage = (() => {
     if (mutation.error instanceof ApiError) return mutation.error.message;
-    if (mutation.isError) return 'Impossible d’enregistrer la séance. Réessayez.';
+    if (mutation.isError) return 'Impossible d’enregistrer la séance. Réessaie.';
     return undefined;
   })();
 
@@ -85,13 +86,12 @@ export default function AddActivityScreen() {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
-          <ScreenCrest />
           <View style={styles.header}>
-            <ThemedText type="waypointLabel" themeColor="textSecondary">
+            <ThemedText type="label" themeColor="inkMuted">
               Ajouter une séance
             </ThemedText>
             <ThemedText type="title">Séance manuelle</ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="inkMuted">
               Pour une séance que Garmin n’a pas captée. Sa charge est estimée depuis l’effort
               ressenti (RPE), et elle compte dans ta forme comme les autres.
             </ThemedText>
@@ -143,7 +143,7 @@ export default function AddActivityScreen() {
                 <Chip key={r} label={String(r)} selected={r === rpe} onPress={() => setRpe(r)} />
               ))}
             </View>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="inkMuted">
               1 = très facile · 5 = modéré · 10 = effort maximal
             </ThemedText>
           </Field>
@@ -157,7 +157,7 @@ export default function AddActivityScreen() {
           />
 
           {errorMessage ? (
-            <ThemedText type="small" themeColor="flare">
+            <ThemedText type="small" themeColor="alerte">
               {errorMessage}
             </ThemedText>
           ) : null}
@@ -183,9 +183,10 @@ export default function AddActivityScreen() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="small" themeColor="inkMuted">
         {label}
       </ThemedText>
       {children}
@@ -193,11 +194,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -219,4 +220,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

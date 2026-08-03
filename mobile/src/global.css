@@ -1,10 +1,24 @@
 :root {
-  --font-mono:
-    'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono,
-    Courier New, monospace;
-  /* Trail Blaze — mirrors Colors.blaze / DESIGN.md. CSS can't read the TS
-     token, so it is restated once here instead of at each use below. */
-  --focus-ring: #e8792c;
+  /* First name wins: expo-font registers the web FontFace under the key passed
+     to `useFonts`, not under the font's marketing name, so 'Azeret Mono' alone
+     would silently fall through to the system mono. */
+  --font-mono: 'AzeretMono_500Medium', 'Azeret Mono', ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, Liberation Mono, Courier New, monospace;
+
+  /* Focus ring = Ink, the appearance's own text colour (DESIGN.md: focus is
+     chrome, not a signal — a green ring would read as a load state). CSS can't
+     see the TS palette, so the two values are restated once here.
+
+     `prefers-color-scheme` is the boot default; the root layout overwrites
+     --focus-ring on the <html> element whenever the appearance changes, so an
+     in-app override (Réglages → Clair/Sombre) moves the ring with it. */
+  --focus-ring: #1b1d1f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --focus-ring: #e9e7e3;
+  }
 }
 
 /*
@@ -15,8 +29,8 @@
  * rather than a real <button>. Those get no dependable focus indicator: Safari
  * draws none at all on a non-form element unless Full Keyboard Access is on,
  * and where a UA ring does appear it is a black/white default that all but
- * vanishes on the Night Ground (#14140F). Keyboard users could tab through the
- * app without ever seeing where they were — WCAG 2.4.7 Focus Visible.
+ * vanishes on one of the two grounds. Keyboard users could tab through the app
+ * without ever seeing where they were — WCAG 2.4.7 Focus Visible.
  *
  * One global rule covers every focusable element at once. An onFocus/onBlur
  * style would have to be repeated across ~30 touchables and would still miss
@@ -30,11 +44,10 @@
  * cannot outrank) can't silently reopen the hole.
  *
  * On the radius: an outline follows its element's own border-radius, and every
- * touchable in the app is built on a Rounded token (Button md, Chip sm,
- * BackButton circular…), so the ring picks up a consistent, design-system
- * radius by construction. It is deliberately NOT pinned to Rounded.md here —
- * that would flatten Chip's Rounded.sm corners the moment it took focus, which
- * is a token the design system owns and this lot must not touch.
+ * touchable in the app is built on a Rounded token (Button md, Chip sm, the
+ * avatar circular…), so the ring picks up a consistent, design-system radius by
+ * construction. It is deliberately NOT pinned to Rounded.md here — that would
+ * flatten Chip's Rounded.sm corners the moment it took focus.
  */
 :focus-visible {
   outline: 2px solid var(--focus-ring) !important;

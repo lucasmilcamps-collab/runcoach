@@ -1,19 +1,29 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import type { LayoutChangeEvent, StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Rounded, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { pressable } from '@/lib/pressable';
+import { makeStyles } from '@/lib/themed-styles';
 import type { Fitness } from '@/lib/api/fitness';
 
 function openProfileEntry() {
   router.push('/fitness-profile');
 }
 
+/**
+ * The trend read-out behind the form figure: caisse de fond over 90 days, plus
+ * the two averages it is made of.
+ *
+ * It no longer states the verdict — that lives once, on Accueil, next to the
+ * ledger it explains (DESIGN.md: a screen that says "Forme +14 · Frais" twice
+ * reads as unfinished).
+ */
 export function FitnessCard({
   fitness,
   isLoading,
@@ -21,15 +31,16 @@ export function FitnessCard({
 }: {
   fitness: Fitness | undefined;
   isLoading: boolean;
-  // Set by CardColumns on wide viewports so the card fills its column.
   style?: StyleProp<ViewStyle>;
 }) {
+  const styles = useStyles();
+  const theme = useTheme();
   const [showHelp, setShowHelp] = useState(false);
 
   if (isLoading && !fitness) {
     return (
-      <View style={[styles.card, styles.centered, style]}>
-        <ActivityIndicator color={Colors.contour} />
+      <View style={[styles.block, styles.centered, style]}>
+        <ActivityIndicator color={theme.inkMuted} />
       </View>
     );
   }
@@ -37,17 +48,16 @@ export function FitnessCard({
   if (!fitness || !fitness.has_profile || fitness.series.length === 0) {
     const missingProfile = fitness ? !fitness.has_profile : false;
     return (
-      <View style={[styles.card, style]}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
+      <View style={[styles.block, style]}>
+        <ThemedText type="label" themeColor="inkMuted">
           Forme
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           {missingProfile
-            ? 'Pour calculer votre forme, il faut votre fréquence cardiaque de repos et maximale. Garmin ne les fournit pas ici — renseignez-les à la main.'
-            : 'Pas encore assez de séances avec fréquence cardiaque pour estimer votre forme.'}
+            ? 'Pour calculer ta forme, il faut ta fréquence cardiaque de repos et maximale. Garmin ne les fournit pas ici — renseigne-les à la main.'
+            : 'Pas encore assez de séances avec fréquence cardiaque pour estimer ta forme.'}
         </ThemedText>
-        {/* The only heart-rate entry point left on this card, and it stays: with
-            no profile there is nothing to show, so this is a blocker, not a
+        {/* With no profile there is nothing to show, so this is a blocker, not a
             shortcut. Editing an existing profile lives in Réglages. */}
         {missingProfile ? (
           <View style={styles.ctaButton}>
@@ -59,10 +69,10 @@ export function FitnessCard({
   }
 
   return (
-    <View style={[styles.card, style]}>
+    <View style={[styles.block, style]}>
       <View style={styles.headerRow}>
-        <ThemedText type="waypointLabel" themeColor="textSecondary">
-          Forme
+        <ThemedText type="label" themeColor="inkMuted">
+          Caisse de fond — 90 jours
         </ThemedText>
         <Pressable
           onPress={() => setShowHelp((v) => !v)}
@@ -70,34 +80,23 @@ export function FitnessCard({
           accessibilityLabel="Qu’est-ce que la forme ?"
           accessibilityState={{ expanded: showHelp }}
           style={pressable(styles.help)}>
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="inkMuted">
             {showHelp ? 'Masquer' : 'C’est quoi ?'}
           </ThemedText>
         </Pressable>
       </View>
 
-      {/* The readiness hero states the current form value and verdict; this card
-          is the trend read-out behind it, so it doesn't repeat that line. */}
       {showHelp ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           Ta forme = ta caisse de fond (l’endurance accumulée) moins ta fatigue récente. Positif :
           tu es reposé ; négatif : tu encaisses encore la charge des dernières séances.
         </ThemedText>
       ) : null}
 
-      <View style={styles.chartBlock}>
-        <View style={styles.chartHeader}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
-            Caisse de fond — 90 jours
-          </ThemedText>
-          {/* The shape alone left the reader to work out the direction. The
-              chart now says it outright and the curve backs it up. */}
-          <ThemedText type="small" themeColor="text">
-            {trendSentence(fitness.series)}
-          </ThemedText>
-        </View>
-        <FitnessTrend series={fitness.series} />
-      </View>
+      {/* The shape alone left the reader to work out the direction. The chart
+          says it outright and the curve backs it up. */}
+      <ThemedText type="default">{trendSentence(fitness.series)}</ThemedText>
+      <FitnessTrend series={fitness.series} />
 
       <View style={styles.statsRow}>
         <Stat label="Base 42 j" value={Math.round(fitness.ctl)} />
@@ -106,7 +105,7 @@ export function FitnessCard({
       </View>
 
       {fitness.low_confidence ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <ThemedText type="small" themeColor="inkMuted">
           Historique limité : l’estimation s’affinera au fil des semaines.
         </ThemedText>
       ) : null}
@@ -115,12 +114,14 @@ export function FitnessCard({
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
+  const styles = useStyles();
+
   return (
     <View style={styles.stat}>
-      <ThemedText type="waypointLabel" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="inkMuted">
         {label}
       </ThemedText>
-      <ThemedText type="subtitle">{value}</ThemedText>
+      <ThemedText type="figure">{value}</ThemedText>
     </View>
   );
 }
@@ -135,9 +136,9 @@ function trendSentence(series: Fitness['series']): string {
   return delta > 0 ? `En hausse · +${delta} sur 90 jours` : `En baisse · −${-delta} sur 90 jours`;
 }
 
-// The curve's floor, not its height: side by side with a taller card the plot
-// grows into whatever the column has left over (see `chart` in the styles).
-const MinChartHeight = 60;
+// The curve's floor, not its height: side by side with a taller block the plot
+// grows into whatever the column has left over.
+const MinChartHeight = 72;
 // Room for the endpoint marker, which the viewport would otherwise clip on the
 // right and at the top when the series peaks on its last day.
 const MarkerRadius = 4;
@@ -148,10 +149,11 @@ const ChartPad = MarkerRadius + 1;
 const MinRange = 6;
 
 function FitnessTrend({ series }: { series: Fitness['series'] }) {
-  // Both dimensions come from layout: the card stretches from a phone column to
-  // the content cap and grows to match its neighbour on desktop, and the
-  // geometry has to be in real pixels for the stroke to stay 2px (a viewBox
-  // scaled to fit would stretch it along with the chart).
+  const styles = useStyles();
+  const theme = useTheme();
+  // Both dimensions come from layout: the block stretches from a phone column to
+  // the content cap, and the geometry has to be in real pixels for the stroke to
+  // stay 2px (a viewBox scaled to fit would stretch it along with the chart).
   const [size, setSize] = useState({ width: 0, height: MinChartHeight });
 
   function onLayout(event: LayoutChangeEvent) {
@@ -160,16 +162,14 @@ function FitnessTrend({ series }: { series: Fitness['series'] }) {
   }
 
   // CTL is a 42-day exponential average — already smooth, and continuous from
-  // one day to the next. A line reads that as a single movement; the 90 bars it
-  // replaces implied 90 separate quantities you were meant to compare one by one.
+  // one day to the next. A line reads that as a single movement.
   //
   // The window is the series' own range rather than zero-based: three months of
   // fitness live inside a narrow band, and anchoring to zero pressed the whole
   // story into the top fifth of the box. That licence belongs to lines alone —
   // a filled area or a bar states its value through its height and would be
-  // lying on a cropped scale, which is why neither appears here. The size of the
-  // move is written above the curve in plain numbers, so the shape never has to
-  // carry the magnitude on its own.
+  // lying on a cropped scale (DESIGN.md). The size of the move is written above
+  // the curve in plain numbers, so the shape never carries the magnitude alone.
   const values = series.map((day) => day.ctl);
   const low = Math.min(...values);
   const high = Math.max(...values);
@@ -180,8 +180,7 @@ function FitnessTrend({ series }: { series: Fitness['series'] }) {
   const plotWidth = Math.max(size.width - ChartPad, 1);
 
   const x = (index: number) => (lastIndex === 0 ? plotWidth : (index / lastIndex) * plotWidth);
-  const y = (ctl: number) =>
-    ChartPad + (1 - (ctl - floor) / range) * (size.height - 2 * ChartPad);
+  const y = (ctl: number) => ChartPad + (1 - (ctl - floor) / range) * (size.height - 2 * ChartPad);
 
   const points = series.map((day, index) => `${x(index).toFixed(1)},${y(day.ctl).toFixed(1)}`);
   const line = `M${points.join('L')}`;
@@ -196,32 +195,24 @@ function FitnessTrend({ series }: { series: Fitness['series'] }) {
         <Svg width={size.width} height={size.height}>
           <Path
             d={line}
-            stroke={Colors.contour}
+            stroke={theme.ruleStrong}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
             fill="none"
           />
-          {/* Today reads through brightness, not the blaze accent — blaze stays
-              reserved for the current position / primary action on the screen. */}
-          <Circle
-            cx={x(lastIndex)}
-            cy={y(series[lastIndex].ctl)}
-            r={MarkerRadius}
-            fill={Colors.text}
-          />
+          {/* Today reads through brightness, never a signal ink: a trend line is
+              a read-out, not a load state. */}
+          <Circle cx={x(lastIndex)} cy={y(series[lastIndex].ctl)} r={MarkerRadius} fill={theme.ink} />
         </Svg>
       ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.backgroundElement,
-    borderRadius: Rounded.md,
-    padding: Spacing.four,
-    gap: Spacing.three,
+const useStyles = makeStyles((t) => ({
+  block: {
+    gap: Spacing.two,
   },
   centered: {
     alignItems: 'center',
@@ -238,18 +229,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  chartBlock: {
-    // The caption belongs to the chart, so it sits closer to it than the card's
-    // section gap — one block, not two neighbours.
-    gap: Spacing.two,
-    // Of everything in this card, the curve is what a bigger box actually
-    // improves — so it, and not a strip of padding, takes the extra height the
-    // column hands down on desktop.
-    flexGrow: 1,
-  },
-  chartHeader: {
-    gap: Spacing.half,
-  },
   chart: {
     minHeight: MinChartHeight,
     flexGrow: 1,
@@ -258,6 +237,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.four,
+    paddingTop: Spacing.two,
+    borderTopWidth: 1,
+    borderTopColor: t.rule,
   },
   stat: {
     gap: Spacing.half,
@@ -265,9 +247,9 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     alignSelf: 'stretch',
-    backgroundColor: Colors.contourFaint,
+    backgroundColor: t.rule,
   },
   ctaButton: {
     paddingTop: Spacing.two,
   },
-});
+}));

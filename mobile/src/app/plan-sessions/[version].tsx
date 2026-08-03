@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
 import { PlanView } from '@/components/plan-view';
-import { ScreenCrest } from '@/components/screen-crest';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { getPlanVersion } from '@/lib/api/plans';
 import { qk } from '@/lib/query-keys';
 
@@ -17,6 +18,8 @@ import { qk } from '@/lib/query-keys';
  * answers a question you only ask after the ones the summary answers.
  */
 export default function PlanSessionsScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const { version } = useLocalSearchParams<{ version: string }>();
   const versionNumber = Number(version);
 
@@ -29,26 +32,25 @@ export default function PlanSessionsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ScreenCrest />
         <View style={styles.topbar}>
           <BackButton />
         </View>
         <View style={styles.header}>
-          <ThemedText type="waypointLabel" themeColor="textSecondary">
+          <ThemedText type="label" themeColor="inkMuted">
             Plan {version}
           </ThemedText>
           <ThemedText type="title">Toutes les séances</ThemedText>
-          <ThemedText type="default" themeColor="textSecondary">
+          <ThemedText type="default" themeColor="inkMuted">
             Lecture seule — ce plan n’est pas modifiable ici.
           </ThemedText>
         </View>
 
         {query.isLoading ? (
           <View style={styles.centered}>
-            <ActivityIndicator color={Colors.contour} />
+            <ActivityIndicator color={theme.ruleStrong} />
           </View>
         ) : query.isError || !query.data?.plan ? (
-          <ThemedText type="default" themeColor="flare">
+          <ThemedText type="default" themeColor="alerte">
             Impossible de charger ce plan.
           </ThemedText>
         ) : (
@@ -59,10 +61,10 @@ export default function PlanSessionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
   },
   content: {
@@ -76,4 +78,4 @@ const styles = StyleSheet.create({
   topbar: { flexDirection: 'row' },
   header: { gap: Spacing.two },
   centered: { alignItems: 'center', justifyContent: 'center', minHeight: 120 },
-});
+}));

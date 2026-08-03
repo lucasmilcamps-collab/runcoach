@@ -1,32 +1,34 @@
-import type { Colors } from '@/constants/theme';
+import type { ThemeColor } from '@/constants/theme';
 
 /**
  * Form (TSB) bands, kept deliberately coarse — a directional cue, not a
- * prescription (no medical advice, per the project's guardrails). `verdict` is
- * the plain-language lead shown in the Accueil readiness hero; `word` is the
- * short tag. Color stays neutral — teal is reserved for live Garmin data, so
- * form (a stored, computed metric) never uses it; only severe fatigue reaches
- * for the flare warning color.
+ * prescription (no medical advice, per the project's guardrails).
  *
- * Shared by the readiness hero and the fitness (trend) card so the verdict and
- * its band color are defined in exactly one place.
+ * The thresholds are the plan engine's own (training-science: TSB < −25 is high
+ * fatigue, TSB > 5 is fresh), so the number the app shows and the decision the
+ * backend makes can never disagree.
+ *
+ * `color` names a signal ink and only ever one: Prudence when fatigue is
+ * genuinely high, Go when the athlete is fresh enough to take a hard session,
+ * and neutral Ink in between — the middle band is not a state worth spending a
+ * colour on.
  */
 export function formBand(tsb: number): {
   word: string;
   verdict: string;
-  color: keyof typeof Colors;
+  color: ThemeColor;
 } {
   if (tsb > 5) {
-    return { word: 'Frais', verdict: 'Reposé — bon jour pour une séance intense.', color: 'text' };
+    return { word: 'Frais', verdict: 'Reposé — bon jour pour une séance intense.', color: 'go' };
   }
   if (tsb < -25) {
     return {
       word: 'Fatigue élevée',
       verdict: 'Fatigue marquée — allège et privilégie la récupération.',
-      color: 'flare',
+      color: 'prudence',
     };
   }
-  return { word: 'Équilibré', verdict: 'Charge et récupération équilibrées.', color: 'text' };
+  return { word: 'Équilibré', verdict: 'Charge et récupération équilibrées.', color: 'ink' };
 }
 
 /** Signed, rounded form value for display (e.g. "+14", "-3", "0"). */

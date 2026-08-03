@@ -1,38 +1,109 @@
 /**
- * Mosa design tokens — see DESIGN.md at the project root for the full
- * system (Night-Trail Waymarking). Dark is the only theme: this is a project
- * convention (read at 6am before a run), not a placeholder for a future toggle.
+ * Relay design tokens — see DESIGN.md at the project root for the full system
+ * ("The Load Ledger").
+ *
+ * Two appearances, both first-class: Graphite (soft anthracite) and Sable (very
+ * light sand). Neither is a fallback for the other — the app is read at 6am in a
+ * dark bedroom and again at 22h after a match, so the system's own choice is the
+ * only honest default, with an explicit override in Réglages.
+ *
+ * Components never import a palette directly: they call `useTheme()`, which
+ * resolves the active appearance. Layout stays in `StyleSheet.create`; colour
+ * moves to the call site.
  */
 
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
-export const Colors = {
-  background: '#14140F',
-  backgroundElement: '#1F2018',
-  backgroundSelected: '#28291F',
-  text: '#F1ECDD',
-  textSecondary: '#A79F8C',
-  contour: '#8A6F47',
-  contourFaint: '#8A6F4733',
-  blaze: '#E8792C',
-  blazeDeep: '#C05F1B',
-  hydro: '#2FA8A0',
-  // Lightened from #E5484D, which only cleared AA on the base ground (4.72:1)
-  // and failed on every card (4.20:1) and selected surface (3.76:1) — where
-  // error text actually lives. This value mirrors blaze's contrast almost
-  // exactly on all three grounds (6.34 / 5.63 / 5.05), so the two semantic
-  // accents now carry the same perceptual weight.
-  flare: '#F26D71',
+export type Appearance = 'graphite' | 'sable';
+
+/**
+ * Graphite — the dark appearance.
+ *
+ * Every text token below clears 4.5:1 on `surface`, `raised` AND `inset`, and
+ * `ruleStrong` clears 3:1 on all three (WCAG 1.4.11: it carries field and
+ * ghost-button borders, which are affordances rather than decoration).
+ */
+const graphite = {
+  surface: '#16181A',
+  raised: '#1D2023',
+  inset: '#24282C',
+  rule: '#2E3338',
+  ruleStrong: '#6B747D',
+  ink: '#E9E7E3',
+  inkMuted: '#9BA1A7',
+  /** Primary button, pressed. Dimmer than the Ink fill, still legible. */
+  inkPressed: '#C4C1BC',
+
+  // --- Signal inks. One meaning each; never a button fill (DESIGN.md, The
+  // Signal Is Never A Command). ---
+  /** Today's key session, a completed quality session, a green light. */
+  go: '#4FB286',
+  /** Accumulated fatigue, surcharge risk, a downgraded session. */
+  prudence: '#D9A23F',
+  /** Deliberate ease: recovery days, deload weeks, rest. */
+  recup: '#6E9CCB',
+  /** Errors and destructive actions only — never a fourth load state. */
+  alerte: '#E4776A',
+
+  // Tinted grounds for a signal, e.g. the strip behind a surcharge verdict.
+  // Explicit per appearance rather than an alpha applied at the call site, so
+  // the same badge doesn't come out muddy on one ground and screaming on the
+  // other.
+  goWash: '#4FB2862E',
+  prudenceWash: '#D9A23F2E',
+  recupWash: '#6E9CCB2E',
+  alerteWash: '#E4776A2E',
 } as const;
 
-export type ThemeColor = keyof typeof Colors;
+/** Sable — the light appearance. Very light sand, never pure white. */
+const sable = {
+  surface: '#F2EEE6',
+  raised: '#FBF9F5',
+  inset: '#E5DFD2',
+  rule: '#DBD4C6',
+  ruleStrong: '#857D6C',
+  ink: '#1B1D1F',
+  inkMuted: '#5A5F64',
+  inkPressed: '#43484D',
 
-/** Body text always stays on the platform's own system font (DESIGN.md); only
- * the mono signage face is a project token. */
+  go: '#23694A',
+  prudence: '#7A5509',
+  recup: '#2F5B87',
+  alerte: '#A63C31',
+
+  goWash: '#23694A1F',
+  prudenceWash: '#7A55091F',
+  recupWash: '#2F5B871F',
+  alerteWash: '#A63C311F',
+} as const;
+
+/** Widened on purpose: the two palettes must be interchangeable, so the type is
+ * the *shape* of a palette, not the literal hexes one of them happens to hold. */
+export type Palette = { readonly [K in keyof typeof graphite]: string };
+export type ThemeColor = keyof Palette;
+
+export const Palettes: Record<Appearance, Palette> = { graphite, sable };
+
+/**
+ * The intensity ramp, Z1 → Z5. The one place colour encodes a scale rather than
+ * a state, and it runs between two signals that already exist: Récup at Z1 to Go
+ * at Z5. Two hues, never a rainbow, and it never passes through Prudence — a
+ * hard session is not a warning (DESIGN.md).
+ */
+export const ZoneRamp: Record<Appearance, readonly [string, string, string, string, string]> = {
+  graphite: ['#5B87B3', '#4E96A9', '#45A297', '#4AAC8B', '#57B87C'],
+  sable: ['#3D6A94', '#2F7383', '#2A7C74', '#2C845F', '#3A8B4C'],
+};
+
+/**
+ * Body text stays on the platform's own system font so Dynamic Type and native
+ * conventions survive; Azeret Mono is the only project face, and it carries the
+ * two jobs DESIGN.md gives it — uppercase signage labels, and tabular figures.
+ */
 export const Fonts = Platform.select({
-  default: { mono: 'IBMPlexMono_500Medium' },
+  default: { mono: 'AzeretMono_500Medium' },
   web: { mono: 'var(--font-mono)' },
 });
 
@@ -46,10 +117,11 @@ export const Spacing = {
   six: 64,
 } as const;
 
+/** Moderate corners — nothing pill-shaped; the avatar is the one true circle. */
 export const Rounded = {
-  sm: 8,
-  md: 14,
-  lg: 20,
+  sm: 6,
+  md: 10,
+  lg: 14,
 } as const;
 
 /** Tab bar height without the safe-area inset — mirrors `(tabs)/_layout`.
@@ -66,11 +138,11 @@ export const MaxContentWidth = 800;
  * desktop; forms want a column you can scan without moving your eyes. */
 export const MaxFormWidth = 560;
 
-/** Wider cap for dashboard screens that lay their cards out in two columns on
- * desktop/tablet (see `CardColumns`), so wide web no longer strands one narrow
- * strip flanked by dead space. */
-export const MaxContentWidthWide = 1000;
+/** Wider cap for ledger/dashboard screens that lay their blocks out in two
+ * columns on desktop/tablet, so wide web no longer strands one narrow strip
+ * flanked by dead space. */
+export const MaxContentWidthWide = 1040;
 
 /** Width at/above which a screen is treated as "wide" (tablet landscape /
- * desktop web): dashboards switch to a two-column card layout. */
+ * desktop web): dashboards switch to a two-column layout. */
 export const WideBreakpoint = 720;

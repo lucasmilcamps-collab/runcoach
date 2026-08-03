@@ -1,15 +1,15 @@
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { WaypointStepper } from '@/components/waypoint-stepper';
-import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
+import { LegStepper } from '@/components/leg-stepper';
+import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { ApiError } from '@/lib/api/client';
 import { completeGarminMfa, connectGarmin } from '@/lib/api/garmin';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -17,20 +17,21 @@ import { useAuthStore } from '@/lib/stores/auth-store';
 function garminErrorMessage(error: unknown, isError: boolean): string | undefined {
   if (error instanceof ApiError) {
     if (error.code === 'GARMIN_INVALID_CREDENTIALS') {
-      return 'Identifiants Garmin refusés. Vérifiez votre email et mot de passe.';
+      return 'Identifiants Garmin refusés. Vérifie ton email et ton mot de passe.';
     }
     if (error.code === 'GARMIN_MFA_INVALID') {
       return 'Code incorrect ou expiré. Redemandez la connexion.';
     }
     if (error.code === 'GARMIN_UPSTREAM_ERROR') {
-      return 'Garmin Connect ne répond pas. Réessayez dans quelques minutes.';
+      return 'Garmin Connect ne répond pas. Réessaie dans quelques minutes.';
     }
     return error.message;
   }
-  return isError ? 'Impossible de contacter le serveur. Réessayez.' : undefined;
+  return isError ? 'Impossible de contacter le serveur. Réessaie.' : undefined;
 }
 
 export default function GarminConnectScreen() {
+  const styles = useStyles();
   const [garminEmail, setGarminEmail] = useState('');
   const [garminPassword, setGarminPassword] = useState('');
   const [emailError, setEmailError] = useState<string | undefined>();
@@ -64,8 +65,8 @@ export default function GarminConnectScreen() {
   });
 
   function handleSubmitCredentials() {
-    const nextEmailError = garminEmail.trim().length > 0 ? undefined : 'Entrez votre identifiant Garmin.';
-    const nextPasswordError = garminPassword.length > 0 ? undefined : 'Entrez votre mot de passe Garmin.';
+    const nextEmailError = garminEmail.trim().length > 0 ? undefined : 'Entre ton identifiant Garmin.';
+    const nextPasswordError = garminPassword.length > 0 ? undefined : 'Entre ton mot de passe Garmin.';
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
@@ -75,7 +76,7 @@ export default function GarminConnectScreen() {
   }
 
   function handleSubmitMfaCode() {
-    const nextMfaCodeError = mfaCode.trim().length > 0 ? undefined : 'Entrez le code reçu par email.';
+    const nextMfaCodeError = mfaCode.trim().length > 0 ? undefined : 'Entre le code reçu par email.';
     setMfaCodeError(nextMfaCodeError);
     if (nextMfaCodeError) return;
 
@@ -95,13 +96,12 @@ export default function GarminConnectScreen() {
       <SafeAreaView style={styles.safeArea}>
         {mfaToken ? (
           <View style={styles.content}>
-            <ScreenCrest />
-            <WaypointStepper currentStep={2} />
+            <LegStepper currentStep={2} />
 
             <View style={styles.header}>
-              <ThemedText type="title">Vérifiez votre email</ThemedText>
-              <ThemedText type="default" themeColor="textSecondary">
-                Garmin vous a envoyé un code de vérification par email. Entrez-le ci-dessous pour
+              <ThemedText type="title">Vérifie ton email</ThemedText>
+              <ThemedText type="default" themeColor="inkMuted">
+                Garmin t’a envoyé un code de vérification par email. Entre-le ci-dessous pour
                 terminer la connexion.
               </ThemedText>
             </View>
@@ -120,7 +120,7 @@ export default function GarminConnectScreen() {
                 placeholder="123456"
               />
               {mfaErrorMessage ? (
-                <ThemedText type="small" themeColor="flare">
+                <ThemedText type="small" themeColor="alerte">
                   {mfaErrorMessage}
                 </ThemedText>
               ) : null}
@@ -128,14 +128,13 @@ export default function GarminConnectScreen() {
           </View>
         ) : (
           <View style={styles.content}>
-            <ScreenCrest />
-            <WaypointStepper currentStep={2} />
+            <LegStepper currentStep={2} />
 
             <View style={styles.header}>
-              <ThemedText type="title">Relier votre Garmin</ThemedText>
-              <ThemedText type="default" themeColor="textSecondary">
+              <ThemedText type="title">Relier ta montre</ThemedText>
+              <ThemedText type="default" themeColor="inkMuted">
                 Vos identifiants Garmin Connect ne sont utilisés qu'une fois pour établir la
-                connexion. Seuls les jetons de session sont conservés, chiffrés — jamais votre mot
+                connexion. Seuls les jetons de session sont conservés, chiffrés — jamais ton mot
                 de passe.
               </ThemedText>
             </View>
@@ -153,7 +152,7 @@ export default function GarminConnectScreen() {
                 autoCapitalize="none"
                 autoComplete="email"
                 keyboardType="email-address"
-                placeholder="vous@example.com"
+                placeholder="toi@example.com"
               />
               <TextField
                 label="Mot de passe Garmin"
@@ -168,7 +167,7 @@ export default function GarminConnectScreen() {
                 placeholder="Votre mot de passe Garmin Connect"
               />
               {credentialsErrorMessage ? (
-                <ThemedText type="small" themeColor="flare">
+                <ThemedText type="small" themeColor="alerte">
                   {credentialsErrorMessage}
                 </ThemedText>
               ) : null}
@@ -212,13 +211,13 @@ export default function GarminConnectScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: {
     flex: 1,
   },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -243,4 +242,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));

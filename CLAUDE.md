@@ -1,13 +1,31 @@
-# Mosa — App de coaching course à pied multi-sports
+# Relay — Orchestrateur d'entraînement hybride
 
 ## Vision produit
 
-App de tracking et coaching course à pied (inspirée de Campus Coach / Runna) qui :
+Relay n'est pas « une app de running » : c'est l'outil qui arbitre la charge entre la
+course, le renfo et les sports co. Il :
 1. Génère un plan d'entraînement **par IA** à partir d'un objectif (course cible ou distance + chrono visé).
 2. Prend en compte **les autres sports pratiqués** (padel, basket, etc.) comme charge d'entraînement croisée — pas comme du bruit.
 3. Exploite les **données Garmin** (activités, FC, HRV, sommeil, Body Battery, VO2max) pour construire ET adapter le plan en continu.
 
 Le différenciateur vs Runna : l'adaptation dynamique du plan aux données réelles de récupération et aux séances des autres sports.
+
+## Identité et direction artistique
+
+DA « performance calme » : sobre, structurée, légèrement industrielle — un cockpit
+personnel, pas un réseau social fitness. Le monde visuel s'appelle **« The Load
+Ledger »** et il est spécifié dans `DESIGN.md` (le pourquoi) et
+`design-system/relay-load-ledger/MASTER.md` (le comment, côté code).
+
+Trois règles qu'aucun écran ne contourne :
+
+- **Deux apparences de plein droit** : Graphite (anthracite doux) et Sable (sable
+  très clair). Elles suivent l'OS par défaut, avec un réglage explicite. Aucune
+  couleur en dur dans un `StyleSheet` : tout passe par `makeStyles` / `useTheme()`.
+- **La couleur signifie la charge d'entraînement, rien d'autre.** `go` (séance
+  clé), `prudence` (fatigue), `recup` (jour facile) sont des indicateurs — jamais
+  un bouton ni un état sélectionné. L'action principale est un aplat neutre.
+- **Trois blocs maximum sur l'Accueil** : aujourd'hui, la semaine, l'arbitrage.
 
 ## Architecture
 

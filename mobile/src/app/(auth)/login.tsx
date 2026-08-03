@@ -1,15 +1,15 @@
 import { useMutation } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
-import { ScreenCrest } from '@/components/screen-crest';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { WaypointStepper } from '@/components/waypoint-stepper';
-import { Colors, MaxFormWidth, Spacing } from '@/constants/theme';
+import { LegStepper } from '@/components/leg-stepper';
+import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { makeStyles } from '@/lib/themed-styles';
 import { login, register } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { useAuthStore } from '@/lib/stores/auth-store';
@@ -17,6 +17,7 @@ import { useAuthStore } from '@/lib/stores/auth-store';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen() {
+  const styles = useStyles();
   const params = useLocalSearchParams<{ mode?: string }>();
   const [mode, setMode] = useState<'signin' | 'signup'>(params.mode === 'signin' ? 'signin' : 'signup');
 
@@ -56,7 +57,7 @@ export default function LoginScreen() {
           ? 'Un compte existe déjà avec cet email.'
           : mutation.error.message
       : mutation.isError
-        ? 'Impossible de contacter le serveur. Réessayez.'
+        ? 'Impossible de contacter le serveur. Réessaie.'
         : undefined;
 
   return (
@@ -65,17 +66,16 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <ScreenCrest />
-          <WaypointStepper currentStep={1} />
+          <LegStepper currentStep={1} />
 
           <View style={styles.header}>
             <ThemedText type="title">
-              {mode === 'signin' ? 'Content de vous revoir' : 'Créer votre compte'}
+              {mode === 'signin' ? 'Content de te revoir' : 'Créer ton compte'}
             </ThemedText>
-            <ThemedText type="default" themeColor="textSecondary">
+            <ThemedText type="default" themeColor="inkMuted">
               {mode === 'signin'
-                ? 'Connectez-vous pour retrouver votre plan.'
-                : 'Un compte pour garder votre plan et vos données au même endroit.'}
+                ? 'Connecte-toi pour retrouver ton plan.'
+                : 'Un compte pour garder ton plan et tes données au même endroit.'}
             </ThemedText>
           </View>
 
@@ -92,7 +92,7 @@ export default function LoginScreen() {
               autoCapitalize="none"
               autoComplete="email"
               keyboardType="email-address"
-              placeholder="vous@example.com"
+              placeholder="toi@example.com"
             />
             <TextField
               label="Mot de passe"
@@ -108,7 +108,7 @@ export default function LoginScreen() {
               placeholder="8 caractères minimum"
             />
             {serverErrorMessage ? (
-              <ThemedText type="small" themeColor="flare">
+              <ThemedText type="small" themeColor="alerte">
                 {serverErrorMessage}
               </ThemedText>
             ) : null}
@@ -138,13 +138,13 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: {
     flex: 1,
   },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: t.surface,
     paddingHorizontal: Spacing.four,
     justifyContent: 'space-between',
   },
@@ -169,4 +169,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-});
+}));
