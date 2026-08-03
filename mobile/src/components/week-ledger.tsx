@@ -98,6 +98,7 @@ export function WeekLedgerCard({
               <View
                 style={[
                   styles.tick,
+                  day.state === 'recup' && styles.tickShort,
                   {
                     backgroundColor:
                       day.state === 'go'
@@ -112,6 +113,27 @@ export function WeekLedgerCard({
           ))}
         </View>
       </View>
+
+      {/* Without this the ticks were colour alone: nothing on screen said what
+          a green mark meant, and a reader who can't separate the two hues had
+          no second cue at all. The marks now differ in length as well, and the
+          legend names both — it only appears when a state is actually drawn. */}
+      {ledger.days.some((day) => day.state != null) ? (
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.tick, { backgroundColor: theme.go }]} />
+            <ThemedText type="small" themeColor="inkMuted">
+              Séance clé
+            </ThemedText>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.tick, styles.tickShort, { backgroundColor: theme.recup }]} />
+            <ThemedText type="small" themeColor="inkMuted">
+              Jour facile
+            </ThemedText>
+          </View>
+        </View>
+      ) : null}
 
       {ledger.totals.length > 0 ? (
         <View style={styles.totals}>
@@ -172,7 +194,9 @@ function ledgerDescription(ledger: WeekLedger): string {
     .map((day) => {
       const done = day.doneMinutes > 0 ? `${day.doneMinutes} minutes faites` : '';
       const planned = day.plannedMinutes > 0 ? `${day.plannedMinutes} minutes prévues` : '';
-      return `${DAY_LABELS[day.weekday]} : ${[done, planned].filter(Boolean).join(', ')}`;
+      const state =
+        day.state === 'go' ? 'séance clé' : day.state === 'recup' ? 'jour facile' : '';
+      return `${DAY_LABELS[day.weekday]} : ${[done, planned, state].filter(Boolean).join(', ')}`;
     });
   if (days.length === 0) return 'Aucune séance cette semaine, ni faite ni prévue.';
   return `Charge de la semaine, en minutes par jour. ${days.join('. ')}.`;
@@ -261,6 +285,21 @@ const useStyles = makeStyles((t) => ({
     width: 16,
     height: 3,
     borderRadius: 2,
+  },
+  // Length is the second cue, so the two states stay apart in greyscale and for
+  // a reader who can't separate the hues.
+  tickShort: {
+    width: 6,
+  },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.three,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   totals: {
     flexDirection: 'row',

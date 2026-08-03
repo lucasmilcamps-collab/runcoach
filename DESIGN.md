@@ -5,7 +5,7 @@ colors:
   surface: "#16181A"
   raised: "#1D2023"
   inset: "#24282C"
-  rule: "#2E3338"
+  rule: "#33383E"
   rule-strong: "#6B747D"
   ink: "#E9E7E3"
   ink-muted: "#9BA1A7"
@@ -99,7 +99,7 @@ A missed session is **not** Alerte. Skipping a run is a fact the plan adapts to;
 | `surface` | `#16181A` | `#F2EEE6` | The ground. Soft anthracite / very light sand — no pure black, no pure white. |
 | `raised` | `#1D2023` | `#FBF9F5` | Cards, sheets, fields. One tonal step, in the direction the appearance implies. |
 | `inset` | `#24282C` | `#E5DFD2` | Selected and pressed surfaces, chart tracks. |
-| `rule` | `#2E3338` | `#DBD4C6` | The hairline. The system's one structural line. |
+| `rule` | `#33383E` | `#CBC1AC` | The hairline. The system's one structural line — matched across appearances so a divider never reads a step fainter in one of them. |
 | `rule-strong` | `#6B747D` | `#857D6C` | Borders that carry state or an affordance (fields, ghost buttons) — ≥3:1 on every ground, per WCAG 1.4.11. |
 | `ink` | `#E9E7E3` | `#1B1D1F` | Primary text, and the fill of the primary button. Warm off-white / warm near-black. |
 | `ink-muted` | `#9BA1A7` | `#5A5F64` | Secondary text, labels, placeholders. AA on all three grounds. |
@@ -177,7 +177,9 @@ Moderate corners: `6` / `10` / `14`. Nothing is pill-shaped; the one true circle
 Every control reserves **44×44 in the layout** — real padding or a transparent frame, never `hitSlop`, which is inert on react-native-web and the web build *is* the product (an installed PWA).
 
 ### The Ledger (the signature component)
-Seven day-columns on one shared baseline, one per day of the current week. Each day stacks its disciplines as segments whose height is that session's load, so a Tuesday with a basket match and a Wednesday with a tempo are compared on the same axis — which is the product's whole argument made into a drawing. Planned load is drawn as a hairline outline, realised load as a fill. Today's column carries a Rule Strong baseline tick; nothing else is highlighted.
+Seven day-columns on one shared baseline, one per day of the current week. Each day stacks its disciplines as segments whose height is that session's load, so a Tuesday with a basket match and a Wednesday with a tempo are compared on the same axis — which is the product's whole argument made into a drawing. Planned load is drawn as a hairline outline, realised load as a fill. Today's column carries a Raised lane the width of the bars; nothing else is highlighted.
+
+**The day-state marks never rest on colour.** Go and Récup ticks differ in length as well as hue, and a legend names both whenever one is drawn — a green mark with nothing to decode it is a colour-only signal, which is the one thing this system's own colour rule cannot excuse.
 
 **Cross-training is never subordinated.** Same width, same baseline, same treatment as a run — a different segment tone and a named sport. It is load, not noise. Collapsing padel and basket into a single "autres" segment is the one thing this component may never do.
 

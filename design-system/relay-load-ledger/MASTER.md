@@ -40,7 +40,7 @@ function Card() {
 | `surface` | `#16181A` | `#F2EEE6` | The ground. No pure black, no pure white. |
 | `raised` | `#1D2023` | `#FBF9F5` | Cards, fields, the ledger's today lane. |
 | `inset` | `#24282C` | `#E5DFD2` | Selected / pressed surfaces. |
-| `rule` | `#2E3338` | `#DBD4C6` | The hairline. The system's one structural line. |
+| `rule` | `#33383E` | `#CBC1AC` | The hairline. Matched across appearances (~1.5:1 on its ground in both). |
 | `ruleStrong` | `#6B747D` | `#857D6C` | Borders carrying state or an affordance (≥3:1, WCAG 1.4.11). |
 | `ink` | `#E9E7E3` | `#1B1D1F` | Primary text **and** the primary button's fill. |
 | `inkMuted` | `#9BA1A7` | `#5A5F64` | Secondary text, labels, realised ledger bars. |
@@ -98,7 +98,7 @@ Don't hand-roll a width check — use the hook.
 ## Component Specs (React Native)
 
 - **Button** (`button.tsx`): `minHeight 52`, `Rounded.md`. `primary` = `ink` fill + `surface` label, pressed → `inkPressed`. `ghost` = transparent + `ruleStrong` border, pressed → `inset`. Disabled = `inset` fill + `inkMuted` label. **One primary per screen**; everything else shares one compact ghost row.
-- **The Ledger** (`week-ledger.tsx` + `lib/week-ledger.ts`): the signature. Seven day-columns on one shared baseline, unit = **minutes** — the one quantity that exists for a planned session and a finished one, a tempo and a basket match, without estimating anything into existence. Realised = filled `inkMuted`; still-planned = dashed `ruleStrong` outline. Today = a `raised` lane the width of the bars. Colour appears **only** on the state tick under a column. Cross-training is never folded into an "autres" segment, and never gets a colour legend — sport is carried by the glyph and by the totals line.
+- **The Ledger** (`week-ledger.tsx` + `lib/week-ledger.ts`): the signature. Seven day-columns on one shared baseline, unit = **minutes** — the one quantity that exists for a planned session and a finished one, a tempo and a basket match, without estimating anything into existence. Realised = filled `inkMuted`; still-planned = dashed `ruleStrong` outline. Today = a `raised` lane the width of the bars. Colour appears **only** on the state tick under a column — and never alone: Go and Récup ticks differ in length too, and a legend names both whenever one is drawn. Cross-training is never folded into an "autres" segment, and never gets a colour legend — sport is carried by the glyph and by the totals line.
 - **Today block** (`today-block.tsx`): Accueil's lead. The session named at `subtitle`, its duration as a `figure`, its target line underneath. The Go tick appears only when the plan marked the session key. A server adjustment shows its reason **verbatim**.
 - **Arbitrage block** (`arbitrage-block.tsx`): one suggestion, its reason, one action — never a list. Suggestions come from the server's own downgrade rules or from facts on the page (high fatigue + a session today + an empty tomorrow). When there's nothing to arbitrate, it says so.
 - **Session row** (`plan-view.tsx`): a row on a rule, not a card. Fixed day column, key tick, sport glyph, sport-aware name, `figure` meta, intensity notches, chevron.
