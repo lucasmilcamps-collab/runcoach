@@ -229,10 +229,7 @@ export default function PlanSetupScreen() {
     generation.generate(request);
   }
 
-  const errorMessage = (() => {
-    return generation.errorMessage;
-    return undefined;
-  })();
+  const errorMessage = generation.errorMessage;
 
   const canSubmit = days.size >= 2 && !generation.isGenerating;
 

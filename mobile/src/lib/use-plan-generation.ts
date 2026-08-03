@@ -98,6 +98,9 @@ export function usePlanGeneration<TArg>(
 
   useEffect(() => {
     if (status !== 'done') return;
+    // Reacting to a polled job settling, and clearing the id we persisted for
+    // it — synchronising with an external system, which is an effect's job.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     trackJob(null);
     // The plan itself lives behind its own queries; the job only says "ready".
     invalidatePlanReads(queryClient);
@@ -109,14 +112,14 @@ export function usePlanGeneration<TArg>(
   useEffect(() => {
     // Failures clear the stored id too, or the next mount would resume a job
     // that is already over and re-show its error out of nowhere.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (status === 'failed') trackJob(null);
   }, [status]);
 
   // A remembered job that the server no longer knows about (its row aged out,
   // or the session changed) would otherwise leave the screen waiting forever.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (jobQuery.error instanceof ApiError) trackJob(null);
   }, [jobQuery.error]);
 
@@ -167,6 +170,10 @@ function useElapsedSeconds(startedAt: string | null): number | null {
 
   useEffect(() => {
     if (!startedAt) return;
+    // Re-baselines the clock the moment a generation starts; without it the
+    // counter shows a value up to a second stale before the first tick. A timer
+    // is the textbook external system an effect exists to synchronise with.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);

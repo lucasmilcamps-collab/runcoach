@@ -12,7 +12,6 @@ import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
 import { pressable } from '@/lib/pressable';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
-import { ApiError } from '@/lib/api/client';
 import { InjuryReport, reportInjury } from '@/lib/api/plans';
 
 type Severity = InjuryReport['severity'];
@@ -38,10 +37,7 @@ export default function InjuryReportScreen() {
     generation.generate({ area: area.trim(), severity, days_off: daysOff });
   }
 
-  const errorMessage = (() => {
-    return generation.errorMessage;
-    return undefined;
-  })();
+  const errorMessage = generation.errorMessage;
 
   const canSubmit = area.trim().length > 0 && !generation.isGenerating;
 

@@ -144,7 +144,7 @@ function targetLine(
   return parts.length > 0 ? parts.join(' · ') : 'À l’allure du jour.';
 }
 
-const useStyles = makeStyles((t) => ({
+const useStyles = makeStyles(() => ({
   block: {
     gap: Spacing.two,
   },

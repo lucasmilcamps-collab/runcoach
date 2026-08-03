@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Icon } from '@/components/icon';
@@ -69,13 +69,22 @@ export function PlanWeekPager({ plan, currentWeek }: { plan: Plan; currentWeek: 
   const theme = useTheme();
   const weeks = useMemo(() => flattenWeeks(plan), [plan]);
   const [selected, setSelected] = useState(0);
+  // null until the first sync, so mounting always resolves the week once.
+  const [syncedTo, setSyncedTo] = useState<{
+    currentWeek: number | null;
+    weeks: FlatWeek[];
+  } | null>(null);
 
-  // Jump to the real current week once progress resolves (and whenever the plan
-  // changes). currentWeek is stable after load, so manual navigation sticks.
-  useEffect(() => {
+  // Jump to the real current week once progress resolves, and again if the plan
+  // itself changes — adjusted during render rather than in an effect, which is
+  // both one render pass instead of two and the fix for a real bug: the effect
+  // re-ran on every new `weeks` identity, so a refetch returning an equal plan
+  // threw away whatever week the athlete had navigated to.
+  if (syncedTo === null || syncedTo.currentWeek !== currentWeek || syncedTo.weeks !== weeks) {
+    setSyncedTo({ currentWeek, weeks });
     const idx = weeks.findIndex((w) => w.week.index === currentWeek);
     setSelected(idx >= 0 ? idx : 0);
-  }, [currentWeek, weeks]);
+  }
 
   if (weeks.length === 0) return null;
   const clamped = Math.min(Math.max(selected, 0), weeks.length - 1);
@@ -188,23 +197,29 @@ function WeekSessions({ week }: { week: PlanWeek }) {
   const ordered = sortSessionsByDay(week.sessions);
   // Addons (e.g. a strength block) share a day and aren't numbered as sessions.
   const total = ordered.filter((s) => s.type !== 'rest' && s.slot === 'primary').length;
-  let counter = 0;
+
+  // Numbering is resolved before the render pass rather than by advancing a
+  // counter from inside the map callback: a value reassigned while JSX is being
+  // produced is not safe under a render React decides to throw away.
+  const rows: { session: PlanSession; position: number }[] = [];
+  let position = 0;
+  for (const session of ordered) {
+    const isPrimary = session.type !== 'rest' && session.slot === 'primary';
+    if (isPrimary) position += 1;
+    rows.push({ session, position: isPrimary ? position : 0 });
+  }
 
   return (
     <View style={styles.sessionList}>
-      {ordered.map((session, si) => {
-        const isPrimary = session.type !== 'rest' && session.slot === 'primary';
-        const position = isPrimary ? (counter += 1) : 0;
-        return (
-          <SessionRow
-            key={si}
-            session={session}
-            weekNumber={week.index}
-            position={position}
-            total={total}
-          />
-        );
-      })}
+      {rows.map((row, index) => (
+        <SessionRow
+          key={index}
+          session={row.session}
+          weekNumber={week.index}
+          position={row.position}
+          total={total}
+        />
+      ))}
     </View>
   );
 }

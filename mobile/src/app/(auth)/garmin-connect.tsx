@@ -133,7 +133,7 @@ export default function GarminConnectScreen() {
             <View style={styles.header}>
               <ThemedText type="title">Relier ta montre</ThemedText>
               <ThemedText type="default" themeColor="inkMuted">
-                Vos identifiants Garmin Connect ne sont utilisés qu'une fois pour établir la
+                Tes identifiants Garmin Connect ne servent qu’une fois, pour établir la
                 connexion. Seuls les jetons de session sont conservés, chiffrés — jamais ton mot
                 de passe.
               </ThemedText>

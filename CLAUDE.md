@@ -67,7 +67,8 @@ uv run ruff check --fix && uv run ruff format   # lint + format
 # Mobile
 cd mobile && npm install
 npx expo start                             # dev (QR code pour mobile, w pour web)
-npm test
+npm test                                   # jest-expo
+npm run lint                               # eslint (config commitée : `expo lint` télécharge la sienne)
 ```
 
 ## Conventions

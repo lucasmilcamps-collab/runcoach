@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -42,15 +42,16 @@ export default function FitnessProfileScreen() {
   const [hrRestError, setHrRestError] = useState<string | undefined>();
 
   // Prefill with whatever we already know (Garmin-derived or a prior manual
-  // entry), so editing starts from the current values instead of blank.
-  useEffect(() => {
+  // entry), so editing starts from the current values instead of blank. Seeded
+  // during render on the first load that brings data, not from an effect: an
+  // effect would paint the empty fields once before filling them in.
+  const [seeded, setSeeded] = useState(false);
+  if (!seeded && fitnessQuery.data) {
     const data = fitnessQuery.data;
-    if (!data) return;
-    if (data.hr_max != null && hrMax === '') setHrMax(String(data.hr_max));
-    if (data.hr_rest != null && hrRest === '') setHrRest(String(data.hr_rest));
-    // Only seed once, when data first arrives.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitnessQuery.data]);
+    setSeeded(true);
+    if (data.hr_max != null) setHrMax(String(data.hr_max));
+    if (data.hr_rest != null) setHrRest(String(data.hr_rest));
+  }
 
   const saveMutation = useMutation({
     mutationFn: ({ max, rest }: { max: number; rest: number }) => updateFitnessProfile(max, rest),

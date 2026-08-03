@@ -35,6 +35,8 @@
   "devDependencies": {
     "@types/jest": "~29.5.14",
     "@types/react": "~19.2.2",
+    "eslint": "~9.39.0",
+    "eslint-config-expo": "~57.0.1",
     "jest": "~29.7.0",
     "jest-expo": "^57.0.2",
     "typescript": "~6.0.3"
@@ -45,9 +47,10 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint",
+    "lint": "eslint .",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "lint:fix": "eslint . --fix"
   },
   "private": true,
   "jest": {

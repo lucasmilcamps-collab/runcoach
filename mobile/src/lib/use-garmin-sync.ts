@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { ApiError } from '@/lib/api/client';
 import { syncGarmin } from '@/lib/api/garmin';
@@ -25,8 +25,13 @@ export function useGarminSync() {
     },
   });
 
+  // Written from an effect, never during render: a ref assigned mid-render is
+  // not safe under a render React discards. One frame of staleness is harmless
+  // here — on the first focus nothing is in flight yet.
   const syncingRef = useRef(false);
-  syncingRef.current = mutation.isPending;
+  useEffect(() => {
+    syncingRef.current = mutation.isPending;
+  }, [mutation.isPending]);
   useFocusEffect(
     useCallback(() => {
       if (garminConnected && !syncingRef.current) mutation.mutate();
