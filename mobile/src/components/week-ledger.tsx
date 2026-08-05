@@ -3,10 +3,11 @@ import type { StyleProp, ViewStyle } from 'react-native';
 
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing, typeSize } from '@/constants/theme';
+import { useFontScale } from '@/hooks/use-font-scale';
 import { useTheme } from '@/hooks/use-theme';
 import { sportLabel } from '@/lib/activity-labels';
-import { DAY_LABELS, formatDuration } from '@/lib/plan-format';
+import { DAY_LABELS, DAY_LABELS_SHORT, formatDuration } from '@/lib/plan-format';
 import { makeStyles } from '@/lib/themed-styles';
 import type { LedgerDay, OverloadVerdict, WeekLedger } from '@/lib/week-ledger';
 
@@ -43,6 +44,11 @@ export function WeekLedgerCard({
 }) {
   const styles = useStyles();
   const theme = useTheme();
+  // Seven columns have to share one phone width. Past this much text growth,
+  // three-letter days collide, so they drop to two — the column's position
+  // already says which day it is, and the chart's spoken description names
+  // every day in full regardless.
+  const dayLabels = useFontScale() >= 1.4 ? DAY_LABELS_SHORT : DAY_LABELS;
 
   const verdictColor =
     verdict?.level === 'high' ? theme.prudence : verdict?.level === 'low' ? theme.go : theme.inkMuted;
@@ -93,7 +99,7 @@ export function WeekLedgerCard({
                 type="label"
                 themeColor={day.isToday ? 'ink' : 'inkMuted'}
                 style={day.isToday ? styles.axisToday : undefined}>
-                {DAY_LABELS[day.weekday]}
+                {dayLabels[day.weekday]}
               </ThemedText>
               <View
                 style={[
@@ -211,10 +217,13 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: Spacing.three,
+    // The total drops to its own line at large text rather than both halves
+    // wrapping inside their own column.
+    flexWrap: 'wrap',
   },
   headFigure: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: typeSize(13),
+    lineHeight: typeSize(18),
   },
   verdictRow: {
     gap: Spacing.two,
@@ -275,6 +284,10 @@ const useStyles = makeStyles((t) => ({
   },
   axisCell: {
     flex: 1,
+    // Without an explicit zero basis a long label sets the cell's width and the
+    // seven columns stop being equal — which is the whole premise of the chart.
+    flexBasis: 0,
+    minWidth: 0,
     alignItems: 'center',
     gap: Spacing.one,
   },
@@ -312,10 +325,12 @@ const useStyles = makeStyles((t) => ({
   total: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.one,
+    // `one` held at the default size but read as no gap at all once the text
+    // doubled — "Basket1 h 32".
+    gap: Spacing.two,
   },
   totalFigure: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: typeSize(13),
+    lineHeight: typeSize(18),
   },
 }));

@@ -139,6 +139,10 @@ Six steps, and only six. A screen that wants a size between two of them wants a 
 - **Label** (Azeret Mono, 500, 12/16, +0.06em, uppercase) — signage.
 - **Figure** (Azeret Mono, 500, tabular, sized at the call site from 13 to 32) — numbers under comparison.
 
+**Every size follows the reader.** All seven steps go through `typeSize()`, which emits points on native — where the OS multiplies them by the reader's text-size setting — and **rem** on web, where a number compiles to `px` and `px` ignores the browser's own text preference entirely. A raw number in a `fontSize` is a size that will not grow for someone who needs it to, and the web build *is* the product here.
+
+Growing text is a layout problem as much as a type one. Three places earn special handling at large sizes: the ledger's seven day-columns drop to two-letter days past ~1.4×, rows that pack a name beside its figures wrap instead of squeezing the name, and the tab bar grows with its labels up to a clamp (`useClampedFontScale`) — navigation pinned to the bottom of every screen cannot take a third of the phone. Everything else survives on min-heights and wrapping. Verified at 200%, which is the bar WCAG 1.4.4 sets.
+
 ### Named Rules
 
 **The Measurement Rule.** Azeret Mono appears where something is measured, counted or labelled as a column head. It never sets a sentence, and it is never reached for to make a block look technical — the mono is a tabular tool, not a costume.

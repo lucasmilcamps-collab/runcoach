@@ -68,6 +68,19 @@ export function sortSessionsByDay<T extends Pick<PlanSession, 'day' | 'slot'>>(
   });
 }
 
+/** Two letters, for the ledger's seven columns when the reader's text size
+ * leaves no room for three. Unambiguous in French, unlike single letters —
+ * "M" would serve both mardi and mercredi. */
+export const DAY_LABELS_SHORT: Record<Weekday, string> = {
+  MONDAY: 'Lu',
+  TUESDAY: 'Ma',
+  WEDNESDAY: 'Me',
+  THURSDAY: 'Je',
+  FRIDAY: 'Ve',
+  SATURDAY: 'Sa',
+  SUNDAY: 'Di',
+};
+
 export const DAY_LABELS: Record<Weekday, string> = {
   MONDAY: 'Lun',
   TUESDAY: 'Mar',

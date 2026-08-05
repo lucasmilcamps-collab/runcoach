@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
 import { useTheme } from '@/hooks/use-theme';
-import { MaxContentWidthWide } from '@/constants/theme';
+import { MaxContentWidthWide, TabBarHeight, typeSize } from '@/constants/theme';
+import { useClampedFontScale } from '@/hooks/use-font-scale';
 
 /**
  * Three tabs (Accueil / Séances / Activités). Settings and the detail screens
@@ -27,6 +28,9 @@ export default function TabsLayout() {
   // black-translucent): without it the labels sit behind the indicator and
   // vanish on mobile / installed PWA.
   const insets = useSafeAreaInsets();
+  // The bar grows with the labels inside it, up to a point — see
+  // `useClampedFontScale`.
+  const fontScale = useClampedFontScale();
 
   return (
     <Tabs
@@ -37,7 +41,7 @@ export default function TabsLayout() {
         // The active tab must not rely on color alone (WCAG 1.4.1): the focused
         // label also carries more weight, so it reads as active without color.
         tabBarLabel: ({ focused, color, children }) => (
-          <Text style={{ fontSize: 12, fontWeight: focused ? '700' : '500', color }}>
+          <Text style={{ fontSize: typeSize(12), fontWeight: focused ? '700' : '500', color }}>
             {children}
           </Text>
         ),
@@ -45,7 +49,7 @@ export default function TabsLayout() {
           backgroundColor: theme.raised,
           borderTopColor: theme.ruleStrong,
           borderTopWidth: 1,
-          height: 62 + insets.bottom,
+          height: TabBarHeight * fontScale + insets.bottom,
           paddingTop: 6,
           paddingBottom: insets.bottom,
           // On desktop web the bar would otherwise stretch its three items

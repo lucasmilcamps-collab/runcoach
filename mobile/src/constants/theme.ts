@@ -16,6 +16,39 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+/** The size the web build treats as 1rem — the browser's own default, and the
+ * base of the type scale. */
+const ROOT_FONT_SIZE = 16;
+
+/**
+ * A type size that follows the reader's own text-size setting.
+ *
+ * The two platforms need different things and only one of them was working.
+ * On native, React Native's `Text` already multiplies a point size by the OS
+ * setting, so the number passes through untouched. On web it did not: this app
+ * ships as an installed PWA, react-native-web compiles a numeric `fontSize`
+ * straight to `px`, and px ignores the browser's text-size preference entirely
+ * — so an athlete who had set larger text got the same 13px caption as everyone
+ * else. Only page zoom moved it.
+ *
+ * react-native-web appends `px` to numbers and passes strings through as-is, so
+ * emitting `rem` is what makes the web build honour the preference. The cast is
+ * the cost: React Native's own style types only admit numbers, because on
+ * native only numbers are valid.
+ *
+ * Use it for every font size and line height in the app — a raw number is a
+ * size that will not grow for someone who needs it to.
+ */
+export function typeSize(points: number): number {
+  return Platform.OS === 'web' ? (remSize(points) as unknown as number) : points;
+}
+
+/** The rem form of a point size. Split out from `typeSize` so the conversion
+ * itself is testable — a wrong divisor would rescale the entire app silently. */
+export function remSize(points: number): string {
+  return `${points / ROOT_FONT_SIZE}rem`;
+}
+
 export type Appearance = 'graphite' | 'sable';
 
 /**

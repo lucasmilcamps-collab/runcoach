@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, typeSize } from '@/constants/theme';
 import type { RecoverySummary } from '@/lib/api/plans';
 import { makeStyles } from '@/lib/themed-styles';
 
@@ -93,7 +93,7 @@ const useStyles = makeStyles((t) => ({
     gap: Spacing.half,
   },
   value: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: typeSize(16),
+    lineHeight: typeSize(22),
   },
 }));

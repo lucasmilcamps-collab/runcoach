@@ -75,6 +75,8 @@ Every text token clears **4.5:1 on `surface`, `raised` and `inset`** in both app
 - **The Measurement Rule:** mono never sets a sentence, and is never reached for to make a block look technical. Tabular figures are the functional reason it exists — a column of loads has to align.
 - **A figure never appears alone:** a `label` names it, and where it is a judgement a plain-French line states the conclusion. Nothing measured yet reads `—`, never `0`.
 - Base body is 16px (avoids iOS zoom). Don't go below 13px for meaningful text.
+- **Never write a raw `fontSize`/`lineHeight` number** — go through `typeSize()`. It stays a point size on native (the OS scales it) and becomes `rem` on web, where a number compiles to `px` and stops following the browser's text-size preference. `<ThemedText>` already does this; only inline overrides need care.
+- Layout that holds text scales with `useFontScale()` / `useClampedFontScale()` (`hooks/use-font-scale.ts`). Prefer `minWidth`/`minHeight` and `flexWrap` over fixed dimensions; reach for the hook only where a real number is unavoidable (the tab bar's height, the ledger's day labels). Check dense screens at 200%.
 
 ### Spacing (`Spacing`, 4px rhythm) & radius (`Rounded`)
 

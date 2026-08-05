@@ -1,4 +1,12 @@
-import { Palettes, Rounded, Spacing, ZoneRamp, type Appearance } from '@/constants/theme';
+import {
+  Palettes,
+  remSize,
+  Rounded,
+  Spacing,
+  typeSize,
+  ZoneRamp,
+  type Appearance,
+} from '@/constants/theme';
 
 /**
  * The palette's accessibility promises, made executable.
@@ -176,6 +184,22 @@ describe('intensity ramp', () => {
       expect(h).toBeGreaterThan(120);
       expect(h).toBeLessThan(240);
     }
+  });
+});
+
+describe('type sizes', () => {
+  it('converts points to rem against a 16px root', () => {
+    // The divisor is the whole conversion: get it wrong and every size in the
+    // app is silently rescaled, in the one appearance nobody diffs.
+    expect(remSize(16)).toBe('1rem');
+    expect(remSize(13)).toBe('0.8125rem');
+    expect(remSize(28)).toBe('1.75rem');
+  });
+
+  it('keeps a point size a point size on native', () => {
+    // jest-expo runs as a native platform, where React Native's own Text scales
+    // the number by the OS setting — so it must pass through untouched.
+    expect(typeSize(16)).toBe(16);
   });
 });
 

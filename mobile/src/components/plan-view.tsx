@@ -6,7 +6,7 @@ import { Icon } from '@/components/icon';
 import { IntensityNotch } from '@/components/intensity-notch';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing, typeSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { pressable } from '@/lib/pressable';
 import { makeStyles } from '@/lib/themed-styles';
@@ -338,7 +338,7 @@ const useStyles = makeStyles((t) => ({
   },
   pagerCenter: { flex: 1, alignItems: 'center', gap: Spacing.half },
   pagerTitle: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.two },
-  weekNumber: { fontSize: 28, lineHeight: 34 },
+  weekNumber: { fontSize: typeSize(28), lineHeight: typeSize(34) },
 
   navArrow: {
     width: 44,
@@ -366,9 +366,11 @@ const useStyles = makeStyles((t) => ({
   // A skipped session stays in the week — hiding it would hide the decision —
   // but recedes: it is no longer something to act on.
   rowSkipped: { opacity: 0.5 },
-  day: { width: 34 },
+  // minWidth, not width: the column keeps the week aligned down one axis at
+  // the default size and still lets the label size itself when text grows.
+  day: { minWidth: 34 },
   tick: { width: 3, height: 22, borderRadius: 2 },
   nameBlock: { flex: 1, gap: Spacing.half },
   name: { flex: 1 },
-  meta: { fontSize: 13, lineHeight: 18 },
+  meta: { fontSize: typeSize(13), lineHeight: typeSize(18) },
 }));
