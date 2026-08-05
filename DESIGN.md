@@ -197,6 +197,13 @@ One suggestion, its reason, and one action. "Décale le renfo jambes à demain �
 ### Session rows
 Every session carries **two redundant cues**: a sport glyph and a sport-aware name. Runs are named by their training type (Footing, Tempo, Sortie longue) because that is the meaningful distinction between two runs; everything else is named by its sport, because "Cross-training" hides exactly what distinguishes a basket session from a padel one.
 
+### Forms
+One frame for all of them (`components/form.tsx`): mono `label` down the left, a **rule opening each named section**, and the commitment pinned at the bottom. A long form read as ten equally-weighted boxes in one column is how an athlete scrolls past the thing they came to change — sections give them three answers to give instead of ten.
+
+A yes/no setting is the platform's own switch, whole-row tappable, its track neutral Ink when on. It replaces a chip whose label read "Activé"/"Désactivé" and whose selected state said the same thing again — a control answering its own question twice.
+
+**The footer turns on a short screen.** A phone in landscape is ~390pt tall; two stacked full-width buttons plus a header left one row of the form visible. Below ~520pt the pair goes side by side, primary on the right.
+
 ### Chips / segmented controls
 Selected is an **outline plus weight**, never a signal fill: 1.5px Rule Strong border, Ink label, Action weight, on the Inset ground. Selection never rests on colour alone, and carries `accessibilityState`.
 
