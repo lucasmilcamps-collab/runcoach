@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { TextInput, View, type TextInputProps } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing, typeSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { makeStyles } from '@/lib/themed-styles';
 
@@ -70,6 +70,6 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: Spacing.three,
     backgroundColor: t.raised,
     color: t.ink,
-    fontSize: 16,
+    fontSize: typeSize(16),
   },
 }));

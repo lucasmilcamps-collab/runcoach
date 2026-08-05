@@ -213,7 +213,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try {
     data = event.data ? event.data.json() : {};
-  } catch (e) {
+  } catch {
     data = {};
   }
   const title = data.title || 'Relay';

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,7 +23,6 @@ import {
   getCurrentPlan,
   getPlanProgress,
   PlanProgress,
-  PlanRequest,
   PlanResponse,
 } from '@/lib/api/plans';
 import { pressable } from '@/lib/pressable';
@@ -53,7 +52,6 @@ export default function PlanScreen() {
     queryFn: listActivities,
     enabled: garminConnected,
   });
-  const queryClient = useQueryClient();
 
   const replan = usePlanGeneration(createPlan);
 

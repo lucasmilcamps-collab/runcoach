@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { Pressable } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { typeSize } from '@/constants/theme';
 import { getMe, initialsFromEmail } from '@/lib/api/auth';
 import { pressable } from '@/lib/pressable';
 import { qk } from '@/lib/query-keys';
@@ -52,11 +53,11 @@ const useStyles = makeStyles((t) => ({
     justifyContent: 'center',
   },
   initials: {
-    fontSize: 15,
+    fontSize: typeSize(15),
     letterSpacing: 0.8,
   },
   initialsCompact: {
-    fontSize: 12,
+    fontSize: typeSize(12),
     letterSpacing: 0.6,
   },
 }));

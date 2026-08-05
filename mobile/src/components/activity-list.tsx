@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Icon } from '@/components/icon';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing, typeSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { activityLabel } from '@/lib/activity-labels';
 import { Activity, deleteActivity } from '@/lib/api/activities';
@@ -213,8 +213,8 @@ const useStyles = makeStyles((t) => ({
     gap: Spacing.two,
   },
   duration: {
-    fontSize: 15,
-    lineHeight: 20,
+    fontSize: typeSize(15),
+    lineHeight: typeSize(20),
   },
   deleteButton: {
     minHeight: 44,
@@ -235,7 +235,7 @@ const useStyles = makeStyles((t) => ({
     gap: Spacing.three,
   },
   detailValue: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: typeSize(13),
+    lineHeight: typeSize(18),
   },
 }));

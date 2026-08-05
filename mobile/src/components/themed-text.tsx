@@ -1,12 +1,15 @@
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
-import { Fonts, type ThemeColor } from '@/constants/theme';
+import { Fonts, typeSize, type ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
  * Every piece of text in Relay comes from this table — six steps and no seventh
  * (DESIGN.md). `label` and `figure` are the two jobs Azeret Mono carries:
  * uppercase signage, and numbers under comparison.
+ *
+ * Every size goes through `typeSize`, so the whole scale follows the reader's
+ * own text-size setting on both platforms rather than only on native.
  */
 export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'subtitle' | 'small' | 'link' | 'label' | 'figure';
@@ -36,43 +39,43 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 
 const styles = StyleSheet.create({
   default: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: typeSize(16),
+    lineHeight: typeSize(22),
     fontWeight: 400,
   },
   title: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: typeSize(28),
+    lineHeight: typeSize(34),
     fontWeight: 600,
     letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: typeSize(20),
+    lineHeight: typeSize(26),
     fontWeight: 600,
     letterSpacing: -0.2,
   },
   small: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: typeSize(13),
+    lineHeight: typeSize(18),
     fontWeight: 400,
   },
   link: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: typeSize(16),
+    lineHeight: typeSize(22),
     fontWeight: 600,
   },
   label: {
     fontFamily: Fonts?.mono,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: typeSize(12),
+    lineHeight: typeSize(16),
     letterSpacing: 0.06 * 12,
     textTransform: 'uppercase',
   },
   figure: {
     fontFamily: Fonts?.mono,
-    fontSize: 20,
-    lineHeight: 26,
+    fontSize: typeSize(20),
+    lineHeight: typeSize(26),
     // The functional reason the mono is in the system at all: a week of loads
     // stacked in a column has to align, and a proportional face makes "112"
     // narrower than "998" (DESIGN.md, The Measurement Rule).

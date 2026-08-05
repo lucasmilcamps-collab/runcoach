@@ -16,6 +16,39 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+/** The size the web build treats as 1rem — the browser's own default, and the
+ * base of the type scale. */
+const ROOT_FONT_SIZE = 16;
+
+/**
+ * A type size that follows the reader's own text-size setting.
+ *
+ * The two platforms need different things and only one of them was working.
+ * On native, React Native's `Text` already multiplies a point size by the OS
+ * setting, so the number passes through untouched. On web it did not: this app
+ * ships as an installed PWA, react-native-web compiles a numeric `fontSize`
+ * straight to `px`, and px ignores the browser's text-size preference entirely
+ * — so an athlete who had set larger text got the same 13px caption as everyone
+ * else. Only page zoom moved it.
+ *
+ * react-native-web appends `px` to numbers and passes strings through as-is, so
+ * emitting `rem` is what makes the web build honour the preference. The cast is
+ * the cost: React Native's own style types only admit numbers, because on
+ * native only numbers are valid.
+ *
+ * Use it for every font size and line height in the app — a raw number is a
+ * size that will not grow for someone who needs it to.
+ */
+export function typeSize(points: number): number {
+  return Platform.OS === 'web' ? (remSize(points) as unknown as number) : points;
+}
+
+/** The rem form of a point size. Split out from `typeSize` so the conversion
+ * itself is testable — a wrong divisor would rescale the entire app silently. */
+export function remSize(points: number): string {
+  return `${points / ROOT_FONT_SIZE}rem`;
+}
+
 export type Appearance = 'graphite' | 'sable';
 
 /**
@@ -29,7 +62,7 @@ const graphite = {
   surface: '#16181A',
   raised: '#1D2023',
   inset: '#24282C',
-  rule: '#2E3338',
+  rule: '#33383E',
   ruleStrong: '#6B747D',
   ink: '#E9E7E3',
   inkMuted: '#9BA1A7',
@@ -62,7 +95,7 @@ const sable = {
   surface: '#F2EEE6',
   raised: '#FBF9F5',
   inset: '#E5DFD2',
-  rule: '#DBD4C6',
+  rule: '#CBC1AC',
   ruleStrong: '#857D6C',
   ink: '#1B1D1F',
   inkMuted: '#5A5F64',
@@ -93,8 +126,13 @@ export const Palettes: Record<Appearance, Palette> = { graphite, sable };
  * hard session is not a warning (DESIGN.md).
  */
 export const ZoneRamp: Record<Appearance, readonly [string, string, string, string, string]> = {
-  graphite: ['#5B87B3', '#4E96A9', '#45A297', '#4AAC8B', '#57B87C'],
-  sable: ['#3D6A94', '#2F7383', '#2A7C74', '#2C845F', '#3A8B4C'],
+  // Interpolated in HSL between this appearance's own Récup and Go, so Z1 *is*
+  // Récup and Z5 *is* Go rather than approximately them. The hand-picked ramp
+  // that preceded this overshot past Go at Z5 and came back on a yellower
+  // green — true enough to eyeball in Graphite, 20° off in Sable, which is the
+  // kind of drift only a test catches.
+  graphite: ['#6E9CCB', '#66ACC5', '#5EBCBF', '#56B9A4', '#4FB286'],
+  sable: ['#2F5B87', '#2C6980', '#297678', '#267161', '#23694A'],
 };
 
 /**

@@ -1,5 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useClampedFontScale } from '@/hooks/use-font-scale';
+
 import { Spacing, TabBarHeight } from '@/constants/theme';
 
 /**
@@ -14,5 +16,8 @@ import { Spacing, TabBarHeight } from '@/constants/theme';
  */
 export function useTabScrollPadding(): number {
   const insets = useSafeAreaInsets();
-  return TabBarHeight + insets.bottom + Spacing.four;
+  // Same multiplier the bar itself uses: if the two drift apart, the last row
+  // of every tab screen ends up underneath the bar at large text sizes.
+  const fontScale = useClampedFontScale();
+  return TabBarHeight * fontScale + insets.bottom + Spacing.four;
 }

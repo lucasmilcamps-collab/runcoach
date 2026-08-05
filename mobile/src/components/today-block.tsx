@@ -4,7 +4,7 @@ import { Pressable, View } from 'react-native';
 import { Icon } from '@/components/icon';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing, typeSize } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { PlanSession, TodaySession } from '@/lib/api/plans';
 import { estimateDistanceKm, formatDuration, frKm, hrIsCeiling, sessionTitle } from '@/lib/plan-format';
@@ -144,7 +144,7 @@ function targetLine(
   return parts.length > 0 ? parts.join(' · ') : 'À l’allure du jour.';
 }
 
-const useStyles = makeStyles((t) => ({
+const useStyles = makeStyles(() => ({
   block: {
     gap: Spacing.two,
   },
@@ -153,6 +153,9 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
+    // The "séance clé" tag drops to its own line rather than being clipped at
+    // the edge once the label no longer fits beside the kicker.
+    flexWrap: 'wrap',
   },
   keyTag: {
     flexDirection: 'row',
@@ -170,14 +173,20 @@ const useStyles = makeStyles((t) => ({
     gap: Spacing.three,
     minHeight: 44,
     paddingVertical: Spacing.two,
+    // At large text the duration and chevron wrap under the name instead of
+    // squeezing it into a column narrower than the word "Footing".
+    flexWrap: 'wrap',
   },
   rowText: {
     flex: 1,
+    // Enough for the longest session name at any text size; below this the
+    // duration wraps away rather than the name breaking mid-word.
+    minWidth: 180,
     gap: Spacing.half,
   },
   duration: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: typeSize(16),
+    lineHeight: typeSize(22),
   },
   note: {
     borderLeftWidth: 1,

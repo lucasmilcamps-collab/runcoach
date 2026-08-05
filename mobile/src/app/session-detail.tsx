@@ -3,13 +3,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { G, Path } from 'react-native-svg';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { IntensityNotch } from '@/components/intensity-notch';
 import { BackButton } from '@/components/back-button';
-import { Icon } from '@/components/icon';
 import { SportIcon } from '@/components/sport-icon';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Rounded, Spacing } from '@/constants/theme';

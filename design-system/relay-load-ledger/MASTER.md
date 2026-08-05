@@ -40,7 +40,7 @@ function Card() {
 | `surface` | `#16181A` | `#F2EEE6` | The ground. No pure black, no pure white. |
 | `raised` | `#1D2023` | `#FBF9F5` | Cards, fields, the ledger's today lane. |
 | `inset` | `#24282C` | `#E5DFD2` | Selected / pressed surfaces. |
-| `rule` | `#2E3338` | `#DBD4C6` | The hairline. The system's one structural line. |
+| `rule` | `#33383E` | `#CBC1AC` | The hairline. Matched across appearances (~1.5:1 on its ground in both). |
 | `ruleStrong` | `#6B747D` | `#857D6C` | Borders carrying state or an affordance (≥3:1, WCAG 1.4.11). |
 | `ink` | `#E9E7E3` | `#1B1D1F` | Primary text **and** the primary button's fill. |
 | `inkMuted` | `#9BA1A7` | `#5A5F64` | Secondary text, labels, realised ledger bars. |
@@ -57,7 +57,7 @@ Every text token clears **4.5:1 on `surface`, `raised` and `inset`** in both app
 
 **One Meaning Per Ink.** Never reuse a signal because a block "needed a warm accent". A missed session is `rule`, never `alerte`: skipping a run is a fact the plan absorbs, not an error.
 
-**Intensity ramp** (`ZoneRamp` in `theme.ts`, read via `useZoneRamp()`): Z1→Z5 runs from Récup blue to Go green — two hues, sequential, never through Prudence, because a hard session is not a warning. Always paired with the zone number or a bar height.
+**Intensity ramp** (`ZoneRamp` in `theme.ts`, read via `useZoneRamp()`): Z1→Z5 is interpolated between that appearance's own Récup and Go, so Z1 *is* Récup and Z5 *is* Go — two hues, sequential, never through Prudence, because a hard session is not a warning. Always paired with the zone number or a bar height.
 
 ### Typography (from `themed-text.tsx` — use `<ThemedText type=…>`, don't hand-set sizes)
 
@@ -75,6 +75,8 @@ Every text token clears **4.5:1 on `surface`, `raised` and `inset`** in both app
 - **The Measurement Rule:** mono never sets a sentence, and is never reached for to make a block look technical. Tabular figures are the functional reason it exists — a column of loads has to align.
 - **A figure never appears alone:** a `label` names it, and where it is a judgement a plain-French line states the conclusion. Nothing measured yet reads `—`, never `0`.
 - Base body is 16px (avoids iOS zoom). Don't go below 13px for meaningful text.
+- **Never write a raw `fontSize`/`lineHeight` number** — go through `typeSize()`. It stays a point size on native (the OS scales it) and becomes `rem` on web, where a number compiles to `px` and stops following the browser's text-size preference. `<ThemedText>` already does this; only inline overrides need care.
+- Layout that holds text scales with `useFontScale()` / `useClampedFontScale()` (`hooks/use-font-scale.ts`). Prefer `minWidth`/`minHeight` and `flexWrap` over fixed dimensions; reach for the hook only where a real number is unavoidable (the tab bar's height, the ledger's day labels). Check dense screens at 200%.
 
 ### Spacing (`Spacing`, 4px rhythm) & radius (`Rounded`)
 
@@ -98,10 +100,11 @@ Don't hand-roll a width check — use the hook.
 ## Component Specs (React Native)
 
 - **Button** (`button.tsx`): `minHeight 52`, `Rounded.md`. `primary` = `ink` fill + `surface` label, pressed → `inkPressed`. `ghost` = transparent + `ruleStrong` border, pressed → `inset`. Disabled = `inset` fill + `inkMuted` label. **One primary per screen**; everything else shares one compact ghost row.
-- **The Ledger** (`week-ledger.tsx` + `lib/week-ledger.ts`): the signature. Seven day-columns on one shared baseline, unit = **minutes** — the one quantity that exists for a planned session and a finished one, a tempo and a basket match, without estimating anything into existence. Realised = filled `inkMuted`; still-planned = dashed `ruleStrong` outline. Today = a `raised` lane the width of the bars. Colour appears **only** on the state tick under a column. Cross-training is never folded into an "autres" segment, and never gets a colour legend — sport is carried by the glyph and by the totals line.
+- **The Ledger** (`week-ledger.tsx` + `lib/week-ledger.ts`): the signature. Seven day-columns on one shared baseline, unit = **minutes** — the one quantity that exists for a planned session and a finished one, a tempo and a basket match, without estimating anything into existence. Realised = filled `inkMuted`; still-planned = dashed `ruleStrong` outline. Today = a `raised` lane the width of the bars. Colour appears **only** on the state tick under a column — and never alone: Go and Récup ticks differ in length too, and a legend names both whenever one is drawn. Cross-training is never folded into an "autres" segment, and never gets a colour legend — sport is carried by the glyph and by the totals line.
 - **Today block** (`today-block.tsx`): Accueil's lead. The session named at `subtitle`, its duration as a `figure`, its target line underneath. The Go tick appears only when the plan marked the session key. A server adjustment shows its reason **verbatim**.
 - **Arbitrage block** (`arbitrage-block.tsx`): one suggestion, its reason, one action — never a list. Suggestions come from the server's own downgrade rules or from facts on the page (high fatigue + a session today + an empty tomorrow). When there's nothing to arbitrate, it says so.
 - **Session row** (`plan-view.tsx`): a row on a rule, not a card. Fixed day column, key tick, sport glyph, sport-aware name, `figure` meta, intensity notches, chevron.
+- **Forms** (`form.tsx` — `FormScreen`, `FormSection`, `Field`, `ChipRow`, `ToggleField`): every form screen uses these; do not re-declare a local `Field`, safe-area scaffold or action footer. `FormScreen` takes `actions` as an **array** (primary first) and lays them side by side below ~520pt of viewport height, which is a phone in landscape. Section titles are `subtitle`, field labels are `label` — the same treatment `TextField` uses, so one column never carries two label styles. A boolean is a `ToggleField`, never a chip that says "Activé".
 - **Chip** (`chip.tsx` — use the shared component, don't redefine it per screen): `minHeight 44`, `Rounded.sm`. **Rest = outline only** (transparent + `rule`); **selected = `inset` + 1.5px `ruleStrong` + `link` weight**. Never a signal fill. `variant="dashed"` is the plan-setup "variable day" (paired with an `≈` prefix — shape and label, never colour). `fill` shares the row equally so the 7 weekdays fit on one line.
 - **Intensity** (`intensity-notch.tsx`): four rising notches tinted from the zone ramp, always with the level in words beside them. Replaces the lightning bolts — gym-poster shorthand this product does not speak in.
 - **Icons** (`icon.tsx`, `sport-icon.tsx`, `ledger-glyph.tsx`): in-house **SVG stroke set**, `strokeWidth 1.75`, 24px grid. **No emoji, no icon font.** The `tab-*` glyphs come from Relay's own vocabulary (bars on a baseline, a week, a logbook).

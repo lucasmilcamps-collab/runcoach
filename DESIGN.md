@@ -5,7 +5,7 @@ colors:
   surface: "#16181A"
   raised: "#1D2023"
   inset: "#24282C"
-  rule: "#2E3338"
+  rule: "#33383E"
   rule-strong: "#6B747D"
   ink: "#E9E7E3"
   ink-muted: "#9BA1A7"
@@ -99,7 +99,7 @@ A missed session is **not** Alerte. Skipping a run is a fact the plan adapts to;
 | `surface` | `#16181A` | `#F2EEE6` | The ground. Soft anthracite / very light sand — no pure black, no pure white. |
 | `raised` | `#1D2023` | `#FBF9F5` | Cards, sheets, fields. One tonal step, in the direction the appearance implies. |
 | `inset` | `#24282C` | `#E5DFD2` | Selected and pressed surfaces, chart tracks. |
-| `rule` | `#2E3338` | `#DBD4C6` | The hairline. The system's one structural line. |
+| `rule` | `#33383E` | `#CBC1AC` | The hairline. The system's one structural line — matched across appearances so a divider never reads a step fainter in one of them. |
 | `rule-strong` | `#6B747D` | `#857D6C` | Borders that carry state or an affordance (fields, ghost buttons) — ≥3:1 on every ground, per WCAG 1.4.11. |
 | `ink` | `#E9E7E3` | `#1B1D1F` | Primary text, and the fill of the primary button. Warm off-white / warm near-black. |
 | `ink-muted` | `#9BA1A7` | `#5A5F64` | Secondary text, labels, placeholders. AA on all three grounds. |
@@ -110,8 +110,10 @@ Every text colour listed clears 4.5:1 on `surface`, `raised` **and** `inset` in 
 
 Training zones Z1→Z5 are the one place colour encodes a scale rather than a state, and the scale runs between two signals that already exist: from Récup at Z1 to Go at Z5.
 
-- Graphite: `#5B87B3 → #4E96A9 → #45A297 → #4AAC8B → #57B87C`
-- Sable: `#3D6A94 → #2F7383 → #2A7C74 → #2C845F → #3A8B4C`
+- Graphite: `#6E9CCB → #66ACC5 → #5EBCBF → #56B9A4 → #4FB286`
+- Sable: `#2F5B87 → #2C6980 → #297678 → #267161 → #23694A`
+
+The ends are not *near* Récup and Go, they **are** Récup and Go — the steps are interpolated between that appearance's own two signal tokens, so the rule the ramp states is literally the ramp.
 
 Two hues, sequential, never a rainbow — and it never passes through Prudence, because a hard session is not a warning. Colour on the ramp is always paired with the zone number or a bar height; it never carries the value alone.
 
@@ -136,6 +138,10 @@ Six steps, and only six. A screen that wants a size between two of them wants a 
 - **Caption** (system, 400, 13/18) — helper text, metadata, the line explaining what a figure means.
 - **Label** (Azeret Mono, 500, 12/16, +0.06em, uppercase) — signage.
 - **Figure** (Azeret Mono, 500, tabular, sized at the call site from 13 to 32) — numbers under comparison.
+
+**Every size follows the reader.** All seven steps go through `typeSize()`, which emits points on native — where the OS multiplies them by the reader's text-size setting — and **rem** on web, where a number compiles to `px` and `px` ignores the browser's own text preference entirely. A raw number in a `fontSize` is a size that will not grow for someone who needs it to, and the web build *is* the product here.
+
+Growing text is a layout problem as much as a type one. Three places earn special handling at large sizes: the ledger's seven day-columns drop to two-letter days past ~1.4×, rows that pack a name beside its figures wrap instead of squeezing the name, and the tab bar grows with its labels up to a clamp (`useClampedFontScale`) — navigation pinned to the bottom of every screen cannot take a third of the phone. Everything else survives on min-heights and wrapping. Verified at 200%, which is the bar WCAG 1.4.4 sets.
 
 ### Named Rules
 
@@ -177,7 +183,9 @@ Moderate corners: `6` / `10` / `14`. Nothing is pill-shaped; the one true circle
 Every control reserves **44×44 in the layout** — real padding or a transparent frame, never `hitSlop`, which is inert on react-native-web and the web build *is* the product (an installed PWA).
 
 ### The Ledger (the signature component)
-Seven day-columns on one shared baseline, one per day of the current week. Each day stacks its disciplines as segments whose height is that session's load, so a Tuesday with a basket match and a Wednesday with a tempo are compared on the same axis — which is the product's whole argument made into a drawing. Planned load is drawn as a hairline outline, realised load as a fill. Today's column carries a Rule Strong baseline tick; nothing else is highlighted.
+Seven day-columns on one shared baseline, one per day of the current week. Each day stacks its disciplines as segments whose height is that session's load, so a Tuesday with a basket match and a Wednesday with a tempo are compared on the same axis — which is the product's whole argument made into a drawing. Planned load is drawn as a hairline outline, realised load as a fill. Today's column carries a Raised lane the width of the bars; nothing else is highlighted.
+
+**The day-state marks never rest on colour.** Go and Récup ticks differ in length as well as hue, and a legend names both whenever one is drawn — a green mark with nothing to decode it is a colour-only signal, which is the one thing this system's own colour rule cannot excuse.
 
 **Cross-training is never subordinated.** Same width, same baseline, same treatment as a run — a different segment tone and a named sport. It is load, not noise. Collapsing padel and basket into a single "autres" segment is the one thing this component may never do.
 
@@ -188,6 +196,13 @@ One suggestion, its reason, and one action. "Décale le renfo jambes à demain �
 
 ### Session rows
 Every session carries **two redundant cues**: a sport glyph and a sport-aware name. Runs are named by their training type (Footing, Tempo, Sortie longue) because that is the meaningful distinction between two runs; everything else is named by its sport, because "Cross-training" hides exactly what distinguishes a basket session from a padel one.
+
+### Forms
+One frame for all of them (`components/form.tsx`): mono `label` down the left, a **rule opening each named section**, and the commitment pinned at the bottom. A long form read as ten equally-weighted boxes in one column is how an athlete scrolls past the thing they came to change — sections give them three answers to give instead of ten.
+
+A yes/no setting is the platform's own switch, whole-row tappable, its track neutral Ink when on. It replaces a chip whose label read "Activé"/"Désactivé" and whose selected state said the same thing again — a control answering its own question twice.
+
+**The footer turns on a short screen.** A phone in landscape is ~390pt tall; two stacked full-width buttons plus a header left one row of the form visible. Below ~520pt the pair goes side by side, primary on the right.
 
 ### Chips / segmented controls
 Selected is an **outline plus weight**, never a signal fill: 1.5px Rule Strong border, Ink label, Action weight, on the Inset ground. Selection never rests on colour alone, and carries `accessibilityState`.
