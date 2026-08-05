@@ -69,6 +69,10 @@ cd mobile && npm install
 npx expo start                             # dev (QR code pour mobile, w pour web)
 npm test                                   # jest-expo
 npm run lint                               # eslint (config commitée : `expo lint` télécharge la sienne)
+
+# Graphe de connaissance (outil d'assistance, hors runtime de l'app)
+pip install graphifyy                      # à refaire dans tout environnement neuf
+graphify update .                          # (re)construit graphify-out/ — AST seul, sans LLM
 ```
 
 ## Conventions
@@ -99,6 +103,26 @@ Consulte systématiquement le skill concerné avant de coder dans son domaine :
 - `.claude/skills/training-science` — science de l'entraînement : zones, TSS/CTL/ATL/TSB, périodisation, équivalences cross-training.
 - `.claude/skills/plan-generator` — génération IA des plans : prompts, schéma JSON, validation, adaptation dynamique.
 - `.claude/skills/api-conventions` — patterns FastAPI/Mongo/Expo détaillés du projet.
+- `.claude/skills/graphify` — graphe de connaissance du repo (voir ci-dessous). Outil de navigation, pas un domaine métier.
+
+## Graphe de connaissance (graphify)
+
+`graphify` indexe le repo en un graphe interrogeable (`graphify-out/`, non versionné :
+c'est un artefact reconstructible). Le périmètre indexé est défini par `.graphifyignore` —
+le code et les specs de Relay, pas les skills tierces vendorées.
+
+Pour une question sur la codebase, interroge le graphe **avant** de lire les sources :
+
+```bash
+graphify query "comment la charge integre le cross-training"   # sous-graphe cible
+graphify explain "validate_plan"                               # un nœud et ses voisins
+graphify path "generate_plan()" "TrainingLoad"                 # chemin entre deux nœuds
+graphify god-nodes --top 10                                    # les hubs architecturaux
+```
+
+`graphify-out/GRAPH_REPORT.md` sert à une revue d'architecture large, quand `query` /
+`explain` ne suffisent pas. Après avoir modifié du code, `graphify update .` rafraîchit
+le graphe (AST seul, aucun appel LLM, aucun coût).
 
 ## État du projet
 

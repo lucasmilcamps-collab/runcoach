@@ -5,3 +5,7 @@
 .claude/skills/design-system/
 .claude/skills/slides/
 .claude/skills/ui-styling/
+
+# Graphe graphify : artefact reconstruit par `graphify update .`, jamais versionné
+# (3 Mo de JSON qui change à chaque commit — voir CLAUDE.md)
+graphify-out/

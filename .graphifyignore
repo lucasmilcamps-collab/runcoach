@@ -1,0 +1,22 @@
+# Scope the knowledge graph to Relay's own code and specs.
+# Third-party agent tooling is vendored here and would drown the graph
+# in nodes that have nothing to do with the product.
+.claude/skills/
+.agents/
+.codex/
+.impeccable/
+graphify-out/
+
+# Build artefacts and dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.expo/
+mobile/dist/
+
+# Binary and data assets carry no structure worth extracting
+*.png
+*.jpg
+*.ico
+*.csv
