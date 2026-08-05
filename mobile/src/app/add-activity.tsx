@@ -1,15 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { ChipRow, Field, FormScreen } from '@/components/form';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { MaxFormWidth, Spacing } from '@/constants/theme';
-import { makeStyles } from '@/lib/themed-styles';
 import { createManualActivity, ManualActivityCreate } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import type { SportType } from '@/lib/api/types';
@@ -37,7 +33,6 @@ function nearestDuration(n: number): number {
 }
 
 export default function AddActivityScreen() {
-  const styles = useStyles();
   const queryClient = useQueryClient();
   // Optional prefill when arriving from a plan session ("J'ai fait cette séance").
   const params = useLocalSearchParams<{ sport?: string; duration?: string }>();
@@ -83,141 +78,95 @@ export default function AddActivityScreen() {
   })();
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="label" themeColor="inkMuted">
-              Ajouter une séance
-            </ThemedText>
-            <ThemedText type="title">Séance manuelle</ThemedText>
-            <ThemedText type="default" themeColor="inkMuted">
-              Pour une séance que Garmin n’a pas captée. Sa charge est estimée depuis l’effort
-              ressenti (RPE), et elle compte dans ta forme comme les autres.
-            </ThemedText>
-          </View>
+    <FormScreen
+      kicker="Ajouter une séance"
+      title="Séance manuelle"
+      blurb="Pour une séance que Garmin n’a pas captée. Sa charge est estimée depuis l’effort ressenti (RPE), et elle compte dans ta forme comme les autres."
+      actions={[
+        <Button
+          key="submit"
+          label="Enregistrer la séance"
+          onPress={handleSubmit}
+          loading={mutation.isPending}
+          disabled={mutation.isPending}
+        />,
+        <Button
+          key="cancel"
+          label="Annuler"
+          variant="ghost"
+          disabled={mutation.isPending}
+          onPress={() => router.back()}
+        />
+      ]}>
+      <Field label="Sport">
+        <ChipRow>
+          {SPORT_OPTIONS.map((o) => (
+            <Chip
+              key={o.sport}
+              label={o.label}
+              selected={o.sport === sport}
+              onPress={() => setSport(o.sport)}
+            />
+          ))}
+        </ChipRow>
+      </Field>
 
-          <Field label="Sport">
-            <View style={styles.chipRow}>
-              {SPORT_OPTIONS.map((o) => (
-                <Chip
-                  key={o.sport}
-                  label={o.label}
-                  selected={o.sport === sport}
-                  onPress={() => setSport(o.sport)}
-                />
-              ))}
-            </View>
-          </Field>
+      <TextField
+        label="Date"
+        value={date}
+        onChangeText={(t) => {
+          setDate(t);
+          setDateError(undefined);
+          mutation.reset();
+        }}
+        error={dateError}
+        placeholder="AAAA-MM-JJ"
+        keyboardType="numbers-and-punctuation"
+        autoCapitalize="none"
+      />
 
-          <TextField
-            label="Date"
-            value={date}
-            onChangeText={(t) => {
-              setDate(t);
-              setDateError(undefined);
-              mutation.reset();
-            }}
-            error={dateError}
-            placeholder="AAAA-MM-JJ"
-            keyboardType="numbers-and-punctuation"
-            autoCapitalize="none"
-          />
+      <Field label="Durée">
+        <ChipRow>
+          {DURATIONS.map((d) => (
+            <Chip
+              key={d}
+              label={`${d} min`}
+              selected={d === durationMin}
+              onPress={() => setDurationMin(d)}
+            />
+          ))}
+        </ChipRow>
+      </Field>
 
-          <Field label="Durée">
-            <View style={styles.chipRow}>
-              {DURATIONS.map((d) => (
-                <Chip
-                  key={d}
-                  label={`${d} min`}
-                  selected={d === durationMin}
-                  onPress={() => setDurationMin(d)}
-                />
-              ))}
-            </View>
-          </Field>
+      <Field
+        label={`Effort ressenti — ${rpe}/10`}
+        hint="1 = très facile · 5 = modéré · 10 = effort maximal">
+        <ChipRow>
+          {RPE_VALUES.map((r) => (
+            <Chip
+              key={r}
+              label={String(r)}
+              selected={r === rpe}
+              onPress={() => setRpe(r)}
+              accessibilityLabel={`Effort ${r} sur 10`}
+            />
+          ))}
+        </ChipRow>
+      </Field>
 
-          <Field label={`Effort ressenti (RPE) : ${rpe}/10`}>
-            <View style={styles.chipRow}>
-              {RPE_VALUES.map((r) => (
-                <Chip key={r} label={String(r)} selected={r === rpe} onPress={() => setRpe(r)} />
-              ))}
-            </View>
-            <ThemedText type="small" themeColor="inkMuted">
-              1 = très facile · 5 = modéré · 10 = effort maximal
-            </ThemedText>
-          </Field>
+      <TextField
+        label="Note (optionnel)"
+        value={note}
+        onChangeText={setNote}
+        placeholder="ex. sortie avec le club"
+        autoCapitalize="sentences"
+      />
 
-          <TextField
-            label="Note (optionnel)"
-            value={note}
-            onChangeText={setNote}
-            placeholder="ex. sortie avec le club"
-            autoCapitalize="sentences"
-          />
-
-          {errorMessage ? (
-            <ThemedText type="small" themeColor="alerte">
-              {errorMessage}
-            </ThemedText>
-          ) : null}
-        </ScrollView>
-
-        <View style={styles.actions}>
-          <Button
-            label="Enregistrer la séance"
-            onPress={handleSubmit}
-            loading={mutation.isPending}
-            disabled={mutation.isPending}
-          />
-          <Button
-            label="Annuler"
-            variant="ghost"
-            disabled={mutation.isPending}
-            onPress={() => router.back()}
-          />
-        </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+      {errorMessage ? (
+        <ThemedText type="small" themeColor="alerte">
+          {errorMessage}
+        </ThemedText>
+      ) : null}
+    </FormScreen>
   );
 }
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  const styles = useStyles();
-  return (
-    <View style={styles.field}>
-      <ThemedText type="small" themeColor="inkMuted">
-        {label}
-      </ThemedText>
-      {children}
-    </View>
-  );
-}
-
-const useStyles = makeStyles((t) => ({
-  flex: { flex: 1 },
-  safeArea: {
-    flex: 1,
-    backgroundColor: t.surface,
-    paddingHorizontal: Spacing.four,
-    justifyContent: 'space-between',
-  },
-  content: {
-    gap: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-    paddingTop: Spacing.four,
-    paddingBottom: Spacing.four,
-  },
-  header: { gap: Spacing.two },
-  field: { gap: Spacing.two },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  actions: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-  },
-}));

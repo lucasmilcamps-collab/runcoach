@@ -1,14 +1,14 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { ChipRow, Field, FormScreen } from '@/components/form';
 import { GenerationProgress } from '@/components/generation-progress';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
 import { pressable } from '@/lib/pressable';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
@@ -42,128 +42,91 @@ export default function InjuryReportScreen() {
   const canSubmit = area.trim().length > 0 && !generation.isGenerating;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="label" themeColor="alerte">
-              Signaler une blessure
-            </ThemedText>
-            <ThemedText type="title">Adapter mon plan</ThemedText>
-            <ThemedText type="default" themeColor="inkMuted">
-              Le plan sera régénéré en reprise progressive : une période allégée puis une remontée
-              douce de la charge. Ce n’est pas un avis médical — en cas de doute ou de douleur qui
-              persiste, consulte un professionnel de santé.
-            </ThemedText>
-          </View>
+    <FormScreen
+      kicker="Signaler une blessure"
+      title="Adapter mon plan"
+      blurb="Le plan sera régénéré en reprise progressive : une période allégée puis une remontée douce de la charge. Ce n’est pas un avis médical — en cas de doute ou de douleur qui persiste, consulte un professionnel de santé."
+      actions={[
+        <Button
+          key="submit"
+          label="Adapter mon plan"
+          onPress={handleSubmit}
+          loading={generation.isGenerating}
+          disabled={!canSubmit}
+        />,
+        <Button
+          key="cancel"
+          label="Annuler"
+          variant="ghost"
+          disabled={generation.isGenerating}
+          onPress={() => router.back()}
+        />
+      ]}>
+      <TextField
+        label="Zone touchée"
+        value={area}
+        onChangeText={(t) => {
+          setArea(t);
+          generation.reset();
+        }}
+        placeholder="ex. mollet droit, genou gauche…"
+        autoCapitalize="none"
+      />
 
-          <TextField
-            label="Zone touchée"
-            value={area}
-            onChangeText={(t) => {
-              setArea(t);
-              generation.reset();
-            }}
-            placeholder="ex. mollet droit, genou gauche…"
-            autoCapitalize="none"
-          />
-
-          <Field label="Gravité">
-            <View style={styles.severityCol}>
-              {SEVERITIES.map((s) => (
-                <Pressable
-                  key={s.value}
-                  onPress={() => setSeverity(s.value)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: severity === s.value }}
-                  style={pressable([styles.severityRow, severity === s.value && styles.severityRowSelected])}>
-                  <ThemedText type="default" themeColor={severity === s.value ? 'ink' : 'inkMuted'}>
-                    {s.label}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="inkMuted">
-                    {s.hint}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-          </Field>
-
-          <Field label="Jours sans courir">
-            <View style={styles.chipRow}>
-              {DAYS_OFF.map((n) => (
-                <Chip
-                  key={n}
-                  label={n === 0 ? 'Aucun' : `${n} j`}
-                  selected={n === daysOff}
-                  onPress={() => setDaysOff(n)}
-                />
-              ))}
-            </View>
-          </Field>
-
-          <GenerationProgress
-            phase={generation.phase}
-            elapsedSeconds={generation.elapsedSeconds}
-          />
-          {errorMessage ? (
-            <ThemedText type="small" themeColor="alerte">
-              {errorMessage}
-            </ThemedText>
-          ) : null}
-        </ScrollView>
-
-        <View style={styles.actions}>
-          <Button
-            label="Adapter mon plan"
-            onPress={handleSubmit}
-            loading={generation.isGenerating}
-            disabled={!canSubmit}
-          />
-          <Button
-            label="Annuler"
-            variant="ghost"
-            disabled={generation.isGenerating}
-            onPress={() => router.back()}
-          />
+      <Field label="Gravité">
+        {/* Rows rather than chips: each option carries a sentence explaining
+            what it means, and a chip has room for a word. */}
+        <View style={styles.severityCol}>
+          {SEVERITIES.map((s) => (
+            <Pressable
+              key={s.value}
+              onPress={() => setSeverity(s.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: severity === s.value }}
+              accessibilityLabel={`${s.label} — ${s.hint}`}
+              style={pressable([
+                styles.severityRow,
+                severity === s.value && styles.severityRowSelected,
+              ])}>
+              <ThemedText type={severity === s.value ? 'link' : 'default'}>{s.label}</ThemedText>
+              <ThemedText type="small" themeColor="inkMuted">
+                {s.hint}
+              </ThemedText>
+            </Pressable>
+          ))}
         </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
-  );
-}
+      </Field>
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  const styles = useStyles();
-  return (
-    <View style={styles.field}>
-      <ThemedText type="small" themeColor="inkMuted">
-        {label}
-      </ThemedText>
-      {children}
-    </View>
+      <Field label="Jours sans courir">
+        <ChipRow>
+          {DAYS_OFF.map((n) => (
+            <Chip
+              key={n}
+              label={n === 0 ? 'Aucun' : `${n} j`}
+              selected={n === daysOff}
+              onPress={() => setDaysOff(n)}
+            />
+          ))}
+        </ChipRow>
+      </Field>
+
+      <GenerationProgress phase={generation.phase} elapsedSeconds={generation.elapsedSeconds} />
+      {errorMessage ? (
+        <ThemedText type="small" themeColor="alerte">
+          {errorMessage}
+        </ThemedText>
+      ) : null}
+    </FormScreen>
   );
 }
 
 const useStyles = makeStyles((t) => ({
-  flex: { flex: 1 },
-  safeArea: {
-    flex: 1,
-    backgroundColor: t.surface,
-    paddingHorizontal: Spacing.four,
-    justifyContent: 'space-between',
-  },
-  content: {
-    gap: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-    paddingTop: Spacing.four,
-    paddingBottom: Spacing.four,
-  },
-  header: { gap: Spacing.two },
-  field: { gap: Spacing.two },
   severityCol: { gap: Spacing.two },
   severityRow: {
-    padding: Spacing.three,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
     borderRadius: Rounded.sm,
     borderWidth: 1,
     borderColor: t.rule,
@@ -173,13 +136,6 @@ const useStyles = makeStyles((t) => ({
   severityRowSelected: {
     backgroundColor: t.inset,
     borderColor: t.ruleStrong,
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  actions: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
+    borderWidth: 1.5,
   },
 }));

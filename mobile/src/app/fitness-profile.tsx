@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { Field, FormScreen, FormSection } from '@/components/form';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { MaxFormWidth, Rounded, Spacing } from '@/constants/theme';
+import { Rounded, Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
 import { ApiError } from '@/lib/api/client';
 import { getFitness, updateFitnessProfile } from '@/lib/api/fitness';
@@ -29,7 +29,6 @@ function parseHr(value: string): number | null {
 }
 
 export default function FitnessProfileScreen() {
-  const styles = useStyles();
   const queryClient = useQueryClient();
   const fitnessQuery = useQuery({ queryKey: qk.fitness(), queryFn: getFitness });
 
@@ -91,95 +90,84 @@ export default function FitnessProfileScreen() {
         : undefined;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="label" themeColor="inkMuted">
-              Fréquence cardiaque
-            </ThemedText>
-            <ThemedText type="title">Vos repères cardiaques</ThemedText>
-            <ThemedText type="default" themeColor="inkMuted">
-              Garmin ne fournit pas ta fréquence de repos (montre non portée en continu ?).
-              Renseigne tes deux repères : ils servent à calculer tes zones et ta charge, et une
-              synchronisation Garmin ne les écrasera pas.
-            </ThemedText>
-          </View>
+    <FormScreen
+      kicker="Fréquence cardiaque"
+      title="Tes repères cardiaques"
+      blurb="Garmin ne fournit pas ta fréquence de repos (montre non portée en continu ?). Renseigne tes deux repères : ils servent à calculer tes zones et ta charge, et une synchronisation Garmin ne les écrasera pas."
+      actions={[
+        <Button key="submit" label="Enregistrer" onPress={handleSave} loading={saveMutation.isPending} />,
+        <Button
+          key="cancel"
+          label="Annuler"
+          variant="ghost"
+          disabled={saveMutation.isPending}
+          onPress={() => router.back()}
+        />
+      ]}>
+      <FormSection title="Repères">
+        <TextField
+          label="FC maximale (bpm)"
+          value={hrMax}
+          onChangeText={(text) => {
+            setHrMax(text.replace(/[^0-9]/g, ''));
+            setHrMaxError(undefined);
+            saveMutation.reset();
+          }}
+          error={hrMaxError}
+          keyboardType="number-pad"
+          placeholder="ex. 190"
+          maxLength={3}
+        />
+        <TextField
+          label="FC de repos (bpm)"
+          value={hrRest}
+          onChangeText={(text) => {
+            setHrRest(text.replace(/[^0-9]/g, ''));
+            setHrRestError(undefined);
+            saveMutation.reset();
+          }}
+          error={hrRestError}
+          keyboardType="number-pad"
+          placeholder="ex. 50"
+          maxLength={3}
+        />
+        <ThemedText type="small" themeColor="inkMuted">
+          Astuce : la FC de repos se mesure le matin au réveil, allongé. La FC max est la plus
+          haute vue en fin d’effort intense.
+        </ThemedText>
+        {serverError ? (
+          <ThemedText type="small" themeColor="alerte">
+            {serverError}
+          </ThemedText>
+        ) : null}
+      </FormSection>
 
-          <View style={styles.form}>
-            <TextField
-              label="FC maximale (bpm)"
-              value={hrMax}
-              onChangeText={(text) => {
-                setHrMax(text.replace(/[^0-9]/g, ''));
-                setHrMaxError(undefined);
-                saveMutation.reset();
-              }}
-              error={hrMaxError}
-              keyboardType="number-pad"
-              placeholder="ex. 190"
-              maxLength={3}
-            />
-            <TextField
-              label="FC de repos (bpm)"
-              value={hrRest}
-              onChangeText={(text) => {
-                setHrRest(text.replace(/[^0-9]/g, ''));
-                setHrRestError(undefined);
-                saveMutation.reset();
-              }}
-              error={hrRestError}
-              keyboardType="number-pad"
-              placeholder="ex. 50"
-              maxLength={3}
-            />
-            <ThemedText type="small" themeColor="inkMuted">
-              Astuce : la FC de repos se mesure le matin au réveil, allongé. La FC max est la plus
-              haute vue en fin d’effort intense.
-            </ThemedText>
-            {serverError ? (
-              <ThemedText type="small" themeColor="alerte">
-                {serverError}
-              </ThemedText>
-            ) : null}
-          </View>
-
-          <View style={styles.form}>
-            <ThemedText type="label" themeColor="inkMuted">
-              Repère principal
-            </ThemedText>
-            <Segmented
-              value={primaryMetric}
-              onChange={setPrimaryMetric}
-              options={[
-                { value: 'pace', label: 'Allure' },
-                { value: 'hr', label: 'Fréquence cardiaque' },
-              ]}
-            />
-            <ThemedText type="small" themeColor="inkMuted">
-              {primaryMetric === 'pace'
-                ? 'Chaque séance affiche l’allure en premier ; la zone FC reste indiquée, en plafond sur les séances faciles.'
-                : 'Chaque séance affiche la zone FC en premier ; l’allure reste indiquée en secondaire.'}
-            </ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.actions}>
-          <Button label="Enregistrer" onPress={handleSave} loading={saveMutation.isPending} />
-          <Button
-            label="Annuler"
-            variant="ghost"
-            disabled={saveMutation.isPending}
-            onPress={() => router.back()}
+      <FormSection title="Lecture des séances">
+        <Field
+          label="Repère principal"
+          hint={
+            primaryMetric === 'pace'
+              ? 'Chaque séance affiche l’allure en premier ; la zone FC reste indiquée, en plafond sur les séances faciles.'
+              : 'Chaque séance affiche la zone FC en premier ; l’allure reste indiquée en secondaire.'
+          }>
+          <Segmented
+            value={primaryMetric}
+            onChange={setPrimaryMetric}
+            options={[
+              { value: 'pace', label: 'Allure' },
+              { value: 'hr', label: 'Fréquence cardiaque' },
+            ]}
           />
-        </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+        </Field>
+      </FormSection>
+    </FormScreen>
   );
 }
 
+/** Two mutually exclusive readings, side by side — a segmented control rather
+ * than chips, because the choice is between exactly these two and always has a
+ * value. Selected is an outline and a heavier label, never a filled accent
+ * (DESIGN.md). */
 function Segmented({
   value,
   onChange,
@@ -190,6 +178,7 @@ function Segmented({
   options: { value: PrimaryMetric; label: string }[];
 }) {
   const styles = useStyles();
+
   return (
     <View style={styles.segmented}>
       {options.map((opt) => {
@@ -212,9 +201,6 @@ function Segmented({
 }
 
 const useStyles = makeStyles((t) => ({
-  flex: {
-    flex: 1,
-  },
   segmented: {
     flexDirection: 'row',
     gap: Spacing.two,
@@ -222,44 +208,20 @@ const useStyles = makeStyles((t) => ({
   segment: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
     paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.two,
     borderRadius: Rounded.sm,
     borderWidth: 1,
-    borderColor: t.ruleStrong,
-    backgroundColor: t.raised,
+    borderColor: t.rule,
+    backgroundColor: 'transparent',
   },
   segmentSelected: {
-    // Outline-selected, matching the shared Chip: the screen's one filled button
-    // stays with the primary action (DESIGN.md, The One Blaze Rule).
+    // Outline-selected, matching the shared Chip: the screen's one filled
+    // control stays with the primary action (DESIGN.md).
     borderWidth: 1.5,
-    borderColor: t.ink,
+    borderColor: t.ruleStrong,
     backgroundColor: t.inset,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: t.surface,
-    paddingHorizontal: Spacing.four,
-    justifyContent: 'space-between',
-  },
-  content: {
-    flex: 1,
-    gap: Spacing.five,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-    paddingTop: Spacing.four,
-  },
-  header: {
-    gap: Spacing.two,
-  },
-  form: {
-    gap: Spacing.three,
-  },
-  actions: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
   },
 }));

@@ -1,15 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
+import { ChipRow, Field, FormScreen, FormSection, ToggleField } from '@/components/form';
 import { GenerationProgress } from '@/components/generation-progress';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { MaxFormWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
 import { createPlan, FixedSport, PlanRequest, PlanResponse, Weekday } from '@/lib/api/plans';
 import type { SportType } from '@/lib/api/types';
@@ -234,235 +234,199 @@ export default function PlanSetupScreen() {
   const canSubmit = days.size >= 2 && !generation.isGenerating;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="label" themeColor="inkMuted">
-              Mon plan
-            </ThemedText>
-            <ThemedText type="title">Configurer mon plan</ThemedText>
-            <ThemedText type="default" themeColor="inkMuted">
-              Le plan s’adapte à ta forme et à ta fatigue réelles. Tu pourras le régénérer à
-              tout moment en changeant ces réglages.
-            </ThemedText>
-          </View>
+    <FormScreen
+      kicker="Mon plan"
+      title="Configurer mon plan"
+      blurb="Le plan s’adapte à ta forme et à ta fatigue réelles. Tu pourras le régénérer à tout moment en changeant ces réglages."
+      actions={[
+        <Button
+          key="submit"
+          label="Générer mon plan"
+          onPress={handleGenerate}
+          loading={generation.isGenerating}
+          disabled={!canSubmit}
+        />,
+        <Button
+          key="cancel"
+          label="Annuler"
+          variant="ghost"
+          disabled={generation.isGenerating}
+          onPress={() => router.back()}
+        />
+      ]}>
+      {/* Three questions, not ten fields: what you are training for, how often
+          you can run, and what else is already in the week. */}
+      <FormSection title="L’objectif">
+        <Field label="Distance">
+          <ChipRow>
+            {OBJECTIVES.map((o, i) => (
+              <Chip
+                key={o.label}
+                label={o.label}
+                selected={i === objectiveIndex}
+                onPress={() => setObjectiveIndex(i)}
+              />
+            ))}
+          </ChipRow>
+        </Field>
 
-          <Field label="Objectif">
-            <View style={styles.chipRow}>
-              {OBJECTIVES.map((o, i) => (
-                <Chip key={o.label} label={o.label} selected={i === objectiveIndex} onPress={() => setObjectiveIndex(i)} />
-              ))}
+        {objective.goal !== 'fitness' ? (
+          <TextField
+            label="Date de course (optionnel)"
+            value={raceDate}
+            onChangeText={(t) => {
+              setRaceDate(t);
+              setDateError(undefined);
+              generation.reset();
+            }}
+            error={dateError}
+            placeholder="AAAA-MM-JJ"
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+          />
+        ) : null}
+
+        <Field
+          label="Début du plan"
+          hint="La semaine 1 commence toujours un lundi. Générer en fin de semaine et démarrer tout de suite, c’est hériter d’une semaine déjà passée aux trois quarts.">
+          <ChipRow>
+            {startChoices.map((monday, i) => (
+              <Chip
+                key={toIsoDate(monday)}
+                label={startChoiceLabel(i, monday)}
+                selected={i === startIndex}
+                onPress={() => setStartIndex(i)}
+                accessibilityLabel={`Commencer le lundi ${SHORT_DATE.format(monday)}`}
+              />
+            ))}
+          </ChipRow>
+          {/* The chips say "next Monday"; this says which days that actually
+              covers, so the choice is never made on a guess. */}
+          <ThemedText type="small" themeColor="inkMuted">
+            Semaine 1 : {weekRangeLabel(toIsoDate(startChoices[startIndex]), 0)}
+          </ThemedText>
+        </Field>
+      </FormSection>
+
+      <FormSection title="Le rythme">
+        <Field label="Jours disponibles">
+          <ChipRow>
+            {DAYS.map((d) => (
+              <Chip
+                key={d.value}
+                label={d.label}
+                selected={days.has(d.value)}
+                onPress={() => toggleDay(d.value)}
+              />
+            ))}
+          </ChipRow>
+        </Field>
+
+        <Field
+          label="Séances de course par semaine"
+          hint={`Je m’engage sur ${minRuns} séance${minRuns > 1 ? 's' : ''} par semaine — elles seront marquées « clés » — et je peux en faire jusqu’à ${maxRuns} si la semaine le permet.`}>
+          <View style={styles.dualRow}>
+            <View style={styles.dualCol}>
+              <ThemedText type="small" themeColor="inkMuted">
+                Je m’engage sur
+              </ThemedText>
+              <ChipRow>
+                {RUN_COUNTS.map((n) => (
+                  <Chip
+                    key={n}
+                    label={String(n)}
+                    selected={n === minRuns}
+                    onPress={() => pickMin(n)}
+                    accessibilityLabel={`Au moins ${n} séances par semaine`}
+                  />
+                ))}
+              </ChipRow>
             </View>
-          </Field>
+            <View style={styles.dualCol}>
+              <ThemedText type="small" themeColor="inkMuted">
+                Jusqu’à
+              </ThemedText>
+              <ChipRow>
+                {RUN_COUNTS.map((n) => (
+                  <Chip
+                    key={n}
+                    label={String(n)}
+                    selected={n === maxRuns}
+                    onPress={() => pickMax(n)}
+                    accessibilityLabel={`Au plus ${n} séances par semaine`}
+                  />
+                ))}
+              </ChipRow>
+            </View>
+          </View>
+        </Field>
+      </FormSection>
 
-          {objective.goal !== 'fitness' ? (
-            <TextField
-              label="Date de course (optionnel)"
-              value={raceDate}
-              onChangeText={(t) => {
-                setRaceDate(t);
-                setDateError(undefined);
-                generation.reset();
-              }}
-              error={dateError}
-              placeholder="AAAA-MM-JJ"
-              keyboardType="numbers-and-punctuation"
-              autoCapitalize="none"
-            />
-          ) : null}
-
-          <Field label="Début du plan">
-            <ThemedText type="small" themeColor="inkMuted">
-              La semaine 1 commence toujours un lundi. Générer en fin de semaine et démarrer tout
-              de suite, c’est hériter d’une semaine déjà passée aux trois quarts.
-            </ThemedText>
-            <View style={styles.chipRow}>
-              {startChoices.map((monday, i) => (
+      <FormSection title="Autour de la course">
+        <ToggleField
+          label="Renforcement (Freeletics)"
+          hint="Le plan réserve le créneau et l’intention (~20 min) ; tu fais la séance dans Freeletics."
+          value={strengthOn}
+          onValueChange={setStrengthOn}
+        />
+        {strengthOn ? (
+          <Field label="Séances de renfo par semaine">
+            <ChipRow>
+              {STRENGTH_COUNTS.map((n) => (
                 <Chip
-                  key={toIsoDate(monday)}
-                  label={startChoiceLabel(i, monday)}
-                  selected={i === startIndex}
-                  onPress={() => setStartIndex(i)}
-                  accessibilityLabel={`Commencer le lundi ${SHORT_DATE.format(monday)}`}
+                  key={n}
+                  label={`${n}/sem`}
+                  selected={n === strengthPerWeek}
+                  onPress={() => setStrengthPerWeek(n)}
                 />
               ))}
-            </View>
-            {/* The chips say "next Monday"; this says which days that actually
-                covers, so the choice is never made on a guess. */}
-            <ThemedText type="small" themeColor="inkMuted">
-              Semaine 1 : {weekRangeLabel(toIsoDate(startChoices[startIndex]), 0)}
-            </ThemedText>
+            </ChipRow>
           </Field>
+        ) : null}
 
-          <Field label="Jours disponibles">
-            <View style={styles.chipRow}>
-              {DAYS.map((d) => (
-                <Chip key={d.value} label={d.label} selected={days.has(d.value)} onPress={() => toggleDay(d.value)} />
-              ))}
-            </View>
-          </Field>
+        <ToggleField
+          label="Cross-training prescrit"
+          hint="Ajoute des séances de cross-training au plan. Tes sports pratiqués comptent déjà dans ta charge, quoi qu’il arrive."
+          value={crossTraining}
+          onValueChange={setCrossTraining}
+        />
 
-          <Field label="Séances de course par semaine">
-            <ThemedText type="small" themeColor="inkMuted">
-              Je m’engage sur {minRuns} séance{minRuns > 1 ? 's' : ''} par semaine — elles seront
-              marquées « clés » — et je peux en faire jusqu’à {maxRuns} si la semaine le permet.
-            </ThemedText>
-            <View style={styles.dualRow}>
-              <View style={styles.dualCol}>
-                <ThemedText type="label" themeColor="inkMuted">
-                  Je m’engage sur
-                </ThemedText>
-                <View style={styles.chipRow}>
-                  {RUN_COUNTS.map((n) => (
-                    <Chip key={n} label={String(n)} selected={n === minRuns} onPress={() => pickMin(n)} />
-                  ))}
-                </View>
-              </View>
-              <View style={styles.dualCol}>
-                <ThemedText type="label" themeColor="inkMuted">
-                  Jusqu’à
-                </ThemedText>
-                <View style={styles.chipRow}>
-                  {RUN_COUNTS.map((n) => (
-                    <Chip key={n} label={String(n)} selected={n === maxRuns} onPress={() => pickMax(n)} />
-                  ))}
-                </View>
-              </View>
-            </View>
-          </Field>
-
-          <Field label="Renforcement (Freeletics)">
-            <View style={styles.chipRow}>
-              <Chip
-                label={strengthOn ? 'Activé' : 'Désactivé'}
-                selected={strengthOn}
-                onPress={() => setStrengthOn((v) => !v)}
-              />
-            </View>
-            {strengthOn ? (
-              <>
-                <ThemedText type="small" themeColor="inkMuted">
-                  Le plan réserve le créneau et l’intention (~20 min) ; tu fais la séance dans
-                  Freeletics.
-                </ThemedText>
-                <View style={styles.chipRow}>
-                  {STRENGTH_COUNTS.map((n) => (
-                    <Chip
-                      key={n}
-                      label={`${n}/sem`}
-                      selected={n === strengthPerWeek}
-                      onPress={() => setStrengthPerWeek(n)}
+        <Field
+          label="Sports fixes (optionnel)"
+          hint="Un sport récurrent : le plan est construit autour (pas de séance intense le lendemain). Appuie sur un jour pour le rendre fixe, encore une fois pour « ≈ variable » — un des jours variables suffit, ex. le match du week-end — encore une fois pour l’enlever.">
+          {FIXED_SPORT_OPTIONS.map((option) => {
+            const days = fixedSports.get(option.sport);
+            return (
+              <View key={option.sport} style={styles.fixedRow}>
+                <ThemedText type="default">{option.label}</ThemedText>
+                <ChipRow>
+                  {DAYS.map((d) => (
+                    <DayChip
+                      key={d.value}
+                      label={d.label}
+                      state={days?.has(d.value) ? (days.get(d.value) ? 'flexible' : 'fixed') : 'off'}
+                      onPress={() => cycleFixedDay(option.sport, d.value)}
                     />
                   ))}
-                </View>
-              </>
-            ) : null}
-          </Field>
+                </ChipRow>
+              </View>
+            );
+          })}
+        </Field>
+      </FormSection>
 
-          <Field label="Cross-training prescrit">
-            <ThemedText type="small" themeColor="inkMuted">
-              Ajoute des séances de cross-training au plan. (Tes sports pratiqués comptent déjà dans
-              ta charge, quoi qu’il arrive.)
-            </ThemedText>
-            <View style={styles.chipRow}>
-              <Chip
-                label={crossTraining ? 'Activé' : 'Désactivé'}
-                selected={crossTraining}
-                onPress={() => setCrossTraining((v) => !v)}
-              />
-            </View>
-          </Field>
-
-          <Field label="Sports fixes (optionnel)">
-            <ThemedText type="small" themeColor="inkMuted">
-              Un sport récurrent : le plan est construit autour (pas de séance intense le lendemain).
-              Appuie sur un jour pour le rendre <ThemedText themeColor="ink">fixe</ThemedText>, encore
-              une fois pour <ThemedText themeColor="recup">variable</ThemedText> (un des jours variables
-              suffit, ex. le match du week-end), encore une fois pour l’enlever.
-            </ThemedText>
-            {FIXED_SPORT_OPTIONS.map((option) => {
-              const days = fixedSports.get(option.sport);
-              return (
-                <View key={option.sport} style={styles.fixedRow}>
-                  <ThemedText type="default" style={styles.fixedLabel}>
-                    {option.label}
-                  </ThemedText>
-                  <View style={styles.chipRow}>
-                    {DAYS.map((d) => (
-                      <DayChip
-                        key={d.value}
-                        label={d.label}
-                        state={days?.has(d.value) ? (days.get(d.value) ? 'flexible' : 'fixed') : 'off'}
-                        onPress={() => cycleFixedDay(option.sport, d.value)}
-                      />
-                    ))}
-                  </View>
-                </View>
-              );
-            })}
-          </Field>
-
-          <GenerationProgress
-            phase={generation.phase}
-            elapsedSeconds={generation.elapsedSeconds}
-          />
-          {errorMessage ? (
-            <ThemedText type="small" themeColor="alerte">
-              {errorMessage}
-            </ThemedText>
-          ) : null}
-        </ScrollView>
-
-        <View style={styles.actions}>
-          <Button label="Générer mon plan" onPress={handleGenerate} loading={generation.isGenerating} disabled={!canSubmit} />
-          <Button label="Annuler" variant="ghost" disabled={generation.isGenerating} onPress={() => router.back()} />
-        </View>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+      <GenerationProgress phase={generation.phase} elapsedSeconds={generation.elapsedSeconds} />
+      {errorMessage ? (
+        <ThemedText type="small" themeColor="alerte">
+          {errorMessage}
+        </ThemedText>
+      ) : null}
+    </FormScreen>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  const styles = useStyles();
-  return (
-    <View style={styles.field}>
-      <ThemedText type="small" themeColor="inkMuted">
-        {label}
-      </ThemedText>
-      {children}
-    </View>
-  );
-}
-
-const useStyles = makeStyles((t) => ({
-  flex: { flex: 1 },
-  safeArea: {
-    flex: 1,
-    backgroundColor: t.surface,
-    paddingHorizontal: Spacing.four,
-    justifyContent: 'space-between',
-  },
-  content: {
-    gap: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-    paddingTop: Spacing.four,
-    paddingBottom: Spacing.four,
-  },
-  header: { gap: Spacing.two },
-  field: { gap: Spacing.two },
+const useStyles = makeStyles(() => ({
   dualRow: { flexDirection: 'row', gap: Spacing.four, flexWrap: 'wrap' },
   dualCol: { gap: Spacing.two },
-  fixedRow: { gap: Spacing.one, paddingTop: Spacing.two },
-  fixedLabel: { marginBottom: Spacing.half },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  actions: {
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
-    maxWidth: MaxFormWidth,
-    alignSelf: 'center',
-    width: '100%',
-  },
+  fixedRow: { gap: Spacing.two, paddingTop: Spacing.two },
 }));
