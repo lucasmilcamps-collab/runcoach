@@ -46,7 +46,9 @@ async def test_connect_garmin_invalid_credentials(client):
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-    assert response.status_code == 401
+    # 409, not 401: a 401 makes the mobile client refresh its token and replay
+    # the call, retrying a rejected password against Garmin twice per tap.
+    assert response.status_code == 409
     assert response.json()["detail"]["code"] == "GARMIN_INVALID_CREDENTIALS"
 
 
@@ -134,7 +136,7 @@ async def test_connect_garmin_mfa_wrong_code(client):
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-    assert response.status_code == 401
+    assert response.status_code == 409
     assert response.json()["detail"]["code"] == "GARMIN_MFA_INVALID"
 
 
@@ -147,5 +149,5 @@ async def test_connect_garmin_mfa_unknown_token(client):
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 409
     assert response.json()["detail"]["code"] == "GARMIN_MFA_INVALID"

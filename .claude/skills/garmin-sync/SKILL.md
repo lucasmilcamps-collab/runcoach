@@ -88,8 +88,53 @@ n'expose ni `raw` ni `user_id`. Forme du document stocké :
 
 Mapping des sports : `running`/`treadmill_running` → RUN ; `tennis`/`padel` → PADEL ; `basketball` → BASKETBALL ; `cycling` → BIKE ; `strength_training` → STRENGTH ; tout le reste → OTHER (mais toujours ingéré — voir la règle métier : tout compte dans la charge).
 
+## Envoi d'une séance vers la montre (workouts structurés)
+
+`POST /api/v1/garmin/workout` → `garmin_workout_service`. Il n'existe **aucun
+push direct vers le device** : on crée un workout dans la bibliothèque Garmin
+Connect (`client.upload_running_workout(RunningWorkout)`, module
+`garminconnect.workout`), que la montre récupère à sa prochaine synchro.
+
+### Taxonomie des erreurs — le piège central
+
+`python-garminconnect` 0.3.x fait passer **toute réponse non-2xx par une seule
+exception**, `GarminConnectConnectionError`, dont le message a la forme
+`"API Error <status> - <message Garmin>"` (`garminconnect/client.py`,
+`_run_request`). Le type d'exception ne dit donc rien : session expirée (401),
+séance refusée (400) et rate limit (429) arrivent identiques. Relire le statut
+dans le message est le seul moyen de distinguer les trois — et c'est
+indispensable, parce que la suite diffère pour l'athlète :
+
+| Statut amont | Exception métier | Réponse API | Ce que l'athlète doit faire |
+|---|---|---|---|
+| 401 / 403 | `GarminAuthExpiredError` | 409 `GARMIN_RELOGIN` | Reconnecter le compte (réessayer ne marchera jamais) |
+| 429 | `GarminRateLimitedError` | 429 `GARMIN_RATE_LIMITED` | Attendre |
+| autre 4xx | `GarminWorkoutRejectedError` | 502 `GARMIN_WORKOUT_REJECTED` | Rien — c'est notre payload, pas son réseau |
+| 5xx, absence de statut | `GarminUpstreamError` | 502 `GARMIN_UPSTREAM_ERROR` | Réessayer plus tard |
+| imprévu | `GarminWorkoutFailedError` | 502 `GARMIN_WORKOUT_FAILED` | Rien — tracé côté serveur |
+
+Deux corollaires :
+
+- Les **timeouts et erreurs de transport ne passent pas** par le wrapper de la
+  librairie (l'appel se fait avec une `requests.Session` nue) : attraper
+  `requests.RequestException` en plus, sinon ça sort en 500 nu.
+- `client.loads()` emballe un blob de tokens illisible dans un
+  `GarminConnectConnectionError`, **même quand la vraie cause est l'absence de
+  tokens**. Un client qu'on n'arrive pas à reconstruire = session morte →
+  `needs_relogin`, pas « Garmin ne répond pas ».
+
+Toute erreur d'auth pose `needs_relogin: True` sur `garmin_credentials`, et un
+envoi sur une connexion déjà marquée morte échoue immédiatement sans dépenser
+une requête Garmin.
+
 ## Pièges connus
 
+- **Ne jamais répondre 401 sur une erreur Garmin.** Le client mobile lit
+  n'importe quel 401 comme « mon propre token JWT est mort » : il rafraîchit et
+  **rejoue la requête**. Sur `/garmin/workout` ça uploade la séance deux fois ;
+  sur `/garmin/connect` ça retente le mot de passe Garmin refusé une seconde
+  fois, soit le meilleur moyen de déclencher un CAPTCHA ou un blocage de compte.
+  Les erreurs côté Garmin sont des conflits métier → **409**.
 - Les champs Garmin sont incohérents entre types d'activités (parfois `averageHR`, parfois absent) → tout mapper en `Optional`, jamais de KeyError.
 - Les dates Garmin sont en heure locale de la montre ET en GMT selon les champs — utiliser les champs `*GMT` systématiquement.
 - Certaines montres ne remontent pas la HRV → le moteur d'adaptation doit fonctionner en mode dégradé sans HRV.

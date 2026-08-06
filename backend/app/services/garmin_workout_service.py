@@ -6,9 +6,11 @@ We keep it best-effort and never store the workout ourselves.
 """
 
 import asyncio
+import logging
 import re
 
 import garminconnect
+import requests
 from garminconnect import workout as gw
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -16,6 +18,8 @@ from app.core.crypto import decrypt_token_blob
 from app.models.garmin import WorkoutPushRequest
 from app.models.plan import Block
 from app.services.garmin_sync_service import _restore_client_sync
+
+logger = logging.getLogger(__name__)
 
 
 class GarminNotConnectedError(Exception):
@@ -26,8 +30,22 @@ class GarminAuthExpiredError(Exception):
     pass
 
 
-class GarminUpstreamError(Exception):
+class GarminRateLimitedError(Exception):
     pass
+
+
+class GarminWorkoutRejectedError(Exception):
+    """Garmin understood the request and refused the workout (4xx). Retrying
+    the same session changes nothing — the payload is what's wrong."""
+
+
+class GarminUpstreamError(Exception):
+    """Garmin is unreachable or erroring (5xx, timeout). Retrying can work."""
+
+
+class GarminWorkoutFailedError(Exception):
+    """Anything we didn't foresee. Logged with its traceback rather than
+    escaping as a bare 500 the user can do nothing with."""
 
 
 _RUN_SPORT = {"sportTypeId": gw.SportType.RUNNING, "sportTypeKey": "running", "displayOrder": 1}
@@ -305,29 +323,88 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
     return workout, name
 
 
-def _push_sync(token_blob: str, req: WorkoutPushRequest) -> str:
-    client = _restore_client_sync(token_blob)
+def _upload_sync(client: "garminconnect.Garmin", req: WorkoutPushRequest) -> str:
     workout, name = build_workout(req)
     client.upload_running_workout(workout)
     return name
+
+
+# python-garminconnect 0.3.x funnels *every* non-2xx response into a single
+# GarminConnectConnectionError, formatted "API Error <status> - <garmin message>"
+# (garminconnect/client.py, _run_request). Reading the status back out of the
+# message is the only way to tell an expired session from a refused payload —
+# without it both surfaced as "Garmin ne répond pas, réessayez dans quelques
+# minutes", advice that could never work for either.
+_API_ERROR_STATUS_RE = re.compile(r"API Error (\d{3})")
+
+
+def _upstream_status(exc: Exception) -> int | None:
+    m = _API_ERROR_STATUS_RE.search(str(exc))
+    return int(m.group(1)) if m else None
+
+
+async def _mark_needs_relogin(db: AsyncIOMotorDatabase, user_id: str) -> None:
+    await db.garmin_credentials.update_one({"user_id": user_id}, {"$set": {"needs_relogin": True}})
 
 
 async def push_session_to_watch(
     db: AsyncIOMotorDatabase, user_id: str, req: WorkoutPushRequest
 ) -> str:
     """Upload the session as a Garmin workout. Returns the workout name.
-    Raises GarminNotConnectedError / GarminAuthExpiredError / GarminUpstreamError."""
+
+    Every failure is classified before it leaves this function, because the
+    only thing the athlete can act on is *which* failure it was: reconnect the
+    account, wait, or report a session Garmin won't accept. Nothing here is
+    logged with the session's contents — health data stays out of the logs
+    (api-conventions).
+    """
     credentials = await db.garmin_credentials.find_one({"user_id": user_id})
     if not credentials or not credentials.get("encrypted_tokens"):
         raise GarminNotConnectedError
+    if credentials.get("needs_relogin"):
+        # A previous sync already found the session dead. Going to Garmin again
+        # only spends a request to be told the same thing.
+        raise GarminAuthExpiredError
 
     token_blob = decrypt_token_blob(credentials["encrypted_tokens"])
     try:
-        return await asyncio.to_thread(_push_sync, token_blob, req)
-    except garminconnect.GarminConnectAuthenticationError as exc:
+        client = await asyncio.to_thread(_restore_client_sync, token_blob)
+    except Exception as exc:  # noqa: BLE001 — tokens we can't rebuild a client from
+        # `loads()` raises GarminConnectConnectionError even when the real
+        # cause is missing tokens, so the exception type says nothing here.
+        logger.warning("Garmin token restore failed before workout upload: %s", exc)
+        await _mark_needs_relogin(db, user_id)
         raise GarminAuthExpiredError from exc
-    except (
-        garminconnect.GarminConnectConnectionError,
-        garminconnect.GarminConnectTooManyRequestsError,
-    ) as exc:
+
+    try:
+        return await asyncio.to_thread(_upload_sync, client, req)
+    except garminconnect.GarminConnectAuthenticationError as exc:
+        await _mark_needs_relogin(db, user_id)
+        raise GarminAuthExpiredError from exc
+    except garminconnect.GarminConnectTooManyRequestsError as exc:
+        raise GarminRateLimitedError from exc
+    except garminconnect.GarminConnectConnectionError as exc:
+        upstream_status = _upstream_status(exc)
+        logger.warning(
+            "Garmin workout upload failed (status=%s, session_type=%s, blocks=%d): %s",
+            upstream_status,
+            req.session_type,
+            len(req.structure or []),
+            exc,
+        )
+        if upstream_status in (401, 403):
+            await _mark_needs_relogin(db, user_id)
+            raise GarminAuthExpiredError from exc
+        if upstream_status == 429:
+            raise GarminRateLimitedError from exc
+        if upstream_status is not None and 400 <= upstream_status < 500:
+            raise GarminWorkoutRejectedError from exc
         raise GarminUpstreamError from exc
+    except requests.RequestException as exc:
+        # Timeouts and transport errors never reach the library's own wrapper:
+        # the request is made with a plain requests.Session.
+        logger.warning("Garmin workout upload could not reach Garmin: %s", exc)
+        raise GarminUpstreamError from exc
+    except Exception as exc:
+        logger.exception("Unexpected failure uploading a workout to Garmin")
+        raise GarminWorkoutFailedError from exc

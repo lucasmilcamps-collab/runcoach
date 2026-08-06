@@ -28,8 +28,12 @@ async def connect(
             db, str(user["_id"]), body.garmin_email, body.garmin_password
         )
     except garmin_service.GarminInvalidCredentialsError as exc:
+        # 409 rather than 401 for the same reason as GARMIN_RELOGIN below: on a
+        # 401 the mobile client refreshes its own token and replays the call,
+        # so a mistyped Garmin password would be tried against Garmin twice per
+        # tap — the surest way to a CAPTCHA or a locked account (garmin-sync).
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "GARMIN_INVALID_CREDENTIALS",
                 "message": "Identifiants Garmin refusés.",
@@ -55,8 +59,10 @@ async def connect_mfa(
             db, str(user["_id"]), body.mfa_token, body.mfa_code
         )
     except garmin_service.GarminMfaInvalidError as exc:
+        # 409, not 401 — a replayed MFA code is a second failed attempt at
+        # Garmin's rate limit, and single-use codes don't survive the replay.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "GARMIN_MFA_INVALID",
                 "message": "Code de vérification incorrect ou expiré.",
@@ -109,11 +115,34 @@ async def push_workout(
             },
         ) from exc
     except garmin_workout_service.GarminAuthExpiredError as exc:
+        # 409, not 401: the mobile client reads any 401 as "my own token died",
+        # refreshes it and replays the request — which would upload the workout
+        # to Garmin twice, and sign the athlete out of Relay when the refresh
+        # token is dead too. The Garmin session expiring is a business conflict.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "GARMIN_RELOGIN",
                 "message": "Session Garmin expirée. Reconnectez votre compte dans Réglages.",
+            },
+        ) from exc
+    except garmin_workout_service.GarminRateLimitedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "GARMIN_RATE_LIMITED",
+                "message": "Garmin limite les requêtes. Réessayez dans quelques minutes.",
+            },
+        ) from exc
+    except garmin_workout_service.GarminWorkoutRejectedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "GARMIN_WORKOUT_REJECTED",
+                "message": (
+                    "Garmin a refusé cette séance. Réessayer n'y changera rien — "
+                    "envoyez-en une autre en attendant."
+                ),
             },
         ) from exc
     except garmin_workout_service.GarminUpstreamError as exc:
@@ -122,6 +151,14 @@ async def push_workout(
             detail={
                 "code": "GARMIN_UPSTREAM_ERROR",
                 "message": "Garmin Connect ne répond pas. Réessayez dans quelques minutes.",
+            },
+        ) from exc
+    except garmin_workout_service.GarminWorkoutFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "GARMIN_WORKOUT_FAILED",
+                "message": "Envoi impossible. L'erreur a été enregistrée côté serveur.",
             },
         ) from exc
 
