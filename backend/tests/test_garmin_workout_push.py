@@ -146,6 +146,48 @@ async def test_upload_failures_are_classified(client, db, upstream, expected_sta
     assert response.json()["detail"]["code"] == expected_code
 
 
+async def test_unexpected_failure_logs_which_half_broke(client, db, caplog):
+    """A stack trace read at a glance doesn't say whether our mapping or the
+    call to Garmin raised — and only the first is reproducible from the plan."""
+    access_token = await _register_and_get_access_token(client)
+    await _connect_garmin(db, access_token)
+
+    garmin = MagicMock()
+    with (
+        caplog.at_level("ERROR"),
+        patch("app.services.garmin_workout_service._restore_client_sync", return_value=garmin),
+        patch(
+            "app.services.garmin_workout_service.build_workout",
+            side_effect=ValueError("bad block"),
+        ),
+    ):
+        response = await _push(client, access_token)
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "GARMIN_WORKOUT_FAILED"
+    assert "mapping the session" in caplog.text
+    assert "ValueError: bad block" in caplog.text
+    # The session's targets are never spelled out in a log line (api-conventions).
+    assert "session_type=easy" in caplog.text
+    assert "hr_zone=True" in caplog.text
+
+
+async def test_unexpected_upload_failure_names_the_garmin_call(client, db, caplog):
+    access_token = await _register_and_get_access_token(client)
+    await _connect_garmin(db, access_token)
+
+    garmin = MagicMock()
+    garmin.upload_running_workout.side_effect = RuntimeError("boom")
+    with (
+        caplog.at_level("ERROR"),
+        patch("app.services.garmin_workout_service._restore_client_sync", return_value=garmin),
+    ):
+        response = await _push(client, access_token)
+
+    assert response.status_code == 502
+    assert "calling Garmin" in caplog.text
+
+
 async def test_auth_failure_marks_the_connection_for_relogin(client, db):
     access_token = await _register_and_get_access_token(client)
     await _connect_garmin(db, access_token)

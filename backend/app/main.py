@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,16 @@ from fastapi.responses import JSONResponse
 from app.api import activities, auth, fitness, garmin, jobs, plans, push
 from app.core.config import settings
 from app.core.db import get_db
+
+# uvicorn configures its own loggers and leaves the root one bare, so anything
+# the app logs was landing on logging's `lastResort` handler: the bare message
+# on stderr, with no level, no timestamp and no logger name — unfindable in a
+# host's log stream, which is where it matters. Configure it once, here.
+logging.basicConfig(
+    level=settings.log_level.upper(),
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    force=True,  # uvicorn --reload can import this module more than once
+)
 
 
 @asynccontextmanager
