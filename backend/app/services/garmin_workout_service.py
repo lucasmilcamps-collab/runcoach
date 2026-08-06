@@ -323,8 +323,17 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
     return workout, name
 
 
+class _MappingFailure(Exception):
+    """Raised when it was our own session → workout mapping that broke, not the
+    call to Garmin. The two are indistinguishable in a stack trace read at a
+    glance, and only one of them is reproducible from the plan alone."""
+
+
 def _upload_sync(client: "garminconnect.Garmin", req: WorkoutPushRequest) -> str:
-    workout, name = build_workout(req)
+    try:
+        workout, name = build_workout(req)
+    except Exception as exc:
+        raise _MappingFailure from exc
     client.upload_running_workout(workout)
     return name
 
@@ -406,5 +415,17 @@ async def push_session_to_watch(
         logger.warning("Garmin workout upload could not reach Garmin: %s", exc)
         raise GarminUpstreamError from exc
     except Exception as exc:
-        logger.exception("Unexpected failure uploading a workout to Garmin")
+        stage = "mapping the session" if isinstance(exc, _MappingFailure) else "calling Garmin"
+        cause = exc.__cause__ or exc
+        logger.exception(
+            "Unexpected failure %s (%s: %s) — session_type=%s, blocks=%d, "
+            "hr_zone=%s, pace_target=%s",
+            stage,
+            type(cause).__name__,
+            cause,
+            req.session_type,
+            len(req.structure or []),
+            req.hr_zone is not None,
+            req.pace_range is not None,
+        )
         raise GarminWorkoutFailedError from exc
