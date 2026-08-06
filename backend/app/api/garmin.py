@@ -154,11 +154,15 @@ async def push_workout(
             },
         ) from exc
     except garmin_workout_service.GarminWorkoutFailedError as exc:
+        # The cause is spelled out on purpose. This is the branch for failures
+        # nobody anticipated, and the person who hits it is the only one in a
+        # position to report it — a message that says only "an error occurred"
+        # sends them to a log console they don't have open.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
                 "code": "GARMIN_WORKOUT_FAILED",
-                "message": "Envoi impossible. L'erreur a été enregistrée côté serveur.",
+                "message": f"Envoi impossible — {exc.cause_label} ({exc.stage}).",
             },
         ) from exc
 
