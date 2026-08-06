@@ -95,6 +95,29 @@ push direct vers le device** : on crée un workout dans la bibliothèque Garmin
 Connect (`client.upload_running_workout(RunningWorkout)`, module
 `garminconnect.workout`), que la montre récupère à sa prochaine synchro.
 
+### Ne jamais emprunter les constantes de la librairie
+
+`garminconnect.workout` expose `TargetType`, `StepType`, `ConditionType`,
+`SportType`. **Ce sont des identifiants de format de fil : ils nous
+appartiennent** (`garmin_workout_service`, classes `_TargetTypeId` etc.), ils ne
+s'importent pas.
+
+Raison : la librairie a **renuméroté `TargetType` entre 0.2.x et 0.3.x** —
+`HEART_RATE` valait 2, il vaut 4 ; `SPEED` valait 4, il vaut 5 — **sans toucher
+aux clés textuelles**. Une même séance partait donc en cible de fréquence
+cardiaque sur un build et en cible de puissance sur un autre, avec
+`"heart.rate.zone"` écrit à côté dans les deux cas : une séance silencieusement
+fausse au poignet. Et quand un nom manque carrément, `TargetType.HEART_RATE`
+fait tomber **toute séance portant une zone FC**, pendant que les séances sans
+cible passent — un symptôme qui ressemble à « les fractionnés ne marchent pas »
+et n'a rien à voir avec les fractionnés.
+
+Les **clés** (`"heart.rate.zone"`, `"time"`, `"iterations"`…) sont ce dont on
+est sûr ; les ids leur sont épinglés chez nous. `test_garmin_workout.py` compare
+nos ids à ceux de la librairie installée : une renumérotation future doit
+casser un test, pas une montre. Même règle pour `create_repeat_group` — le
+groupe de répétitions est construit à la main.
+
 ### Taxonomie des erreurs — le piège central
 
 `python-garminconnect` 0.3.x fait passer **toute réponse non-2xx par une seule
