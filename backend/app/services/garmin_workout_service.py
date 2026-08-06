@@ -6,6 +6,7 @@ We keep it best-effort and never store the workout ourselves.
 """
 
 import asyncio
+import json
 import logging
 import re
 
@@ -45,7 +46,17 @@ class GarminUpstreamError(Exception):
 
 class GarminWorkoutFailedError(Exception):
     """Anything we didn't foresee. Logged with its traceback rather than
-    escaping as a bare 500 the user can do nothing with."""
+    escaping as a bare 500 the user can do nothing with.
+
+    Carries the underlying exception's type and message so the screen can show
+    it. A solo app on a free host has no log console within reach at the moment
+    it breaks, and "an error was recorded server-side" is a dead end — the
+    athlete reading the screen is the one person who can report it."""
+
+    def __init__(self, stage: str, cause: BaseException):
+        self.stage = stage
+        self.cause_label = f"{type(cause).__name__}: {cause}"[:200]
+        super().__init__(f"{stage} — {self.cause_label}")
 
 
 _RUN_SPORT = {"sportTypeId": gw.SportType.RUNNING, "sportTypeKey": "running", "displayOrder": 1}
@@ -414,18 +425,20 @@ async def push_session_to_watch(
         # the request is made with a plain requests.Session.
         logger.warning("Garmin workout upload could not reach Garmin: %s", exc)
         raise GarminUpstreamError from exc
+    except json.JSONDecodeError as exc:
+        # The library calls resp.json() on a 2xx without guarding it. A body we
+        # can't parse is Garmin misbehaving, not a bug in the session we sent.
+        logger.warning("Garmin answered the workout upload with an unreadable body: %s", exc)
+        raise GarminUpstreamError from exc
     except Exception as exc:
         stage = "mapping the session" if isinstance(exc, _MappingFailure) else "calling Garmin"
         cause = exc.__cause__ or exc
         logger.exception(
-            "Unexpected failure %s (%s: %s) — session_type=%s, blocks=%d, "
-            "hr_zone=%s, pace_target=%s",
+            "Unexpected failure %s — session_type=%s, blocks=%d, hr_zone=%s, pace_target=%s",
             stage,
-            type(cause).__name__,
-            cause,
             req.session_type,
             len(req.structure or []),
             req.hr_zone is not None,
             req.pace_range is not None,
         )
-        raise GarminWorkoutFailedError from exc
+        raise GarminWorkoutFailedError(stage, cause) from exc

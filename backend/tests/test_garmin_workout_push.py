@@ -167,6 +167,7 @@ async def test_unexpected_failure_logs_which_half_broke(client, db, caplog):
     assert response.json()["detail"]["code"] == "GARMIN_WORKOUT_FAILED"
     assert "mapping the session" in caplog.text
     assert "ValueError: bad block" in caplog.text
+    assert "ValueError: bad block" in response.json()["detail"]["message"]
     # The session's targets are never spelled out in a log line (api-conventions).
     assert "session_type=easy" in caplog.text
     assert "hr_zone=True" in caplog.text
@@ -186,6 +187,10 @@ async def test_unexpected_upload_failure_names_the_garmin_call(client, db, caplo
 
     assert response.status_code == 502
     assert "calling Garmin" in caplog.text
+    # The screen is the only console the athlete has when this branch fires.
+    assert response.json()["detail"]["message"] == (
+        "Envoi impossible — RuntimeError: boom (calling Garmin)."
+    )
 
 
 async def test_auth_failure_marks_the_connection_for_relogin(client, db):
