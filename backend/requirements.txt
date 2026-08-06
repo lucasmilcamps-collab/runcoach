@@ -7,8 +7,10 @@ pydantic-settings>=2.6
 python-jose[cryptography]>=3.3
 passlib>=1.7
 bcrypt==4.0.1
-# >=0.3 for the `workout` module (structured workout push); <0.4 because the
-# workout target/condition constants it exposes are part of our wire format.
+# >=0.3 for the `workout` module (structured workout push). We use its request
+# models, not its target/condition constants: those are the wire format and we
+# own them (garmin_workout_service), because 0.2.x and 0.3.x number them
+# differently under identical key strings.
 garminconnect>=0.3,<0.4
 # Transitive via garminconnect, declared because we catch requests' transport
 # exceptions directly (a Garmin timeout never reaches the library's wrapper).

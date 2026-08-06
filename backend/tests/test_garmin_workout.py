@@ -1,8 +1,41 @@
 """Unit tests for the session → Garmin workout mapping (no network)."""
 
+import pytest
+from garminconnect import workout as gw
+
 from app.models.garmin import WorkoutPushRequest
 from app.models.plan import Block, PaceRange
 from app.services import garmin_workout_service as gws
+
+
+@pytest.mark.parametrize(
+    ("ours", "theirs"),
+    [
+        (gws._TargetTypeId, gw.TargetType),
+        (gws._StepTypeId, gw.StepType),
+        (gws._ConditionTypeId, gw.ConditionType),
+    ],
+)
+def test_our_wire_ids_match_the_installed_library(ours, theirs):
+    """We own these ids because garminconnect renumbered TargetType between
+    0.2.x and 0.3.x (heart rate 2 -> 4) without touching the key strings — so a
+    session serialized as a heart-rate target on one build and a power target
+    on another, and a missing name took the send down outright.
+
+    Owning them fixes that, but silently drifting from the library would be its
+    own trap. A renumbering should fail here, where it costs a test run, not on
+    a watch mid-session."""
+    for name, value in vars(ours).items():
+        if name.startswith("_"):
+            continue
+        assert getattr(theirs, name, value) == value, (
+            f"garminconnect renumbered {theirs.__name__}.{name}: "
+            f"ours={value}, theirs={getattr(theirs, name)}"
+        )
+
+
+def test_running_sport_id_matches_the_installed_library():
+    assert gws._RUNNING_SPORT_ID == gw.SportType.RUNNING
 
 
 def _dump(workout):

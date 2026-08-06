@@ -59,18 +59,65 @@ class GarminWorkoutFailedError(Exception):
         super().__init__(f"{stage} — {self.cause_label}")
 
 
-_RUN_SPORT = {"sportTypeId": gw.SportType.RUNNING, "sportTypeKey": "running", "displayOrder": 1}
+# Garmin's numeric ids for the workout wire format — ours, deliberately, not
+# `garminconnect.workout`'s.
+#
+# Borrowing them made the payload's meaning depend on which build of the
+# library happened to be installed: garminconnect renumbered TargetType between
+# 0.2.x and 0.3.x (heart rate 2 -> 4, speed 4 -> 5) while leaving the key
+# strings untouched. So the same session serialized as a heart-rate target on
+# one build and a power target on another, with "heart.rate.zone" written
+# beside it either way — a silently wrong workout on the watch. And when a name
+# was missing outright, `TargetType.HEART_RATE` took down every session
+# carrying an HR zone while targetless ones sailed through.
+#
+# The key strings below are what we are actually sure of; the ids are pinned to
+# them here, and tests/test_garmin_workout.py checks them against the installed
+# library so a renumbering shows up as a failing test, not as a wrong watch.
+class _TargetTypeId:
+    NO_TARGET = 1
+    POWER = 2  # power.zone
+    CADENCE = 3  # cadence
+    HEART_RATE = 4  # heart.rate.zone
+    SPEED = 5  # speed.zone
+    OPEN = 6  # open
+
+
+class _StepTypeId:
+    WARMUP = 1
+    COOLDOWN = 2
+    INTERVAL = 3
+    RECOVERY = 4
+    REST = 5
+    REPEAT = 6
+
+
+class _ConditionTypeId:
+    DISTANCE = 1
+    TIME = 2
+    ITERATIONS = 7
+
+
+_RUNNING_SPORT_ID = 1
+
+_RUN_SPORT = {"sportTypeId": _RUNNING_SPORT_ID, "sportTypeKey": "running", "displayOrder": 1}
 _TIME_END = {
-    "conditionTypeId": gw.ConditionType.TIME,
+    "conditionTypeId": _ConditionTypeId.TIME,
     "conditionTypeKey": "time",
     "displayOrder": 2,
     "displayable": True,
 }
 _DISTANCE_END = {
-    "conditionTypeId": gw.ConditionType.DISTANCE,
+    "conditionTypeId": _ConditionTypeId.DISTANCE,
     "conditionTypeKey": "distance",
     "displayOrder": 3,
     "displayable": True,
+}
+_ITERATIONS_END = {
+    "conditionTypeId": _ConditionTypeId.ITERATIONS,
+    "conditionTypeKey": "iterations",
+    "displayOrder": 7,
+    "displayable": False,
 }
 
 _SESSION_LABELS = {
@@ -120,7 +167,7 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
     if hr_zone is not None and 1 <= hr_zone <= 5:
         return (
             {
-                "workoutTargetTypeId": gw.TargetType.HEART_RATE,
+                "workoutTargetTypeId": _TargetTypeId.HEART_RATE,
                 "workoutTargetTypeKey": "heart.rate.zone",
                 "displayOrder": 1,
             },
@@ -142,7 +189,7 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
             # documents for the "speed.zone" key — there is no pace constant.
             return (
                 {
-                    "workoutTargetTypeId": gw.TargetType.SPEED,
+                    "workoutTargetTypeId": _TargetTypeId.SPEED,
                     "workoutTargetTypeKey": "speed.zone",
                     "displayOrder": 1,
                 },
@@ -150,7 +197,7 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
             )
     return (
         {
-            "workoutTargetTypeId": gw.TargetType.NO_TARGET,
+            "workoutTargetTypeId": _TargetTypeId.NO_TARGET,
             "workoutTargetTypeKey": "no.target",
             "displayOrder": 1,
         },
@@ -160,12 +207,12 @@ def _target_for(hr_zone: int | None, pace_range) -> tuple[dict, dict]:
 
 def _step_type(label: str, idx: int, total: int) -> tuple[int, str]:
     if _WARMUP_RE.search(label) or (idx == 0 and total > 1):
-        return gw.StepType.WARMUP, "warmup"
+        return _StepTypeId.WARMUP, "warmup"
     if _COOLDOWN_RE.search(label) or (idx == total - 1 and total > 2):
-        return gw.StepType.COOLDOWN, "cooldown"
+        return _StepTypeId.COOLDOWN, "cooldown"
     if _RECOVERY_RE.search(label):
-        return gw.StepType.RECOVERY, "recovery"
-    return gw.StepType.INTERVAL, "interval"
+        return _StepTypeId.RECOVERY, "recovery"
+    return _StepTypeId.INTERVAL, "interval"
 
 
 def _dist_or_time(text: str) -> tuple[str, int] | None:
@@ -245,7 +292,7 @@ def _build_repeat_group(order: int, rep: dict, block: Block) -> tuple["gw.Repeat
     children = [
         _make_step(
             order,
-            gw.StepType.INTERVAL,
+            _StepTypeId.INTERVAL,
             "interval",
             _end_condition(work_kind),
             work_value,
@@ -261,7 +308,7 @@ def _build_repeat_group(order: int, rep: dict, block: Block) -> tuple["gw.Repeat
         children.append(
             _make_step(
                 order,
-                gw.StepType.RECOVERY,
+                _StepTypeId.RECOVERY,
                 "recovery",
                 _end_condition(rec_kind),
                 rec_value,
@@ -271,7 +318,22 @@ def _build_repeat_group(order: int, rep: dict, block: Block) -> tuple["gw.Repeat
         )
         order += 1
 
-    return gw.create_repeat_group(rep["iterations"], children, group_order), order
+    # Built here rather than with the library's `create_repeat_group`, for the
+    # same reason the ids above are ours: this is the wire format, and the
+    # interval path is the one that can't fall back to anything.
+    group = gw.RepeatGroup(
+        stepOrder=group_order,
+        stepType={
+            "stepTypeId": _StepTypeId.REPEAT,
+            "stepTypeKey": "repeat",
+            "displayOrder": _StepTypeId.REPEAT,
+        },
+        numberOfIterations=rep["iterations"],
+        workoutSteps=children,
+        endCondition=dict(_ITERATIONS_END),
+        endConditionValue=float(rep["iterations"]),
+    )
+    return group, order
 
 
 def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
@@ -314,7 +376,7 @@ def build_workout(req: WorkoutPushRequest) -> tuple["gw.RunningWorkout", str]:
         steps.append(
             _make_step(
                 1,
-                gw.StepType.INTERVAL,
+                _StepTypeId.INTERVAL,
                 "interval",
                 _end_condition("time"),
                 max(1, req.duration_min) * 60,
