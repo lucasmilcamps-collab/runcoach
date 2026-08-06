@@ -107,6 +107,10 @@ const DIFFICULTY_WORDS: Record<number, string> = {
   4: 'Difficile',
 };
 
+/** Backend codes that mean "the Garmin link is broken", not "Garmin hiccuped":
+ * retrying the send can never clear them, reconnecting the account can. */
+const RECONNECT_CODES = ['GARMIN_NOT_CONNECTED', 'GARMIN_RELOGIN'];
+
 export default function SessionDetailScreen() {
   const theme = useTheme();
   const ramp = useZoneRamp();
@@ -212,13 +216,27 @@ export default function SessionDetailScreen() {
     (t): t is { label: string; value: string } => t != null,
   );
 
-  const pushMessage = (() => {
+  const pushFeedback = (() => {
     if (pushMutation.isSuccess) {
-      return 'Séance envoyée — elle apparaîtra sur ta montre à la prochaine synchro Garmin.';
+      return {
+        text: 'Séance envoyée — elle apparaîtra sur ta montre à la prochaine synchro Garmin.',
+        tone: 'recup' as const,
+        reconnect: false,
+      };
     }
-    if (pushMutation.error instanceof ApiError) return pushMutation.error.message;
-    if (pushMutation.isError) return 'Envoi impossible. Réessaie.';
-    return undefined;
+    if (pushMutation.error instanceof ApiError) {
+      return {
+        text: pushMutation.error.message,
+        tone: 'alerte' as const,
+        // The two failures no amount of retrying fixes. The backend names them
+        // so the screen can offer the way out instead of a dead-end sentence.
+        reconnect: RECONNECT_CODES.includes(pushMutation.error.code),
+      };
+    }
+    if (pushMutation.isError) {
+      return { text: 'Envoi impossible. Réessaie.', tone: 'alerte' as const, reconnect: false };
+    }
+    return null;
   })();
 
   const linked = linkQuery.data?.linked ?? null;
@@ -410,13 +428,21 @@ export default function SessionDetailScreen() {
 
       {/* Footer */}
       <View style={styles.footer}>
-        {pushMessage ? (
-          <ThemedText
-            type="small"
-            themeColor={pushMutation.isSuccess ? 'recup' : 'alerte'}
-            style={styles.pushMessage}>
-            {pushMessage}
-          </ThemedText>
+        {pushFeedback ? (
+          <View style={styles.pushMessage}>
+            <ThemedText type="small" themeColor={pushFeedback.tone}>
+              {pushFeedback.text}
+            </ThemedText>
+            {pushFeedback.reconnect ? (
+              <Pressable
+                onPress={() => router.push('/garmin-connect')}
+                accessibilityRole="button"
+                accessibilityLabel="Reconnecter mon compte Garmin"
+                style={pressable(styles.pushAction)}>
+                <ThemedText type="label">Reconnecter Garmin</ThemedText>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
         <Button
           label={linked ? 'Changer l’activité liée' : 'J’ai fait cette séance'}
@@ -693,6 +719,11 @@ const useStyles = makeStyles((t) => ({
   },
   pushMessage: {
     paddingBottom: Spacing.one,
+    gap: Spacing.one,
+    alignItems: 'flex-start',
+  },
+  pushAction: {
+    paddingVertical: Spacing.one,
   },
   utilityRow: {
     flexDirection: 'row',

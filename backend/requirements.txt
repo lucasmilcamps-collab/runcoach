@@ -10,6 +10,9 @@ bcrypt==4.0.1
 # >=0.3 for the `workout` module (structured workout push); <0.4 because the
 # workout target/condition constants it exposes are part of our wire format.
 garminconnect>=0.3,<0.4
+# Transitive via garminconnect, declared because we catch requests' transport
+# exceptions directly (a Garmin timeout never reaches the library's wrapper).
+requests>=2.32
 cryptography>=43.0
 anthropic>=0.40
 pywebpush>=2.0
