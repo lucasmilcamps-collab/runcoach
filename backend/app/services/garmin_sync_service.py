@@ -37,6 +37,9 @@ _WELLNESS_REFRESH_DAYS = 2
 #     account rate-limited — and because CTL is a 42-day EMA: filling in from
 #     the most recent backwards makes the curve converge rather than step.
 _ZONE_ENRICH_MAX_PER_SYNC = 25
+# Splits cost one request per activity, same as zones — keep the same ceiling so
+# a single sync can't spend more than ~50 enrichment requests in total.
+_SPLITS_ENRICH_MAX_PER_SYNC = 25
 
 # Plausible human heart-rate bounds (bpm). Used to reject garbage when probing
 # Garmin's loosely-typed profile payloads for HRmax / HRrest.
@@ -104,6 +107,11 @@ def _map_activity(user_id: str, raw: dict) -> dict | None:
         "distance_m": raw.get("distance"),
         "avg_hr": raw.get("averageHR"),
         "max_hr": raw.get("maxHR"),
+        # Terrain and form, both already in the activity-list payload — no extra
+        # request. Elevation is what separates a bad session from a hilly one:
+        # without it a climb-heavy long run reads as a pace regression.
+        "elevation_gain_m": raw.get("elevationGain"),
+        "avg_cadence_spm": raw.get("averageRunningCadenceInStepsPerMinute"),
         "training_load": None,  # computed later by load_service, never by Garmin
         "raw": raw,
     }
@@ -229,6 +237,118 @@ async def enrich_run_zone_seconds(
         await db.activities.update_one(
             {"garmin_activity_id": activity_id, "user_id": user_id},
             {"$set": {"hr_zone_seconds": zone_seconds}},
+        )
+        enriched += 1
+    return enriched
+
+
+def _laps(payload: object) -> list[dict]:
+    """Garmin's `/splits` response → our split rows.
+
+    The payload is `{"lapDTOs": [...]}`; each lap carries `distance` (m),
+    `duration` (s), and optionally `averageHR` / `elevationGain`. Note this is
+    NOT `get_activity`, whose `splitSummaries` are aggregated by movement type
+    (run/walk) rather than per lap — useless for pacing.
+
+    A lap without a usable distance or duration is dropped rather than guessed:
+    a zero-distance lap would produce an infinite pace downstream."""
+    if not isinstance(payload, dict):
+        return []
+    rows: list[dict] = []
+    for entry in payload.get("lapDTOs") or []:
+        if not isinstance(entry, dict):
+            continue
+        distance = entry.get("distance")
+        duration = entry.get("duration")
+        if not isinstance(distance, (int, float)) or isinstance(distance, bool) or distance <= 0:
+            continue
+        if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:
+            continue
+        rows.append(
+            {
+                "index": len(rows) + 1,
+                "distance_m": float(distance),
+                "duration_s": int(duration),
+                "avg_hr": _as_int(entry.get("averageHR")),
+                "elevation_gain_m": _as_float(entry.get("elevationGain")),
+            }
+        )
+    return rows
+
+
+def _as_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(value)
+
+
+def _as_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _fetch_splits_sync(
+    client: garminconnect.Garmin, activity_ids: list[int]
+) -> dict[int, list[dict]]:
+    """Runs in a worker thread. One `/splits` call per activity, spaced by the
+    rate-limit delay — same shape and same guarantees as `_fetch_zone_bands_sync`:
+    one activity without laps must never cost the others."""
+    out: dict[int, list[dict]] = {}
+    for index, activity_id in enumerate(activity_ids):
+        try:
+            payload = client.get_activity_splits(str(activity_id))
+        except Exception:  # noqa: BLE001 — enrichment is best-effort, per activity
+            payload = None
+        laps = _laps(payload)
+        if laps:
+            out[activity_id] = laps
+        if index < len(activity_ids) - 1:
+            time.sleep(_RATE_LIMIT_DELAY_S)
+    return out
+
+
+async def enrich_run_splits(
+    db: AsyncIOMotorDatabase, user_id: str, client: garminconnect.Garmin
+) -> int:
+    """Fill `splits` on run activities that lack it, so a session can be read as
+    a shape rather than a single average — a negative split and a blow-up have
+    the same average pace.
+
+    Same cost discipline as `enrich_run_zone_seconds` (garmin-sync skill): runs
+    only, only where the field is missing, most recent first, capped per sync,
+    and no one-shot backfill script. History fills in over a few syncs instead of
+    firing 90 requests in a burst, which is the surest way to get rate-limited.
+
+    Best-effort and non-throwing: returns how many activities were enriched."""
+    cursor = (
+        db.activities.find(
+            {
+                "user_id": user_id,
+                "sport": SportType.RUN.value,
+                "garmin_activity_id": {"$ne": None},
+                "splits": None,
+            },
+            {"garmin_activity_id": 1},
+        )
+        .sort("start_time", -1)
+        .limit(_SPLITS_ENRICH_MAX_PER_SYNC)
+    )
+    activity_ids = [
+        int(doc["garmin_activity_id"])
+        async for doc in cursor
+        if doc.get("garmin_activity_id") is not None
+    ]
+    if not activity_ids:
+        return 0
+
+    splits_by_id = await asyncio.to_thread(_fetch_splits_sync, client, activity_ids)
+
+    enriched = 0
+    for activity_id, splits in splits_by_id.items():
+        await db.activities.update_one(
+            {"garmin_activity_id": activity_id, "user_id": user_id},
+            {"$set": {"splits": splits}},
         )
         enriched += 1
     return enriched
@@ -589,6 +709,14 @@ async def run_activity_sync(db: AsyncIOMotorDatabase, user_id: str, job_id: str)
     # works, it just falls back to average HR.
     try:
         await enrich_run_zone_seconds(db, user_id, client)
+    except Exception:  # noqa: BLE001 — enrichment must never fail a sync
+        pass
+
+    # Per-lap splits for runs, so the weekly review can read a session's shape
+    # (drift, fade, negative split) and not just its averages. Best-effort for
+    # the same reason as the zones above.
+    try:
+        await enrich_run_splits(db, user_id, client)
     except Exception:  # noqa: BLE001 — enrichment must never fail a sync
         pass
 

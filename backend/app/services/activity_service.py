@@ -18,6 +18,14 @@ def _type_key_from_doc(doc: dict) -> str | None:
     return activity_type.get("typeKey")
 
 
+def _round_or_none(value: object) -> int | None:
+    """Garmin reports cadence as a float; the response models it as an int.
+    Anything unparseable becomes None rather than failing the whole activity."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return round(value)
+
+
 def _to_response(doc: dict) -> ActivityResponse:
     return ActivityResponse(
         id=str(doc["_id"]),
@@ -29,6 +37,8 @@ def _to_response(doc: dict) -> ActivityResponse:
         distance_m=doc.get("distance_m"),
         avg_hr=doc.get("avg_hr"),
         max_hr=doc.get("max_hr"),
+        elevation_gain_m=doc.get("elevation_gain_m"),
+        avg_cadence_spm=_round_or_none(doc.get("avg_cadence_spm")),
         training_load=doc.get("training_load"),
         manual=bool(doc.get("manual")),
         rpe=doc.get("rpe"),

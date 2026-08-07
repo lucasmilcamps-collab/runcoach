@@ -267,7 +267,12 @@ async def compute_progress(
             if session.type != "test":
                 continue
             test_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
-            if test_date < today and (
+            # `<=`, not `<`: a test run today is fresh performance data the moment
+            # it lands. Waiting for the day to pass would hide the suggestion from
+            # the athlete on the one day they're most likely to look. Nothing is
+            # weakened by it — the second condition still demands a real activity,
+            # so a test that's only *planned* for today triggers nothing.
+            if test_date <= today and (
                 test_date in run_minutes_by_date or (test_date, session.slot) in linked_dates
             ):
                 replan_suggested = True

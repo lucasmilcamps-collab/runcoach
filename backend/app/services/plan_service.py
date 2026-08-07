@@ -45,6 +45,7 @@ from app.services import (
     plan_moves_service,
     plan_progress,
     plan_validation,
+    weekly_review_service,
     wellness_service,
 )
 
@@ -548,6 +549,44 @@ def _counts_directive(request: PlanRequest) -> str:
     return "\n".join(lines) + "\n"
 
 
+async def _recent_week_detail(db, user_id: str) -> list[dict]:
+    """The last completed week's KEY sessions, planned against realised.
+
+    Deliberately compact — only key sessions, only fields that change a decision,
+    and every None dropped. The generation prompt already runs close to its token
+    ceiling and explicitly asks the model to stay terse; a full session dump here
+    would buy detail at the cost of plan length."""
+    review = await weekly_review_service.compute_review(db, user_id)
+    if not review.has_plan:
+        return []
+
+    rows: list[dict] = []
+    for session in review.sessions:
+        if session.priority != "key" or session.slot != "primary":
+            continue
+        row = {
+            "type": session.type,
+            "prevu_min": session.planned_duration_min,
+            "realisee": session.done,
+        }
+        if session.planned_pace_low and session.planned_pace_high:
+            row["allure_cible"] = f"{session.planned_pace_low}-{session.planned_pace_high}"
+        for key, value in (
+            ("allure_reelle", session.actual_pace_min_per_km),
+            ("fc_moyenne", session.actual_avg_hr),
+            ("denivele_m", session.actual_elevation_gain_m),
+            ("derive_allure_pct", session.pace_drift_pct),
+            ("derive_fc_bpm", session.hr_drift_bpm),
+        ):
+            if value is not None:
+                row[key] = value
+        # Which signal the model is allowed to judge this session on.
+        if session.governing_signal != "none":
+            row["signal"] = session.governing_signal
+        rows.append(row)
+    return rows
+
+
 def _test_directive(context: dict) -> str:
     """Ask for a week-1 assessment run when we lack a reliable performance to
     estimate from (feeds the chrono estimation once synced back)."""
@@ -582,7 +621,10 @@ def _user_prompt(
         "ne renseigne `structure` (blocs) QUE pour les fractionnés (intervals/"
         "threshold/tempo) ; laisse `structure` vide ([]) pour les autres séances "
         "(footing, sortie longue, récup, renfo, repos). Si des séances récentes "
-        "ont été manquées (voir progression_recente), repars du niveau actuel."
+        "ont été manquées (voir progression_recente), repars du niveau actuel. "
+        "Recale les allures sur `semaine_ecoulee` : pour chaque séance, `signal` "
+        "dit ce qui est fiable — à 'hr' juge sur la FC et ignore l'allure (terrain "
+        "vallonné), à 'pace' juge sur l'allure."
     )
 
 
@@ -1220,6 +1262,13 @@ async def generate_plan(
             "seances_cles_realisees_14j": progress.recent_key_completed,
             "seances_cles_manquees_14j": progress.recent_key_missed,
         }
+        # Beyond the counts: what the last completed week actually looked like,
+        # session by session. Counts say a session happened; this says whether
+        # it went well — and `signal` says which of pace or HR is allowed to
+        # answer that (a hilly threshold session is judged on HR, not on the
+        # pace it "failed"). Key sessions only: the prompt is already close to
+        # its output ceiling.
+        context["semaine_ecoulee"] = await _recent_week_detail(db, user_id)
 
     if injury is not None:
         context["blessure"] = {
