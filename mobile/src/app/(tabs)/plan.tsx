@@ -140,6 +140,7 @@ export default function PlanScreen() {
                     key="forecast"
                     estimated={query.data.estimated_time_min}
                     projected={query.data.projected_time_min}
+                    confidence={query.data.estimated_time_confidence}
                   />
                 ) : null,
               ].filter(Boolean)}
@@ -231,7 +232,24 @@ function fmtTime(min: number): string {
   return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m} min`;
 }
 
-function ForecastCard({ estimated, projected }: { estimated: number; projected: number | null }) {
+/** How much weight to give the estimate, in words rather than a jargon label.
+ * Phrased as what it depends on, because that is the actionable part: a "faible"
+ * that doesn't say why leaves the athlete no way to improve it. */
+const CONFIDENCE_NOTE: Record<'high' | 'medium' | 'low', string> = {
+  high: 'Estimation fiable : basée sur un effort récent proche de ta distance cible.',
+  medium: 'Estimation indicative : l’effort de référence est plus court que ta distance cible.',
+  low: 'Estimation peu fiable : elle extrapole un effort bien plus court que ta distance cible. Une sortie longue ou une course enregistrée à part la fiabilisera.',
+};
+
+function ForecastCard({
+  estimated,
+  projected,
+  confidence,
+}: {
+  estimated: number;
+  projected: number | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+}) {
   const styles = useStyles();
   const theme = useTheme();
   const improves = projected != null && projected < estimated;
@@ -257,6 +275,14 @@ function ForecastCard({ estimated, projected }: { estimated: number; projected: 
           </ThemedText>
         </View>
       </View>
+      {/* Not a colour: confidence is not a training-load state, and DESIGN.md
+          keeps go/prudence/recup for load alone. Muted prose is the honest
+          register anyway — this qualifies a number, it doesn't alarm. */}
+      {confidence ? (
+        <ThemedText type="small" themeColor="inkMuted">
+          {CONFIDENCE_NOTE[confidence]}
+        </ThemedText>
+      ) : null}
     </View>
   );
 }

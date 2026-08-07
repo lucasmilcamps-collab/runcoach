@@ -789,6 +789,50 @@ async def test_generate_plan_computes_time_estimates(db):
     stored = await plan_service.get_current_plan(db, user_id)
     assert stored.estimated_time_min == result.estimated_time_min
 
+    # The confidence was computed and sent to the model all along, but never
+    # stored — so the app showed a race time with the authority of a number the
+    # engine itself may rate "low". A 10k source for a half is a 2.1 ratio, so
+    # this one is genuinely trustworthy; what matters is that it survives the
+    # round-trip at all.
+    assert result.estimated_time_confidence == "high"
+    assert stored.estimated_time_confidence == "high"
+
+
+async def test_a_short_source_effort_is_reported_as_low_confidence(db):
+    """A 2 km test extrapolated to a half is a 10x ratio — the regime where
+    Riegel drifts. The estimate is kept (removing it would leave the plan with no
+    anchor at all), but it must not be presented as solid."""
+    user_id = await _seed_user(db)
+    # The 2 km max effort of a test session, recorded on its own. No HR profile,
+    # same as the test above, so the fixture plan validates cleanly.
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=2),
+            "duration_s": 545,  # 9:05
+            "distance_m": 2000,
+        }
+    )
+    from datetime import date
+
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=21.1,
+        race_date=date.today() + timedelta(weeks=4),
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        result = await plan_service.generate_plan(db, user_id, req)
+
+    assert result.status == "ready", result.error_message
+    assert result.estimated_time_confidence == "low"
+
 
 # --- Lot 5: test session ---
 

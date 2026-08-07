@@ -229,6 +229,10 @@ class PlanResponse(BaseModel):
     request: PlanRequest | None = None
     plan: Plan | None = None
     estimated_time_min: int | None = None  # estimated current time at the target
+    # How far the estimate can be trusted. It was computed and sent to the model
+    # but never stored, so the app showed a race time with the authority of a
+    # number while the engine itself rated it "low" — see performance_service.
+    estimated_time_confidence: Literal["high", "medium", "low"] | None = None
     projected_time_min: int | None = None  # projected time at the plan's end
     feasibility_warning: str | None = None  # a notice, never a blocker
     error_message: str | None = None

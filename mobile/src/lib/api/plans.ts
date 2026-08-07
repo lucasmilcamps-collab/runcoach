@@ -96,6 +96,13 @@ export type PlanResponse = {
   request: PlanRequest | null;
   plan: Plan | null;
   estimated_time_min: number | null; // estimated current time at the target
+  /**
+   * How far that estimate can be trusted, from the distance between the effort
+   * it was extrapolated from and the target (Riegel drifts as the ratio grows).
+   * It was computed server-side all along but never surfaced, so the app showed
+   * a race time with the authority of a number the engine itself rated "low".
+   */
+  estimated_time_confidence: 'high' | 'medium' | 'low' | null;
   projected_time_min: number | null; // projected time at the plan's end
   feasibility_warning: string | null;
   error_message: string | null;

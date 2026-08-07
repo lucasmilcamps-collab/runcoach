@@ -212,3 +212,29 @@ async def test_restore_endpoint(client, db):
 
 async def test_restore_endpoint_requires_auth(client):
     assert (await client.post("/api/v1/plans/versions/1/restore")).status_code == 401
+
+
+async def test_restore_carries_the_estimate_confidence(db):
+    """The confidence qualifies the chrono shown on the card. A restored plan
+    that dropped it would show the same number with more authority than the plan
+    it came from."""
+    user_id = await _seed_user(db)
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 1,
+            "status": "ready",
+            "plan": _plan("V1").model_dump(mode="json"),
+            "request": _REQUEST,
+            "start_date": _monday().isoformat(),
+            "estimated_time_min": 110,
+            "estimated_time_confidence": "low",
+            "created_at": datetime.now(UTC),
+        }
+    )
+    await _insert_version(db, user_id, 2, plan=_plan("V2"), start=_monday())
+
+    restored = await plan_service.restore_plan_version(db, user_id, 1)
+
+    assert restored.estimated_time_min == 110
+    assert restored.estimated_time_confidence == "low"
