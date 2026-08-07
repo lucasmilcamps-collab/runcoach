@@ -194,6 +194,17 @@ export function getPlanVersion(version: number) {
   return apiClient.get<PlanResponse>(`/api/v1/plans/versions/${version}`);
 }
 
+/**
+ * Bring a past version back as the active plan.
+ *
+ * Non-destructive: the version is copied forward as a new one, so the plan it
+ * replaces stays in the history and a restore can itself be undone. This is the
+ * way back from a regeneration that rebuilt a week already run.
+ */
+export function restorePlanVersion(version: number) {
+  return apiClient.post<PlanResponse>(`/api/v1/plans/versions/${version}/restore`, {});
+}
+
 /** One week of a plan, committed-to versus actually run. Key runs only. */
 export type WeekAdherence = {
   week_index: number;

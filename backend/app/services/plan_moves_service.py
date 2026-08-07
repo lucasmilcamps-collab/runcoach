@@ -246,3 +246,26 @@ async def move_session(
             {"$set": {**key, "to_day": to_day.value, "moved_at": datetime.now(UTC)}},
             upsert=True,
         )
+
+
+async def copy_overrides(
+    db: AsyncIOMotorDatabase, user_id: str, from_version: int, to_version: int
+) -> None:
+    """Carry a version's per-week overrides onto another version.
+
+    Used by a plan restore. Overrides are keyed by `plan_version`, so a restored
+    plan would otherwise come back stripped of every move and duration edit the
+    athlete had made against it — the plan restored, the week not.
+
+    The `_id` is dropped so each copy is a new document; everything else is
+    carried verbatim, since the two versions describe the same weeks.
+    """
+    for collection in (db.session_moves, db.session_edits):
+        cursor = collection.find({"user_id": user_id, "plan_version": from_version})
+        docs = [doc async for doc in cursor]
+        if not docs:
+            continue
+        for doc in docs:
+            doc.pop("_id", None)
+            doc["plan_version"] = to_version
+        await collection.insert_many(docs)

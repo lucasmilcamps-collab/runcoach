@@ -24,6 +24,10 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await get_db().activities.create_index("garmin_activity_id", unique=True)
+    # One review per athlete per week. The weekly batch upserts on this exact
+    # pair, so the index is what makes that upsert a real upsert rather than a
+    # convention two concurrent runs could quietly break.
+    await get_db().weekly_reviews.create_index([("user_id", 1), ("week_start", 1)], unique=True)
     yield
 
 

@@ -10,6 +10,7 @@ import { GenerationProgress } from '@/components/generation-progress';
 import { Icon } from '@/components/icon';
 import { OfflineBanner } from '@/components/offline-banner';
 import { PlanWeekPager } from '@/components/plan-view';
+import { RegenerateButton } from '@/components/regenerate-button';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
@@ -212,16 +213,14 @@ function ReplanBanner({
       <ThemedText type="label" themeColor="prudence">
         Plan à réajuster
       </ThemedText>
+      {/* Was "régénérer les semaines restantes", which is not what happens: the
+          whole plan is rebuilt, current week included. Saying so is half the
+          guardrail. */}
       <ThemedText type="small" themeColor="inkMuted">
-        {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Régénérer les semaines
-        restantes à partir de ta forme actuelle ?
+        {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Reconstruire le plan à partir
+        de ta forme actuelle ?
       </ThemedText>
-      <Button
-        label="Régénérer un plan adapté"
-        variant="ghost"
-        loading={isReplanning}
-        onPress={onReplan}
-      />
+      <RegenerateButton onConfirm={onReplan} isRegenerating={isReplanning} />
     </View>
   );
 }

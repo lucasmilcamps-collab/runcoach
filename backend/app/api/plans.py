@@ -301,6 +301,27 @@ async def plan_version(
     return plan
 
 
+@router.post("/versions/{version}/restore", response_model=PlanResponse)
+async def restore_plan_version(
+    version: int,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Bring a past version back as the active plan.
+
+    Non-destructive: the version is copied forward as a new one, so the plan it
+    replaces stays in the history and a restore can itself be undone. This is
+    the way back from a regeneration that rebuilt a week the athlete had already
+    run — the case this endpoint exists for."""
+    try:
+        return await plan_service.restore_plan_version(db, str(user["_id"]), version)
+    except plan_service.PlanVersionNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_PLAN_VERSION", "message": "Version introuvable."},
+        ) from None
+
+
 @router.get("/versions/{version}/overview", response_model=PlanOverview)
 async def plan_version_overview(
     version: int,
