@@ -280,6 +280,26 @@ export function createPlan(request: PlanRequest) {
   return apiClient.post<PlanJob>('/api/v1/plans', request);
 }
 
+/**
+ * Replan what is left, keeping what has already been run.
+ *
+ * The weeks up to and including the one under way are frozen exactly as they
+ * stand — sessions, moves, duration edits, links — and only the weeks after
+ * them are regenerated, from current form. The plan's start date never moves,
+ * so the week grid stays put.
+ *
+ * Takes no body on purpose: the objective comes from the active plan
+ * server-side. Changing the objective is a different act, and it lives in
+ * plan-setup (`createPlan`), which does rebuild everything.
+ *
+ * Same job protocol as `createPlan` — poll `getPlanJob`. 404 `NO_ACTIVE_PLAN`
+ * when there is nothing to replan from, 409 `NOTHING_TO_REPLAN` when the plan
+ * is on its last week.
+ */
+export function replanPlan() {
+  return apiClient.post<PlanJob>('/api/v1/plans/replan', {});
+}
+
 export function getPlanJob(jobId: string) {
   return apiClient.get<PlanJob>(`/api/v1/jobs/${jobId}`);
 }

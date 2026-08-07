@@ -139,7 +139,35 @@ En cas d'échec : renvoyer les violations dans le message de retry ("Le plan vio
 Deux niveaux, à ne pas confondre :
 
 - **Ajustement quotidien** (sans IA) : règles du skill training-science (HRV/sommeil/TSB) appliquées par le code → dégrade ou confirme la séance du jour. Rapide, déterministe, gratuit.
-- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, changement d'objectif, TSB chroniquement < −25, **ou séance de test réalisée**). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
+- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, TSB chroniquement < −25, **ou séance de test réalisée**). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
+
+### Replanification partielle — le comportement par défaut
+
+**Implémenté.** Une replanification ne reconstruit jamais le plan entier. `build_replan_base`
+(`plan_service.py`) gèle les semaines **1 à N incluses**, N étant la semaine en cours :
+
+- la coupe est la **fin de la semaine en cours**, pas aujourd'hui — une semaine commencée est
+  une semaine qu'on court, et une séance déjà faite et liée s'y trouve ;
+- le `start_date` d'origine est **conservé**, donc la grille des semaines ne bouge pas et les
+  liens `session_completions` continuent de désigner les séances qu'ils décrivaient ;
+- les semaines gelées portent les **overrides** de l'athlète (`apply_overrides`) — geler le plan
+  brut annulerait silencieusement chaque déplacement de séance ;
+- le modèle ne produit que la **queue** (`_remaining_weeks_directive`, en indices absolus), puis
+  `_splice` renumérote, fusionne une phase coupée par la couture et **garde l'objectif de
+  l'athlète** ;
+- le plan **recollé** est validé en entier avec `frozen_through=N` : les semaines gelées sont du
+  **contexte, pas des accusées** — les règles de continuité (rampe, deload, raccord au réel, durée
+  totale vs date de course) les voient toutes, les règles par semaine ne jugent que l'ouvert. Une
+  violation dans une semaine que personne ne peut plus changer brûlerait les 3 tentatives.
+
+`POST /plans/replan` (sans corps, réutilise l'objectif du plan actif) et `POST
+/plans/replan-injury` passent tous les deux par cette base. Pour la blessure,
+`_injury_directive` **retranche les jours d'arrêt qui tombent déjà dans la semaine gelée** : sinon
+on prescrit jusqu'à une semaine de repos de plus que ce que l'athlète a déclaré.
+
+Le **seul** chemin qui reconstruit tout depuis la semaine 1 est `POST /plans` (écran plan-setup) :
+changer d'objectif, c'est un autre plan. Si le plan se termine dans la semaine en cours il n'y a
+rien à replanifier → `409 NOTHING_TO_REPLAN`.
 
 **Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` en semaine 1 (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Une fois le test synchronisé, `compute_progress` détecte la séance test réalisée et **propose** (jamais n'impose) une replanification — la régénération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
 

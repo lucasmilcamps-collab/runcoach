@@ -60,15 +60,57 @@ async def create_plan(
     return await plan_service.start_generation(db, str(user["_id"]), body)
 
 
+@router.post("/replan", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
+async def replan(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Replan the weeks ahead, keeping everything through the week under way.
+
+    The difference from `POST /plans` matters: that one rebuilds the plan from
+    scratch, week one included, so a session already run and linked is rebuilt
+    out from under the athlete. This one freezes the elapsed weeks on their
+    original dates and regenerates only what is left, which keeps completed work
+    — and the links made against it — exactly where they were.
+
+    Takes no body on purpose: it reuses the active plan's objective. Adjusting
+    how you get somewhere is not redefining where you are going; that is what
+    the plan-setup screen is for."""
+    try:
+        return await plan_service.start_partial_replan(db, str(user["_id"]))
+    except plan_service.NoActivePlanError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NO_ACTIVE_PLAN", "message": "Aucun plan actif."},
+        ) from None
+    except plan_service.NothingLeftToReplanError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "NOTHING_TO_REPLAN",
+                "message": (
+                    "Ton plan se termine cette semaine : il n'y a plus de semaine à replanifier."
+                ),
+            },
+        ) from None
+
+
 @router.post("/replan-injury", response_model=JobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def replan_injury(
     body: InjuryReport,
     db: AsyncIOMotorDatabase = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Declare an injury and regenerate the remaining plan as a comeback (eased-off
+    """Declare an injury and replan the remaining weeks as a comeback (eased-off
     period then a gradual ramp). Reuses the current plan's objective; a plan must
-    already exist. Queued like any generation — poll the returned job."""
+    already exist. Queued like any generation — poll the returned job.
+
+    Partial, like every other replan: the weeks through the one under way are
+    frozen, so an injury declared on a Friday never rewrites the sessions already
+    run and linked that week. What is left of the current week is handled by
+    skipping sessions, which is what that override is for; the comeback phase
+    starts with the first week actually being rewritten.
+    """
     user_id = str(user["_id"])
     current = await plan_service.get_current_plan(db, user_id)
     if current is None or current.request is None:
@@ -76,7 +118,20 @@ async def replan_injury(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NO_PLAN", "message": "Aucun plan à réadapter."},
         )
-    return await plan_service.start_generation(db, user_id, current.request, injury=body)
+    try:
+        base = await plan_service.build_replan_base(db, user_id)
+    except plan_service.NothingLeftToReplanError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "NOTHING_TO_REPLAN",
+                "message": (
+                    "Ton plan se termine cette semaine : il n'y a plus de semaine à réadapter. "
+                    "Passe les séances que tu ne peux pas faire."
+                ),
+            },
+        ) from None
+    return await plan_service.start_generation(db, user_id, current.request, injury=body, base=base)
 
 
 @router.get("/today", response_model=TodaySession)

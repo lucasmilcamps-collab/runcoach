@@ -51,13 +51,22 @@ def _weekday_index(day) -> int:
     return WEEKDAY_ORDER.index(day)
 
 
-def _check_ramp(weeks: list[Week]) -> list[str]:
+def _check_ramp(weeks: list[Week], frozen_through: int = 0) -> list[str]:
+    """Walks EVERY week, reports only on the ones still open.
+
+    The frozen weeks are what the seam is measured against — the first new week
+    is compared to the athlete's real last week — but they are history, and a
+    violation an athlete cannot act on is noise."""
     violations: list[str] = []
     last_normal_load: float | None = None
     for week in weeks:
         if week.is_deload:
             continue  # deload weeks are intentionally lower — excluded from ramp
-        if last_normal_load is not None and week.target_load > last_normal_load * RAMP_MAX_RATIO:
+        if (
+            last_normal_load is not None
+            and week.index > frozen_through
+            and week.target_load > last_normal_load * RAMP_MAX_RATIO
+        ):
             pct = (week.target_load / last_normal_load - 1) * 100
             violations.append(
                 f"Semaine {week.index} : charge +{pct:.0f}% (> 10% autorisé) "
@@ -261,22 +270,36 @@ def _check_quality_spacing(weeks: list[Week]) -> list[str]:
     return violations
 
 
-def _check_initial_load(weeks: list[Week], context: dict | None) -> list[str]:
+def _check_initial_load(
+    weeks: list[Week], context: dict | None, frozen_through: int = 0
+) -> list[str]:
     """The most dangerous jump in a plan is the join between the athlete's real
-    current load and week 1 — _check_ramp only guards ramps *inside* the plan.
-    A ceiling only (never a floor): starting below the real load is fine
-    (e.g. an injury comeback)."""
+    current load and the first week they have yet to run — _check_ramp only
+    guards ramps *inside* the plan. A ceiling only (never a floor): starting
+    below the real load is fine (e.g. an injury comeback).
+
+    On a partial replan, that join is NOT week 1. Week 1's join to reality
+    happened weeks ago and was validated then; re-checking it against today's
+    load would fail on a week nobody can still change — and would fail exactly
+    when the athlete detrained, which is when replanning matters most. The
+    check moves to the first newly generated week, where it means something:
+    the plan must restart from the load the athlete actually carries now, not
+    from the one the old plan hoped for.
+    """
     if not context:
         return []
     baseline = context.get("avg_weekly_load_4w")
     if not baseline or baseline <= 0:  # no reliable recent load → nothing to anchor to
         return []
-    first = weeks[0].target_load
-    if first > baseline * INITIAL_RAMP_MAX_RATIO:
-        pct = (first / baseline - 1) * 100
+    if frozen_through >= len(weeks):
+        return []
+    anchor = weeks[frozen_through]
+    if anchor.target_load > baseline * INITIAL_RAMP_MAX_RATIO:
+        pct = (anchor.target_load / baseline - 1) * 100
         return [
-            f"Semaine 1 : charge {first:.0f} TRIMP, +{pct:.0f}% au-dessus de la charge "
-            f"réelle récente ({baseline:.0f}) — départ trop haut (≤ +10% attendu)."
+            f"Semaine {anchor.index} : charge {anchor.target_load:.0f} TRIMP, +{pct:.0f}% "
+            f"au-dessus de la charge réelle récente ({baseline:.0f}) — départ trop haut "
+            "(≤ +10% attendu)."
         ]
     return []
 
@@ -352,8 +375,17 @@ def _check_strength_placement(weeks: list[Week]) -> list[str]:
     return violations
 
 
-def _check_calendar(weeks: list[Week], request: PlanRequest, start: date) -> list[str]:
+def _check_calendar(
+    weeks: list[Week], request: PlanRequest, start: date, all_weeks: list[Week] | None = None
+) -> list[str]:
+    """Two different questions, two different week lists.
+
+    Session days are judged per week, so only the open ones. The plan's LENGTH
+    against the race date is a property of the whole plan — counting only the
+    open weeks would report a 16-week plan as four weeks short the moment twelve
+    of them are frozen."""
     violations: list[str] = []
+    counted = all_weeks if all_weeks is not None else weeks
     allowed_days = set(request.available_days) | {fs.day for fs in request.fixed_sports}
     for week in weeks:
         for session in week.sessions:
@@ -363,38 +395,54 @@ def _check_calendar(weeks: list[Week], request: PlanRequest, start: date) -> lis
                 violations.append(
                     f"Semaine {week.index} : séance {session.day} hors des jours disponibles."
                 )
-    if request.race_date is not None and weeks:
+    if request.race_date is not None and counted:
         weeks_until = max(1, math.ceil((request.race_date - start).days / 7))
-        if abs(len(weeks) - weeks_until) > 1:
+        if abs(len(counted) - weeks_until) > 1:
             violations.append(
-                f"Le plan compte {len(weeks)} semaines mais il reste ~{weeks_until} "
+                f"Le plan compte {len(counted)} semaines mais il reste ~{weeks_until} "
                 "semaines avant la course."
             )
     return violations
 
 
 def validate_plan(
-    plan: Plan, request: PlanRequest, start: date, context: dict | None = None
+    plan: Plan,
+    request: PlanRequest,
+    start: date,
+    context: dict | None = None,
+    frozen_through: int = 0,
 ) -> list[str]:
     """Return every rule violation (empty list = the plan may be persisted).
 
-    `context` is the build_context dict; when present it anchors week 1's load
+    `context` is the build_context dict; when present it anchors the plan's load
     on the athlete's real recent load. Optional so existing callers/tests keep
-    working unchanged."""
+    working unchanged.
+
+    `frozen_through` is how many leading weeks a partial replan kept as-is. It
+    only moves where the reality-to-plan join is checked; every other rule runs
+    over the whole spliced plan on purpose, so the seam between the frozen weeks
+    and the new ones is validated like any other transition."""
     weeks = _flatten_weeks(plan)
     if not weeks:
         return ["Le plan ne contient aucune semaine."]
 
+    # Frozen weeks are CONTEXT, not defendants. They already shipped, the athlete
+    # has been running them, and the model cannot change them — reporting a
+    # violation there would burn every retry on something nobody can fix. The
+    # rules that need continuity (ramp, deload, the reality join) still see the
+    # whole list; the per-week rules only judge what is still open.
+    open_weeks = [w for w in weeks if w.index > frozen_through] if frozen_through else weeks
+
     violations: list[str] = []
-    violations += _check_ramp(weeks)
-    violations += _check_initial_load(weeks, context)
+    violations += _check_ramp(weeks, frozen_through)
+    violations += _check_initial_load(weeks, context, frozen_through)
     violations += _check_deload(weeks)
-    violations += _check_fixed_sports(weeks, request)
-    violations += _check_session_counts(weeks, request)
-    violations += _check_strength_placement(weeks)
-    violations += _check_no_quality_after_impact(weeks)
+    violations += _check_fixed_sports(open_weeks, request)
+    violations += _check_session_counts(open_weeks, request)
+    violations += _check_strength_placement(open_weeks)
+    violations += _check_no_quality_after_impact(open_weeks)
     violations += _check_taper(weeks, request)
-    violations += _check_long_run(weeks, request)
-    violations += _check_quality_spacing(weeks)
-    violations += _check_calendar(weeks, request, start)
+    violations += _check_long_run(open_weeks, request)
+    violations += _check_quality_spacing(open_weeks)
+    violations += _check_calendar(open_weeks, request, start, all_weeks=weeks)
     return violations

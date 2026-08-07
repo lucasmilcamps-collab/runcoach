@@ -10,6 +10,7 @@ import json
 import math
 import re
 import time
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
 import anthropic
@@ -26,7 +27,9 @@ from app.models.plan import (
     WEEKDAY_ORDER,
     DailyAdjustment,
     InjuryReport,
+    Phase,
     Plan,
+    PlanGoal,
     PlanRequest,
     PlanResponse,
     PlanVersionSummary,
@@ -405,6 +408,120 @@ def _system_prompt(request: PlanRequest) -> str:
     )
 
 
+@dataclass(frozen=True)
+class ReplanBase:
+    """The part of a plan a partial replan keeps: everything up to and including
+    the week under way.
+
+    Its `start` is the ORIGINAL plan's start and never moves. That is the whole
+    mechanism — the week grid stays put, so a session run in week 3 stays in
+    week 3, its stored `session_date` still matches, and the link made against
+    it still describes the session it was made against. A replan that shifted
+    the start would re-point every link exactly like a full regeneration does.
+    """
+
+    start: date
+    goal: PlanGoal
+    phases: list[Phase]  # weeks 1..last_week, already run or under way
+    last_week: int
+    total_weeks: int
+
+
+def _freeze_through(plan: Plan, last_week: int) -> list[Phase]:
+    """The plan's phases truncated to weeks 1..last_week.
+
+    A phase is kept only for the weeks it still contributes: the cut usually
+    falls mid-phase, and carrying the whole phase would freeze weeks the athlete
+    hasn't reached yet."""
+    kept: list[Phase] = []
+    for phase in plan.phases:
+        weeks = [w for w in phase.weeks if w.index <= last_week]
+        if weeks:
+            kept.append(Phase(name=phase.name, weeks=weeks))
+    return kept
+
+
+def _splice(base: ReplanBase, tail: Plan) -> Plan:
+    """Frozen prefix + newly generated tail, as one plan.
+
+    Week indices are rewritten rather than trusted: the model is told to number
+    from `last_week + 1`, and mostly does, but a plan whose weeks don't run
+    1..N breaks every reader downstream (adherence, today's session, the review
+    all count weeks from the start date). Renumbering here costs nothing and
+    removes the failure mode.
+
+    Phases are merged when the seam falls inside one, so a plan doesn't come
+    back with two adjacent `base` phases — which would read as a restart rather
+    than a continuation.
+    """
+    phases = [Phase(name=p.name, weeks=list(p.weeks)) for p in base.phases]
+    index = base.last_week
+    for phase in tail.phases:
+        weeks: list[Week] = []
+        for week in phase.weeks:
+            index += 1
+            weeks.append(week.model_copy(update={"index": index}))
+        if not weeks:
+            continue
+        if phases and phases[-1].name == phase.name:
+            phases[-1].weeks.extend(weeks)
+        else:
+            phases.append(Phase(name=phase.name, weeks=weeks))
+    # The goal is the athlete's, not the model's: a partial replan does not
+    # redefine what they are training for.
+    return Plan(goal=base.goal, phases=phases)
+
+
+def _remaining_weeks_directive(request: PlanRequest, base: ReplanBase) -> str:
+    """Ask for the tail only, in absolute week numbers.
+
+    Absolute rather than "the next 8 weeks" because the deload schedule and the
+    validator both reason in absolute indices — telling the model "week 12 is a
+    deload" is a fact it can copy, where "the 4th one you produce" is a sum it
+    can get wrong."""
+    first, total = base.last_week + 1, base.total_weeks
+    count = total - base.last_week
+    deloads = [w for w in range(4, total + 1, 4) if w >= first]
+    schedule = (
+        f" Marque is_deload=true EXACTEMENT sur ces semaines : "
+        f"{', '.join(str(w) for w in deloads)} — et sur aucune autre."
+        if deloads
+        else ""
+    )
+    race = (
+        f" La semaine {total} est la semaine de course : affûtage (taper) et charge réduite."
+        if request.race_date is not None
+        else ""
+    )
+    return (
+        f"REPLANIFICATION PARTIELLE — les semaines 1 à {base.last_week} sont DÉJÀ "
+        f"FAITES et ne doivent PAS être régénérées. Produis EXACTEMENT les "
+        f"{count} semaines restantes, numérotées de {first} à {total} dans le "
+        f"champ `index`. N'inclus AUCUNE semaine antérieure à {first}.{schedule}"
+        f"{race} La semaine {first} enchaîne sur la semaine {base.last_week} "
+        "réellement effectuée (voir semaines_deja_faites) : sa charge ne dépasse "
+        "pas de plus de 10 % celle de la dernière semaine normale."
+    )
+
+
+def _elapsed_weeks_summary(base: ReplanBase) -> list[dict]:
+    """The frozen weeks, compactly, so the model has the continuity it needs.
+
+    Load and deload marks are what the ramp and deload rules are checked on;
+    session types say what the athlete has been doing. Anything more would spend
+    tokens the generation prompt does not have to spare."""
+    return [
+        {
+            "semaine": week.index,
+            "deload": week.is_deload,
+            "charge": week.target_load,
+            "seances": [s.type for s in week.sessions if s.type != "rest"],
+        }
+        for phase in base.phases
+        for week in phase.weeks
+    ]
+
+
 def _weeks_directive(request: PlanRequest, start: date) -> str:
     if request.race_date is not None:
         weeks = max(1, math.ceil((request.race_date - start).days / 7))
@@ -439,19 +556,45 @@ def _weeks_directive(request: PlanRequest, start: date) -> str:
 _SEVERITY_LABELS = {"gene": "gêne légère", "douleur": "douleur", "arret": "arrêt"}
 
 
-def _injury_directive(injury: InjuryReport | None) -> str:
+def _injury_directive(
+    injury: InjuryReport | None,
+    base: ReplanBase | None = None,
+    today: date | None = None,
+) -> str:
     if injury is None:
         return ""
     severity = _SEVERITY_LABELS.get(injury.severity, injury.severity)
+
+    # The time off starts TODAY, but a partial replan only writes from the Monday
+    # after the week under way. Asking for `days_off` of rest from there would
+    # prescribe a longer stop than the athlete declared — up to a week longer.
+    # The days that fall inside the frozen week are already spent; only the rest
+    # belongs in the weeks being written.
+    covered = 0
+    if base is not None:
+        frozen_end = base.start + timedelta(days=base.last_week * 7 - 1)
+        covered = max(0, (frozen_end - (today or datetime.now(UTC).date())).days + 1)
+    remaining = max(0, injury.days_off - covered)
+
+    if remaining == 0:
+        opening = (
+            f"Les {injury.days_off} jour(s) d'arrêt s'achèvent avant la semaine "
+            f"{base.last_week + 1 if base else 1} — pas de repos supplémentaire à "
+            "planifier. Reprends"
+        )
+    else:
+        opening = (
+            f"Construis une REPRISE : commence par une phase allégée couvrant au "
+            f"moins les {remaining} premier(s) jour(s) sans aucune course à impact "
+            "ni sollicitation de la zone touchée (repos ou cross-training doux "
+            "uniquement), puis remonte"
+        )
     return (
         f"\nBLESSURE DÉCLARÉE — zone « {injury.area} », gravité « {severity} », "
-        f"{injury.days_off} jour(s) sans course possible. Construis une REPRISE : "
-        f"commence par une phase allégée couvrant au moins ces {injury.days_off} "
-        "premiers jours sans aucune course à impact ni sollicitation de la zone "
-        "touchée (repos ou cross-training doux uniquement), puis remonte la charge "
-        "très progressivement depuis un niveau réduit, sans jamais chercher à "
-        "rattraper le retard. Priorité absolue à une reprise sûre. Aucune "
-        "recommandation médicale.\n"
+        f"{injury.days_off} jour(s) sans course possible à partir d'aujourd'hui. "
+        f"{opening} la charge très progressivement depuis un niveau réduit, sans "
+        "jamais chercher à rattraper le retard, en ménageant la zone touchée. "
+        "Priorité absolue à une reprise sûre. Aucune recommandation médicale.\n"
     )
 
 
@@ -603,15 +746,29 @@ def _test_directive(context: dict) -> str:
 
 
 def _user_prompt(
-    request: PlanRequest, context: dict, start: date, injury: InjuryReport | None = None
+    request: PlanRequest,
+    context: dict,
+    start: date,
+    injury: InjuryReport | None = None,
+    base: ReplanBase | None = None,
 ) -> str:
     req = request.model_dump(mode="json")
+    weeks_directive = (
+        _remaining_weeks_directive(request, base) if base else _weeks_directive(request, start)
+    )
+    elapsed = (
+        f"Semaines déjà faites (NE PAS régénérer) :\n"
+        f"{json.dumps(_elapsed_weeks_summary(base), ensure_ascii=False)}\n\n"
+        if base
+        else ""
+    )
     return (
         f"Objectif de l'athlète :\n{json.dumps(req, ensure_ascii=False)}\n\n"
         f"État actuel (données réelles Garmin) :\n{json.dumps(context, ensure_ascii=False)}\n\n"
-        f"{_weeks_directive(request, start)}\n"
+        f"{elapsed}"
+        f"{weeks_directive}\n"
         f"{_counts_directive(request)}"
-        f"{_injury_directive(injury)}"
+        f"{_injury_directive(injury, base)}"
         f"{_detraining_directive(context)}"
         f"{_test_directive(context)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
@@ -1013,14 +1170,21 @@ def _unwrapped(plan_input: dict) -> dict:
 
 
 async def _generate_valid_plan(
-    request: PlanRequest, context: dict, start: date, injury: InjuryReport | None = None
+    request: PlanRequest,
+    context: dict,
+    start: date,
+    injury: InjuryReport | None = None,
+    base: ReplanBase | None = None,
 ) -> Plan:
     if not settings.anthropic_api_key:
         raise PlanGenerationError("Génération IA non configurée (clé API absente).")
 
     system = _system_prompt(request)
-    user = _user_prompt(request, context, start, injury)
-    constraints = f"{_weeks_directive(request, start)}\n{_counts_directive(request)}"
+    user = _user_prompt(request, context, start, injury, base)
+    weeks_directive = (
+        _remaining_weeks_directive(request, base) if base else _weeks_directive(request, start)
+    )
+    constraints = f"{weeks_directive}\n{_counts_directive(request)}"
 
     # One client per generation (reused across attempts), not one per attempt.
     # max_retries=0 is the point, not a detail. The SDK retries twice by default
@@ -1119,7 +1283,15 @@ async def _generate_valid_plan(
                 "autre clé. Corrige et renvoie un plan conforme.",
             )
             continue
-        violations = plan_validation.validate_plan(plan, request, start, context)
+        if base is not None:
+            # Validate the WHOLE spliced plan, not just the tail. The seam is the
+            # part worth checking: the ramp rule walks a flat week list, so the
+            # first generated week is compared against the athlete's REAL last
+            # week rather than against nothing.
+            plan = _splice(base, plan)
+        violations = plan_validation.validate_plan(
+            plan, request, start, context, frozen_through=base.last_week if base else 0
+        )
         if not violations:
             return plan
 
@@ -1229,24 +1401,78 @@ def resolve_start_date(request: PlanRequest, today: date) -> date:
     )
 
 
+class NothingLeftToReplanError(Exception):
+    """The plan has no week after the one under way — there is nothing to
+    replan, and rebuilding the current week is precisely what a partial replan
+    exists to avoid."""
+
+
+async def build_replan_base(db: AsyncIOMotorDatabase, user_id: str) -> ReplanBase:
+    """Freeze the active plan through the week under way.
+
+    The cut is the END of the current week, not today: a week the athlete has
+    started is a week they are running, and a session already done and linked
+    sits inside it. Cutting mid-week would rebuild the days they have left while
+    orphaning the ones they've completed — the worst of both.
+    """
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
+    if doc is None or not doc.get("plan"):
+        raise NoActivePlanError
+
+    plan = Plan.model_validate(doc["plan"])
+    # Overrides applied: the frozen weeks must be the plan the athlete has been
+    # LOOKING AT, moved sessions and edited durations included, not the pristine
+    # generated one. Freezing the pristine version would silently undo every
+    # adjustment they made.
+    await plan_moves_service.apply_overrides(db, user_id, plan, doc["version"])
+
+    today = datetime.now(UTC).date()
+    start = _plan_start_date(doc, today)
+    weeks = [w for phase in plan.phases for w in phase.weeks]
+    total = len(weeks)
+
+    # The week under way, clamped: before the plan starts nothing is frozen;
+    # past its end there is nothing left to replan.
+    week_pos = (today - start).days // 7
+    last_week = min(max(week_pos + 1, 0), total)
+    if last_week >= total:
+        raise NothingLeftToReplanError
+
+    return ReplanBase(
+        start=start,
+        goal=plan.goal,
+        phases=_freeze_through(plan, last_week),
+        last_week=last_week,
+        total_weeks=total,
+    )
+
+
 async def generate_plan(
     db: AsyncIOMotorDatabase,
     user_id: str,
     request: PlanRequest,
     injury: InjuryReport | None = None,
+    base: ReplanBase | None = None,
 ) -> PlanResponse:
     """Generate, validate, and persist a new plan version. Runs synchronously
     inside the request (like the Garmin sync): on a free single-instance host a
     background task can be killed mid-run, so the caller awaits the real result.
 
     `injury`, when set, makes it a comeback replan: the prompt steers the early
-    weeks toward recovery and a gradual ramp (plan-generator skill)."""
+    weeks toward recovery and a gradual ramp (plan-generator skill).
+
+    `base`, when set, makes it a PARTIAL replan: the weeks it carries are kept
+    verbatim and only the rest is regenerated, on the original start date. That
+    is what keeps completed work — and the links made against it — in place."""
     today = datetime.now(UTC).date()
     # The plan's own calendar starts here, and not necessarily today: the week
     # count, the prompt, the validator and the stored anchor all reason from
     # this date, so a plan asked for on a Friday to start next Monday gets the
     # right number of weeks rather than one week too many.
-    start = resolve_start_date(request, today)
+    # A partial replan reuses the plan's own start: moving it would shift every
+    # week's calendar date and re-point every link, which is the failure this
+    # whole path exists to avoid.
+    start = base.start if base else resolve_start_date(request, today)
     # Compute the CTL/ATL curve once and share it: both build_context and
     # compute_progress need it, and it scans every activity.
     fitness = await fitness_service.compute_fitness(db, user_id)
@@ -1301,7 +1527,7 @@ async def generate_plan(
     version = await _next_version(db, user_id)
 
     try:
-        plan = await _generate_valid_plan(request, context, start, injury)
+        plan = await _generate_valid_plan(request, context, start, injury, base)
     except PlanGenerationError as exc:
         doc = {
             "user_id": user_id,
@@ -1368,6 +1594,7 @@ async def run_generation_job(
     job_id: str,
     request: PlanRequest,
     injury: InjuryReport | None = None,
+    base: ReplanBase | None = None,
 ) -> None:
     """Fire-and-forget background job — must never raise, or the exception is
     only ever seen in asyncio's default logger.
@@ -1379,7 +1606,7 @@ async def run_generation_job(
     instead of a request hanging until the platform cuts it."""
     await job_service.update_job(db, job_id, JobStatus.RUNNING)
     try:
-        result = await generate_plan(db, user_id, request, injury)
+        result = await generate_plan(db, user_id, request, injury, base)
     except Exception as exc:  # noqa: BLE001 — a background job must never crash silently
         await job_service.update_job(db, job_id, JobStatus.FAILED, error_message=str(exc))
         return
@@ -1442,6 +1669,7 @@ async def start_generation(
     user_id: str,
     request: PlanRequest,
     injury: InjuryReport | None = None,
+    base: ReplanBase | None = None,
 ) -> JobResponse:
     """Queue a generation and return its job straight away.
 
@@ -1463,7 +1691,7 @@ async def start_generation(
             return running
 
     job_id = await job_service.create_job(db, user_id, PLAN_JOB_TYPE)
-    task = asyncio.create_task(run_generation_job(db, user_id, job_id, request, injury))
+    task = asyncio.create_task(run_generation_job(db, user_id, job_id, request, injury, base))
     # Hold a reference: asyncio only keeps a weak one, and a garbage-collected
     # task is a generation that silently never happens.
     _RUNNING_JOBS.add(task)
@@ -1813,3 +2041,18 @@ async def get_today_session(db: AsyncIOMotorDatabase, user_id: str) -> TodaySess
         tsb=tsb,
         recovery=recovery if recovery.has_any else None,
     )
+
+
+async def start_partial_replan(db: AsyncIOMotorDatabase, user_id: str) -> JobResponse:
+    """Queue a replan that keeps everything through the week under way.
+
+    Reuses the active plan's own request: a replan adjusts HOW the athlete gets
+    to their objective, it never changes the objective. Changing that is what
+    the plan-setup screen is for, and that path still rebuilds from scratch.
+    """
+    doc = await db.plans.find_one({"user_id": user_id, "status": "ready"}, sort=[("version", -1)])
+    if doc is None or not doc.get("request"):
+        raise NoActivePlanError
+    base = await build_replan_base(db, user_id)
+    request = PlanRequest.model_validate(doc["request"])
+    return await start_generation(db, user_id, request, base=base)

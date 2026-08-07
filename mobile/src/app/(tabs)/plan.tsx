@@ -21,11 +21,11 @@ import { makeStyles } from '@/lib/themed-styles';
 import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
-  createPlan,
   getCurrentPlan,
   getPlanProgress,
   PlanProgress,
   PlanResponse,
+  replanPlan,
 } from '@/lib/api/plans';
 import { getWeeklyReview } from '@/lib/api/reviews';
 import { pressable } from '@/lib/pressable';
@@ -60,10 +60,12 @@ export default function PlanScreen() {
     enabled: garminConnected,
   });
 
-  const replan = usePlanGeneration(createPlan);
+  // Replan, not regenerate: the objective comes from the active plan server-side
+  // and the weeks already under way are frozen. Rebuilding from the objective up
+  // is what plan-setup does, and it stays there.
+  const replan = usePlanGeneration<void>(replanPlan);
 
   const noPlan = query.error instanceof ApiError && query.error.status === 404;
-  const currentRequest = query.data?.request ?? null;
   const ready = query.data?.status === 'ready';
 
   const plan = query.data?.plan ?? null;
@@ -94,6 +96,15 @@ export default function PlanScreen() {
               still running would show nothing at all. */}
           <GenerationProgress phase={replan.phase} elapsedSeconds={replan.elapsedSeconds} />
 
+          {/* A replan can be legitimately refused — nothing left after the week
+              under way, no active plan — and the server says why. Without this
+              the tap just did nothing, which reads as a broken button. */}
+          {replan.errorMessage ? (
+            <ThemedText type="small" themeColor="alerte">
+              {replan.errorMessage}
+            </ThemedText>
+          ) : null}
+
           {ready ? (
             <View style={styles.historyRow}>
               <Pressable
@@ -116,16 +127,16 @@ export default function PlanScreen() {
           {reviewQuery.data?.has_plan ? (
             <WeeklyReviewCard
               review={reviewQuery.data}
-              onReplan={() => currentRequest && replan.generate(currentRequest)}
+              onReplan={() => replan.generate()}
               isReplanning={replan.isGenerating}
-              canReplan={currentRequest != null}
+              canReplan={ready}
             />
           ) : null}
 
-          {progressQuery.data?.replan_suggested && currentRequest ? (
+          {progressQuery.data?.replan_suggested && ready ? (
             <ReplanBanner
               progress={progressQuery.data}
-              onReplan={() => replan.generate(currentRequest)}
+              onReplan={() => replan.generate()}
               isReplanning={replan.isGenerating}
             />
           ) : null}
@@ -214,11 +225,8 @@ function ReplanBanner({
       <ThemedText type="label" themeColor="prudence">
         Plan à réajuster
       </ThemedText>
-      {/* Was "régénérer les semaines restantes", which is not what happens: the
-          whole plan is rebuilt, current week included. Saying so is half the
-          guardrail. */}
       <ThemedText type="small" themeColor="inkMuted">
-        {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Reconstruire le plan à partir
+        {progress.replan_reason ?? 'Ton plan mérite un réajustement.'} Replanifier la suite à partir
         de ta forme actuelle ?
       </ThemedText>
       <RegenerateButton onConfirm={onReplan} isRegenerating={isReplanning} />
