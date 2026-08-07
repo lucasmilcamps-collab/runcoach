@@ -1,0 +1,28 @@
+name: Weekly training review
+
+# Same reason as push-cron.yml: Render's free tier has no scheduler, so GitHub
+# Actions plays cron. This one hits the secured /reviews/run endpoint, which
+# builds each athlete's review of the week that just ended.
+#
+# The verdict is computed deterministically, so a normal week costs nothing;
+# Anthropic is only called for the athletes whose week actually warrants an
+# adjustment.
+on:
+  schedule:
+    # 19:00 UTC on Sunday ≈ 20:00–21:00 in France. Sunday evening on purpose:
+    # the plan's weeks run Monday→Sunday, so at that hour the week under review
+    # is the one the athlete has just finished, not the one before it.
+    - cron: '0 19 * * 0'
+  workflow_dispatch: {} # allow a manual run from the Actions tab
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build the weekly reviews
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          REVIEW_RUN_SECRET: ${{ secrets.REVIEW_RUN_SECRET }}
+        run: |
+          curl -fsS -X POST "$BACKEND_URL/api/v1/reviews/run" \
+            -H "X-Review-Secret: $REVIEW_RUN_SECRET"

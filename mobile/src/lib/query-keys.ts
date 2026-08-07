@@ -40,6 +40,9 @@ export const qk = {
   /** Week/adherence counters driving the replan suggestion. */
   planProgress: () => ['plan-progress'] as const,
 
+  /** The review of the week that just ended, and its adjustment verdict. */
+  weeklyReview: () => ['weekly-review'] as const,
+
   /** The stored plan versions, newest first. */
   planVersions: () => ['plan-versions'] as const,
 
@@ -74,10 +77,10 @@ export const qk = {
 } as const;
 
 /**
- * The five reads a finished generation — or any change to the stored plan —
+ * The six reads a finished generation — or any change to the stored plan —
  * makes stale, invalidated together.
  *
- * They travel as a set because they are five views of one document, and the
+ * They travel as a set because they are six views of one document, and the
  * cost of forgetting one is a screen quietly showing the previous plan. That
  * list only ever existed inside `use-plan-generation`; every other place that
  * replaced a plan (the settings screen's cancel, for one) re-typed its own
@@ -89,4 +92,7 @@ export function invalidatePlanReads(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: qk.planProgress() });
   queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
   queryClient.invalidateQueries({ queryKey: qk.planVersions() });
+  // The review is read against the plan's own week grid, so a new plan makes
+  // last week's verdict describe a week that no longer exists.
+  queryClient.invalidateQueries({ queryKey: qk.weeklyReview() });
 }

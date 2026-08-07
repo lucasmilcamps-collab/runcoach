@@ -41,6 +41,22 @@ variables → Actions**, ajoute :
 Pour tester tout de suite : onglet **Actions → Daily push notifications → Run
 workflow**.
 
+### Bilan hebdomadaire
+
+Le workflow [`.github/workflows/weekly-review-cron.yml`](.github/workflows/weekly-review-cron.yml)
+appelle `/reviews/run` le dimanche à 19:00 UTC (≈ 20-21h Paris) : les semaines du
+plan vont du lundi au dimanche, donc à cette heure-là la semaine passée en revue
+est bien celle que l'athlète vient de terminer.
+
+| Secret | Valeur |
+|---|---|
+| `REVIEW_RUN_SECRET` | une longue chaîne aléatoire, la **même** côté backend (`REVIEW_RUN_SECRET`) |
+
+Le verdict « faut-il réajuster ? » est déterministe : une semaine normale ne
+déclenche **aucun** appel à l'API Anthropic. Le modèle n'est sollicité que pour
+les athlètes dont la semaine justifie un ajustement, et uniquement pour rédiger
+l'explication — il ne régénère jamais un plan tout seul.
+
 ## 4. Côté utilisateur
 
 1. Ouvre la PWA (installée sur l'écran d'accueil sur iPhone).

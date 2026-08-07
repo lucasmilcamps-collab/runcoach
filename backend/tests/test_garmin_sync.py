@@ -710,3 +710,29 @@ async def test_sync_never_fails_when_splits_blow_up(db):
     job = await job_service.get_job(db, job_id, user_id)
     assert job.status == JobStatus.DONE
     assert await db.activities.find_one({"garmin_activity_id": 111}) is not None
+
+
+async def test_resync_does_not_wipe_enriched_splits(db):
+    """The trap the garmin-sync skill flags for `hr_zone_seconds`, and the reason
+    `splits` is deliberately absent from `_map_activity`: a resync `$set`s the
+    mapped fields, so anything enriched afterwards would be erased on the next
+    sync if it were mapped too."""
+    user_id = await _seed_user_and_credentials(db)
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_activity_splits.return_value = SPLITS_PAYLOAD
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    assert len((await db.activities.find_one({"garmin_activity_id": 111}))["splits"]) == 3
+
+    # Second sync: the same activity comes back from the list endpoint.
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    stored = await db.activities.find_one({"garmin_activity_id": 111})
+    assert len(stored["splits"]) == 3  # survived the re-`$set`
