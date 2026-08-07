@@ -57,6 +57,21 @@ class ManualActivityCreate(BaseModel):
     note: str | None = Field(default=None, max_length=200)
 
 
+class ActivitySplit(BaseModel):
+    """One lap of a run, from Garmin's `/splits` endpoint (`lapDTOs`).
+
+    A lap is a kilometre when auto-lap is on, which is the default — but it is
+    NOT guaranteed: auto-lap can be off, set to miles, or the athlete can press
+    the lap button by hand. So `distance_m` is stored alongside `duration_s` and
+    consumers derive pace from the pair. Never assume 1000 m."""
+
+    index: int  # 1-based, in the order the laps were recorded
+    duration_s: int
+    distance_m: float
+    avg_hr: int | None = None
+    elevation_gain_m: float | None = None
+
+
 class ActivityResponse(BaseModel):
     """Public shape — never includes `raw` or `user_id` (api-conventions)."""
 
@@ -69,6 +84,8 @@ class ActivityResponse(BaseModel):
     distance_m: float | None = None
     avg_hr: int | None = None
     max_hr: int | None = None
+    elevation_gain_m: float | None = None  # absent on a treadmill, and on manual entries
+    avg_cadence_spm: int | None = None
     training_load: float | None = None
     manual: bool = False
     rpe: int | None = None

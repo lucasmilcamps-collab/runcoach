@@ -38,7 +38,8 @@ Règles :
 | Besoin | Méthode | Notes |
 |---|---|---|
 | Activités | `get_activities(start, limit)` | Paginer par 20 ; filtrer par `activityType` |
-| Détail activité | `get_activity(activity_id)` | Splits, FC moyenne/max, cadence, allure |
+| Détail activité | `get_activity(activity_id)` | Résumé ; ses `splitSummaries` sont agrégés par type de mouvement (course/marche), **pas par tour** |
+| Splits par tour | `get_activity_splits(activity_id)` | `lapDTOs` : distance, durée, FC, dénivelé par tour. **Absent de la liste d'activités** : un appel par activité |
 | Temps par zone FC | `get_activity_hr_in_timezones(activity_id)` | **Absent de la liste d'activités** : un appel par activité. Zones Garmin, pas les nôtres |
 | FC repos & max | `get_heart_rates(date)` | `restingHeartRate` quotidien |
 | HRV | `get_hrv_data(date)` | `lastNightAvg`, statut (balanced/unbalanced/low) |
@@ -61,6 +62,10 @@ Règles :
   - **Zones Garmin ≠ zones du projet** : `load_service.redistribute_zone_seconds` reventile au prorata du recouvrement des plages de FC. Sans profil FC complet on n'écrit rien (jamais de zones inventées).
   - Le mapping d'activité (`_map_activity`) ne contient pas ce champ : le `$set` d'une resync ne l'écrase donc pas.
   - Script d'exploration du payload réel : `backend/scripts/inspect_activity_zones.py`.
+- **Splits par tour (`splits`)** — `enrich_run_splits`, même discipline de coût, même forme que les zones (course uniquement, champ manquant uniquement, plus récentes d'abord, plafonné par `_SPLITS_ENRICH_MAX_PER_SYNC`, aucun script de backfill). Deux points propres aux splits :
+  - **`get_activity_splits`, pas `get_activity`** : le second ne renvoie que des `splitSummaries` agrégés par type de mouvement, inutiles pour lire une allure tour par tour.
+  - **Un tour n'est pas un kilomètre.** L'auto-lap peut être désactivé, réglé en miles, ou l'athlète appuie à la main. On stocke `distance_m` à côté de `duration_s` et l'allure se dérive du couple — jamais d'un 1000 m supposé.
+- **Terrain et cadence** : `elevation_gain_m` et `avg_cadence_spm` viennent du payload de liste, donc ils sont **mappés** dans `_map_activity` (aucune requête en plus) et non enrichis. C'est la différence avec `hr_zone_seconds` et `splits` : un champ mappé est recalculé à chaque resynchro, un champ enrichi serait écrasé s'il y figurait — d'où leur absence du mapping (`test_resync_does_not_wipe_enriched_splits`).
 
 ## Mapping vers les modèles du projet
 
@@ -80,7 +85,10 @@ n'expose ni `raw` ni `user_id`. Forme du document stocké :
     "distance_m": float | None,
     "avg_hr": int | None,
     "max_hr": int | None,
+    "elevation_gain_m": float | None,  # déjà dans le payload de liste : mappé, pas enrichi
+    "avg_cadence_spm": float | None,   # idem (averageRunningCadenceInStepsPerMinute)
     "hr_zone_seconds": list[float] | None,  # 5 valeurs Z1..Z5, rempli après coup
+    "splits": list[dict] | None,     # tours (index/distance_m/duration_s/avg_hr/elevation_gain_m), rempli après coup
     "training_load": float | None,   # calculé par load_service, pas par Garmin
     "raw": dict,                 # payload Garmin brut, pour ne rien perdre
 }

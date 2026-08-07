@@ -566,3 +566,173 @@ async def test_zone_enrichment_only_fetches_activities_missing_the_field(db):
 
     assert enriched == 1
     mock_instance.get_activity_hr_in_timezones.assert_called_once_with("2")
+
+
+# --- Terrain, form and splits: what a session actually showed ---
+
+SPLITS_PAYLOAD = {
+    "lapDTOs": [
+        {"distance": 1000.0, "duration": 300.0, "averageHR": 145, "elevationGain": 12.0},
+        {"distance": 1000.0, "duration": 295.0, "averageHR": 152, "elevationGain": 4.0},
+        {"distance": 420.0, "duration": 130.0, "averageHR": 160, "elevationGain": 0.0},
+    ]
+}
+
+
+def test_map_activity_extracts_terrain_and_cadence():
+    """Elevation was sitting unread in `raw` — without it a hilly long run reads
+    as a pace regression."""
+    mapped = garmin_sync_service._map_activity(
+        "u1",
+        {
+            **RUNNING_ACTIVITY,
+            "elevationGain": 210.5,
+            "averageRunningCadenceInStepsPerMinute": 178.4,
+        },
+    )
+    assert mapped["elevation_gain_m"] == 210.5
+    assert mapped["avg_cadence_spm"] == 178.4
+
+
+def test_map_activity_tolerates_missing_terrain():
+    """A treadmill run reports no elevation; that must not drop the activity."""
+    mapped = garmin_sync_service._map_activity("u1", RUNNING_ACTIVITY)
+    assert mapped["elevation_gain_m"] is None
+    assert mapped["avg_cadence_spm"] is None
+
+
+def test_laps_keeps_real_distance_rather_than_assuming_a_kilometre():
+    """Auto-lap can be off or set to miles, so pace must come from the
+    distance/duration pair — never from an assumed 1000 m."""
+    laps = garmin_sync_service._laps(SPLITS_PAYLOAD)
+    assert [lap["index"] for lap in laps] == [1, 2, 3]
+    assert laps[2]["distance_m"] == 420.0  # the trailing partial lap survives intact
+    assert laps[0]["avg_hr"] == 145
+    assert laps[0]["elevation_gain_m"] == 12.0
+
+
+def test_laps_drops_rows_that_would_produce_an_infinite_pace():
+    assert garmin_sync_service._laps(None) == []
+    assert garmin_sync_service._laps({"lapDTOs": [{"distance": 0.0, "duration": 300.0}]}) == []
+    assert garmin_sync_service._laps({"lapDTOs": [{"distance": 1000.0}]}) == []
+
+
+async def test_enrich_splits_only_fills_runs_that_lack_them(db):
+    user_id = await _seed_user_and_credentials(db)
+    now = datetime.now(UTC)
+    await db.activities.insert_many(
+        [
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 1,
+                "start_time": now,
+                "duration_s": 1800,
+                "splits": [{"index": 1, "distance_m": 1000.0, "duration_s": 300}],
+            },
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 2,
+                "start_time": now - timedelta(days=1),
+                "duration_s": 1800,
+            },
+            {
+                "user_id": user_id,
+                "sport": "PADEL",
+                "garmin_activity_id": 3,
+                "start_time": now - timedelta(days=2),
+                "duration_s": 3600,
+            },
+        ]
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_splits.return_value = SPLITS_PAYLOAD
+
+    enriched = await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance)
+
+    assert enriched == 1
+    # Only the run missing the field pays a request — not the padel session, and
+    # not the run that already has splits.
+    mock_instance.get_activity_splits.assert_called_once_with("2")
+    stored = await db.activities.find_one({"garmin_activity_id": 2})
+    assert len(stored["splits"]) == 3
+
+
+async def test_one_activity_without_splits_does_not_cost_the_others(db):
+    """Per-activity guard, same contract as the zone enrichment: an old device
+    or a lapless treadmill entry must not abort the batch."""
+    user_id = await _seed_user_and_credentials(db)
+    now = datetime.now(UTC)
+    await db.activities.insert_many(
+        [
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 10,
+                "start_time": now,
+                "duration_s": 1800,
+            },
+            {
+                "user_id": user_id,
+                "sport": "RUN",
+                "garmin_activity_id": 11,
+                "start_time": now - timedelta(days=1),
+                "duration_s": 1800,
+            },
+        ]
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_splits.side_effect = [
+        garminconnect.GarminConnectConnectionError("API Error 500 - boom"),
+        SPLITS_PAYLOAD,
+    ]
+
+    enriched = await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance)
+
+    assert enriched == 1  # the second one still landed
+    assert mock_instance.get_activity_splits.call_count == 2
+
+
+async def test_sync_never_fails_when_splits_blow_up(db):
+    """Splits are a nice-to-have: a Garmin hiccup there must not fail an
+    otherwise-successful activity sync."""
+    user_id = await _seed_user_and_credentials(db)
+    job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_activity_splits.side_effect = RuntimeError("garmin is having a moment")
+
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    job = await job_service.get_job(db, job_id, user_id)
+    assert job.status == JobStatus.DONE
+    assert await db.activities.find_one({"garmin_activity_id": 111}) is not None
+
+
+async def test_resync_does_not_wipe_enriched_splits(db):
+    """The trap the garmin-sync skill flags for `hr_zone_seconds`, and the reason
+    `splits` is deliberately absent from `_map_activity`: a resync `$set`s the
+    mapped fields, so anything enriched afterwards would be erased on the next
+    sync if it were mapped too."""
+    user_id = await _seed_user_and_credentials(db)
+
+    mock_instance = MagicMock()
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    mock_instance.get_activity_splits.return_value = SPLITS_PAYLOAD
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    assert len((await db.activities.find_one({"garmin_activity_id": 111}))["splits"]) == 3
+
+    # Second sync: the same activity comes back from the list endpoint.
+    mock_instance.get_activities.side_effect = [[RUNNING_ACTIVITY], []]
+    with patch("app.services.garmin_sync_service.garminconnect.Garmin", return_value=mock_instance):
+        job_id = await job_service.create_job(db, user_id, "garmin_activity_sync")
+        await garmin_sync_service.run_activity_sync(db, user_id, job_id)
+
+    stored = await db.activities.find_one({"garmin_activity_id": 111})
+    assert len(stored["splits"]) == 3  # survived the re-`$set`

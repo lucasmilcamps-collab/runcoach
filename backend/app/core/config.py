@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     vapid_subject: str = "mailto:coach@runcoach.app"
     push_run_secret: str = ""
 
+    # Guards the scheduler-triggered /reviews/run, same shape as push_run_secret.
+    # Empty = the weekly review can only be fetched per-user, never run in batch.
+    review_run_secret: str = ""
+
     # Kept as a plain str (not list[str]): pydantic-settings JSON-decodes any
     # complex-typed env var unconditionally, before validators run, so a
     # host dashboard value that isn't strict JSON (e.g. a bare comma list)

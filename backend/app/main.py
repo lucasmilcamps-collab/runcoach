@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import activities, auth, fitness, garmin, jobs, plans, push
+from app.api import activities, auth, fitness, garmin, jobs, plans, push, reviews
 from app.core.config import settings
 from app.core.db import get_db
 
@@ -64,6 +64,7 @@ app.include_router(fitness.router)
 app.include_router(plans.router)
 app.include_router(jobs.router)
 app.include_router(push.router)
+app.include_router(reviews.router)
 
 
 @app.get("/health")

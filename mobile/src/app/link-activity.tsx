@@ -69,6 +69,9 @@ export default function LinkActivityScreen() {
       queryClient.invalidateQueries({ queryKey: qk.sessionLink(weekIndex, day, slot) });
       queryClient.invalidateQueries({ queryKey: qk.planProgress() });
       queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
+      // Linking changes which sessions the weekly review counts as done, so
+      // its verdict is stale the moment a link lands.
+      queryClient.invalidateQueries({ queryKey: qk.weeklyReview() });
       router.back();
     },
   });

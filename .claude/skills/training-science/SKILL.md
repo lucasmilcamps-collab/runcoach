@@ -101,6 +101,8 @@ Structure standard (adapter la durée totale à la date de course) :
 
 Toujours donner une **fourchette** d'allure, pas une valeur unique, et croiser avec les zones FC (si conflit allure/FC sur route vallonnée → la FC prime en Z1–Z2, l'allure prime en séance qualité sur plat).
 
+**Cette règle d'arbitrage est implémentée** dans `weekly_review_service._governing_signal`, qui étiquette chaque séance passée en revue `signal: "hr"` ou `"pace"` — et transmet l'étiquette au générateur de plan (`semaine_ecoulee`) pour qu'il ne lise pas une côte comme une allure ratée. Les types Z1–Z2 (`easy`, `long_run`, `recovery`) sont toujours jugés sur la FC ; les types qualité le sont sur l'allure **tant que le terrain est plat**. Le seuil de « plat » (`_HILLY_M_PER_KM`, 10 m/km) est le seul nombre du module que ce skill ne fixe pas : c'est un critère descriptif — « peut-on encore se fier à l'allure ici ? » — pas une constante physiologique.
+
 ## Signaux de récupération (pour l'adaptation dynamique)
 
 Entrées quotidiennes : HRV (vs baseline 30 j), FC repos (vs baseline), score de sommeil, Body Battery matin, TSB.
@@ -110,3 +112,15 @@ Règles simples et transparentes (pas de ML au départ) :
 - 2 nuits < 6 h consécutives → pas de séance Z4/Z5 le jour même.
 - Séance manquée : ne jamais la "rattraper" en l'empilant ; recalculer la semaine en préservant la séance clé (long run ou qualité principale).
 - Toute dégradation est **expliquée à l'utilisateur** (transparence = confiance).
+
+### Bilan de fin de semaine (`weekly_review_service`)
+
+Le pendant hebdomadaire de l'ajustement quotidien ci-dessus. Le verdict « faut-il réajuster le plan ? » est **déterministe et gratuit** — aucun appel modèle — et n'utilise que des seuils déjà documentés ici, en réutilisant les constantes existantes plutôt que d'en créer des variantes :
+
+- ≥ 2 séances clés manquées sur la semaine (`_MISSED_KEY_TRIGGER`, partagé avec `plan_progress`) ;
+- TSB < −25 (`_CHRONIC_FATIGUE_TSB`) ;
+- CTL en hausse de plus de ~10 % sur la semaine (règle métier du CLAUDE.md, `_MAX_CTL_RAMP_PCT`).
+
+La dérive cardiaque et l'écart d'allure sont **mesurés et transmis** (ils viennent des splits par tour), mais ne déclenchent rien : ce skill ne leur fixe pas de seuil, et en inventer un ferait passer une intuition pour de la science. Ils servent à expliquer, pas à décider.
+
+L'IA n'intervient qu'une fois le verdict déjà positif, et uniquement pour rédiger l'explication et la recommandation. Comme `replan_suggested`, le bilan **propose** — il ne régénère jamais un plan de lui-même.

@@ -13,6 +13,7 @@ import { PlanWeekPager } from '@/components/plan-view';
 import { ThemedText } from '@/components/themed-text';
 import { TopBar } from '@/components/top-bar';
 import { WeeklyOverview } from '@/components/weekly-overview';
+import { WeeklyReviewCard } from '@/components/weekly-review-card';
 import { MaxContentWidthWide, Rounded, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { makeStyles } from '@/lib/themed-styles';
@@ -25,6 +26,7 @@ import {
   PlanProgress,
   PlanResponse,
 } from '@/lib/api/plans';
+import { getWeeklyReview } from '@/lib/api/reviews';
 import { pressable } from '@/lib/pressable';
 import { qk } from '@/lib/query-keys';
 import { usePlanGeneration } from '@/lib/use-plan-generation';
@@ -43,6 +45,10 @@ export default function PlanScreen() {
   const progressQuery = useQuery({
     queryKey: qk.planProgress(),
     queryFn: getPlanProgress,
+  });
+  const reviewQuery = useQuery({
+    queryKey: qk.weeklyReview(),
+    queryFn: getWeeklyReview,
   });
   const bottomPad = useTabScrollPadding();
   const { compact, onScroll } = useCompactHeader();
@@ -100,6 +106,19 @@ export default function PlanScreen() {
                 <Icon name="chevron-right" size={16} color={theme.ink} />
               </Pressable>
             </View>
+          ) : null}
+
+          {/* The week that ended, above the replan banner: it explains *why* a
+              replan is being suggested, so it should be read first. Both share
+              the one generation path — a second one would let the two disagree
+              about what regenerating means. */}
+          {reviewQuery.data?.has_plan ? (
+            <WeeklyReviewCard
+              review={reviewQuery.data}
+              onReplan={() => currentRequest && replan.generate(currentRequest)}
+              isReplanning={replan.isGenerating}
+              canReplan={currentRequest != null}
+            />
           ) : null}
 
           {progressQuery.data?.replan_suggested && currentRequest ? (
