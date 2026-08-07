@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { Button } from '@/components/button';
+import { RegenerateButton } from '@/components/regenerate-button';
 import { ThemedText } from '@/components/themed-text';
 import { Rounded, Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
@@ -63,12 +63,7 @@ export function WeeklyReviewCard({
       )}
 
       {adjust && canReplan ? (
-        <Button
-          label="Régénérer un plan adapté"
-          variant="ghost"
-          loading={isReplanning}
-          onPress={onReplan}
-        />
+        <RegenerateButton onConfirm={onReplan} isRegenerating={isReplanning} />
       ) : null}
     </View>
   );

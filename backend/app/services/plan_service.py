@@ -1549,6 +1549,12 @@ def _version_reason(doc: dict, prev_request: dict | None) -> str:
     """Why this version was created, inferred from what we stored. An injury is
     explicit; the first version is the initial plan; otherwise a changed request
     means the objective moved, an identical one means a plain replan."""
+    # Checked before the injury/request rules: a restore copies both fields
+    # forward, so without this it would be labelled by whatever the version it
+    # came from was labelled — reading as a second injury or a second replan.
+    restored_from = doc.get("restored_from")
+    if restored_from:
+        return f"Version {restored_from} restaurée"
     if doc.get("injury"):
         return "Reprise après blessure"
     if prev_request is None:
@@ -1617,6 +1623,72 @@ async def get_plan_version(
         projected_time_min=doc.get("projected_time_min"),
         feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
+    )
+
+
+class PlanVersionNotFoundError(Exception):
+    pass
+
+
+async def restore_plan_version(
+    db: AsyncIOMotorDatabase, user_id: str, version: int
+) -> PlanResponse:
+    """Bring a past version back as the active plan.
+
+    Copies it forward as a NEW version rather than deleting anything: versions
+    are append-only everywhere else in this service, and a restore that erased
+    the plan it replaced would be the same loss it exists to undo — one
+    regeneration too many and there'd be nothing left to come back to.
+
+    The original `start_date` is copied verbatim. That is the point: the restored
+    plan gets its own week grid back, so a session completed in week 1 sits in
+    week 1 again and its link (keyed by week/day/slot) lines up with the session
+    it was made against.
+
+    Per-week overrides are copied too. They are scoped by `plan_version`, so
+    without this a restore would silently drop every move and duration edit the
+    athlete had made — putting the plan back but not the week.
+    """
+    doc = await db.plans.find_one(
+        {"user_id": user_id, "version": version, "status": {"$in": ["ready", "cancelled"]}}
+    )
+    if doc is None or not doc.get("plan"):
+        raise PlanVersionNotFoundError
+
+    new_version = await _next_version(db, user_id)
+    restored = {
+        "user_id": user_id,
+        "version": new_version,
+        "status": "ready",
+        "request": doc.get("request"),
+        "plan": doc.get("plan"),
+        "start_date": doc.get("start_date"),
+        "injury": doc.get("injury"),
+        "estimated_time_min": doc.get("estimated_time_min"),
+        "projected_time_min": doc.get("projected_time_min"),
+        "feasibility_warning": doc.get("feasibility_warning"),
+        "error_message": None,
+        "created_at": datetime.now(UTC),
+        # So the history can say "Version 1 restaurée" instead of inventing a
+        # reason from a request diff that didn't change.
+        "restored_from": version,
+    }
+    await db.plans.insert_one(restored)
+    await plan_moves_service.copy_overrides(db, user_id, version, new_version)
+
+    plan = Plan.model_validate(restored["plan"])
+    await plan_moves_service.apply_overrides(db, user_id, plan, new_version)
+    return PlanResponse(
+        id=str(restored["_id"]),
+        status="ready",
+        request=(
+            PlanRequest.model_validate(restored["request"]) if restored.get("request") else None
+        ),
+        plan=plan,
+        estimated_time_min=restored.get("estimated_time_min"),
+        projected_time_min=restored.get("projected_time_min"),
+        feasibility_warning=restored.get("feasibility_warning"),
+        error_message=None,
     )
 
 

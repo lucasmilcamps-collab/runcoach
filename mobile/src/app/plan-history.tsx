@@ -1,17 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
+import { Button } from '@/components/button';
 import { ThemedText } from '@/components/themed-text';
 import { Icon } from '@/components/icon';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { makeStyles } from '@/lib/themed-styles';
 import { pressable } from '@/lib/pressable';
-import { getPlanVersions, PlanVersionSummary } from '@/lib/api/plans';
-import { qk } from '@/lib/query-keys';
+import { getPlanVersions, PlanVersionSummary, restorePlanVersion } from '@/lib/api/plans';
+import { invalidatePlanReads, qk } from '@/lib/query-keys';
 
 function fmtTime(min: number): string {
   const h = Math.floor(min / 60);
@@ -83,7 +85,7 @@ export default function PlanHistoryScreen() {
             {past.length > 0 ? (
               <Section title="Passés">
                 {past.map((v) => (
-                  <VersionRow key={v.version} version={v} />
+                  <VersionRow key={v.version} version={v} restorable />
                 ))}
               </Section>
             ) : null}
@@ -108,13 +110,33 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function VersionRow({ version }: { version: PlanVersionSummary }) {
+function VersionRow({
+  version,
+  restorable = false,
+}: {
+  version: PlanVersionSummary;
+  restorable?: boolean;
+}) {
   const theme = useTheme();
   const styles = useStyles();
+  const queryClient = useQueryClient();
   const subtitle = [version.goal_description, version.injury_area].filter(Boolean).join(' · ');
 
+  // Two taps rather than an Alert, same as deleting a session: an Alert barely
+  // exists on react-native-web, and this swaps the plan under the athlete.
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const restore = useMutation({
+    mutationFn: () => restorePlanVersion(version.version),
+    onSuccess: () => {
+      invalidatePlanReads(queryClient);
+      setConfirmRestore(false);
+      router.back(); // land on the Plan tab, now showing the restored plan
+    },
+  });
+
   return (
-    <Pressable
+    <View>
+      <Pressable
       style={pressable(styles.card)}
       accessibilityRole="button"
       accessibilityLabel={`Plan ${version.version}, ${version.reason}`}
@@ -151,12 +173,40 @@ function VersionRow({ version }: { version: PlanVersionSummary }) {
           {version.projected_time_min != null ? ` → ${fmtTime(version.projected_time_min)}` : ''}
         </ThemedText>
       ) : null}
-      {subtitle ? (
-        <ThemedText type="small" themeColor="inkMuted">
-          {subtitle}
-        </ThemedText>
+        {subtitle ? (
+          <ThemedText type="small" themeColor="inkMuted">
+            {subtitle}
+          </ThemedText>
+        ) : null}
+      </Pressable>
+
+      {/* Outside the navigating Pressable, not nested in it: a button inside a
+          row that also navigates gives two meanings to one tap. */}
+      {restorable ? (
+        <View style={styles.restoreRow}>
+          <Button
+            label={confirmRestore ? 'Confirmer la restauration ?' : 'Restaurer ce plan'}
+            variant="ghost"
+            loading={restore.isPending}
+            onPress={() => {
+              if (confirmRestore) restore.mutate();
+              else setConfirmRestore(true);
+            }}
+          />
+          {confirmRestore ? (
+            <ThemedText type="small" themeColor="inkMuted">
+              Ce plan redevient actif, avec ses semaines et ses séances d’origine. Le plan actuel
+              n’est pas supprimé : il reste ici.
+            </ThemedText>
+          ) : null}
+          {restore.isError ? (
+            <ThemedText type="small" themeColor="alerte">
+              La restauration a échoué. Réessaie.
+            </ThemedText>
+          ) : null}
+        </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -199,4 +249,5 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: Spacing.one,
   },
+  restoreRow: { gap: Spacing.two, paddingBottom: Spacing.three },
 }));
