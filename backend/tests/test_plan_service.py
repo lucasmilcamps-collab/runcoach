@@ -65,9 +65,11 @@ def _valid_plan_dict() -> dict:
 
 
 def _bad_plan_dict() -> dict:
-    # Same shape but week 2 ramps +30% — validate_plan will reject it.
+    # Same shape, but week 2 prescribes far too much — a 100-minute tempo where
+    # week 1 has 45. The load is derived from the sessions now, so a fixture
+    # cannot fake a violation by writing a number: it has to actually be one.
     plan = _valid_plan()
-    plan.phases[0].weeks[1].target_load = 130.0
+    plan.phases[0].weeks[1].sessions[0].duration_min = 100
     return plan.model_dump(mode="json")
 
 
@@ -175,7 +177,9 @@ async def test_generate_plan_retries_on_violation(db):
     assert second_messages[1]["role"] == "assistant"
     tool_use = second_messages[1]["content"][0]
     assert tool_use["type"] == "tool_use"
-    assert tool_use["input"]["phases"][0]["weeks"][1]["target_load"] == 130.0
+    # The rejected week comes back as the model wrote it — the 100-minute tempo,
+    # not a load, which the model no longer emits.
+    assert tool_use["input"]["phases"][0]["weeks"][1]["sessions"][0]["duration_min"] == 100
     # …and the violations come back as a tool_result.
     assert second_messages[2]["role"] == "user"
     tool_result = second_messages[2]["content"][0]
@@ -1543,8 +1547,9 @@ async def test_repair_fixes_the_flagged_week_without_regenerating(db):
     assert "Semaine 2" in prompt or "S2 " in prompt  # the outline keeps it coherent
     assert '"index": 2' in prompt  # the week to fix went out in full
     assert '"index": 3' not in prompt  # the others did not
-    # The splice landed on the stored plan.
-    assert result.plan.phases[0].weeks[1].target_load == 108.0
+    # The splice landed on the stored plan: the repaired week is the 45-minute
+    # tempo, not the 100-minute one that was rejected.
+    assert result.plan.phases[0].weeks[1].sessions[0].duration_min == 45
 
 
 async def test_repair_that_makes_things_worse_is_discarded(db):
@@ -1552,7 +1557,7 @@ async def test_repair_that_makes_things_worse_is_discarded(db):
     then repaired again, drifting further each round."""
     user_id = await _seed_user(db)
     worse = _valid_plan().phases[0].weeks[1]
-    worse.target_load = 400.0  # even further off the ramp
+    worse.sessions[0].duration_min = 150  # even further off the ramp than the 100 it replaces
     create_mock = _create_mock(
         _mock_response(_bad_plan_dict()),
         _repair_response([worse.model_dump(mode="json")]),
@@ -1566,7 +1571,7 @@ async def test_repair_that_makes_things_worse_is_discarded(db):
         result = await plan_service.generate_plan(db, user_id, _request())
 
     assert result.status == "ready", result.error_message
-    assert result.plan.phases[0].weeks[1].target_load == 108.0
+    assert result.plan.phases[0].weeks[1].sessions[0].duration_min == 45
 
 
 async def test_repair_is_skipped_for_a_plan_wide_violation(db):
@@ -1900,8 +1905,16 @@ def test_auto_fix_separates_two_strength_blocks():
 # --- Pulling a marginal ramp overshoot back, for free -------------------------
 
 
-def _ramp_plan(loads: list[tuple[float, bool]]) -> Plan:
-    """Weeks carrying only a load and a deload flag — this fix reads nothing else."""
+_EASY_DAYS = [Weekday.MONDAY, Weekday.WEDNESDAY, Weekday.FRIDAY, Weekday.SUNDAY]
+
+
+def _ramp_plan(weeks: list[tuple[list[int], bool]]) -> Plan:
+    """Weeks described by the DURATIONS of their easy sessions.
+
+    A fixture cannot declare a load any more — it is derived from the sessions,
+    which is the whole point. Easy is Z2, so a week's load is simply twice the
+    sum of its minutes, and the numbers below are readable on sight.
+    """
     return Plan(
         goal=PlanGoal(description="Semi", distance_km=21.1),
         phases=[
@@ -1911,82 +1924,117 @@ def _ramp_plan(loads: list[tuple[float, bool]]) -> Plan:
                     Week(
                         index=i,
                         is_deload=deload,
-                        target_load=load,
-                        sessions=[_s(Weekday.TUESDAY, "tempo", 45)],
+                        sessions=[
+                            _s(_EASY_DAYS[n], "easy", minutes)
+                            for n, minutes in enumerate(durations)
+                        ],
                     )
-                    for i, (load, deload) in enumerate(loads, start=1)
+                    for i, (durations, deload) in enumerate(weeks, start=1)
                 ],
             )
         ],
     )
 
 
-def test_a_marginal_overshoot_is_pulled_back_by_code():
-    """The failure that cost three attempts and the whole budget: 0.4% over the
-    ceiling, on a number the model estimated by eye."""
-    plan = _ramp_plan([(100.0, False), (110.4, False)])
+def _loads(plan: Plan) -> list[float]:
+    from app.services import plan_moves_service
+
+    return [plan_moves_service.week_load(w) for p in plan.phases for w in p.weeks]
+
+
+def test_a_marginal_overshoot_is_trimmed_by_code():
+    """The failure that cost three attempts and the whole budget — now expressed
+    where it actually lives: 300 then 332 of prescribed load, a ceiling of 330."""
+    plan = _ramp_plan([([60, 60, 30], False), ([61, 60, 45], False)])
+    assert _loads(plan) == [300.0, 332.0]
 
     assert plan_service._auto_fix_ramp(plan) is True
-    assert plan.phases[0].weeks[1].target_load == 110.0
+
+    assert _loads(plan)[1] <= 330.0
+    # Proportional: the week keeps its shape instead of losing one session.
+    assert [s.duration_min for s in plan.phases[0].weeks[1].sessions] == [60, 59, 44]
 
 
 def test_a_real_overshoot_is_left_to_the_model():
-    """Past the tolerance the sessions themselves are too heavy. Rewriting the
-    label would leave them there under a compliant number."""
-    plan = _ramp_plan([(100.0, False), (140.0, False)])
+    """Past the tolerance the week is genuinely too heavy, and shaving a few
+    minutes off would paper over it. Only a rebuild helps."""
+    plan = _ramp_plan([([60, 60, 30], False), ([100, 100, 15], False)])
 
     assert plan_service._auto_fix_ramp(plan) is False
-    assert plan.phases[0].weeks[1].target_load == 140.0
+    assert [s.duration_min for s in plan.phases[0].weeks[1].sessions] == [100, 100, 15]
 
 
-def test_the_clamp_cascades_from_the_corrected_baseline():
-    """Each week is measured against the already-clamped one, so a run of small
-    overshoots resolves in a single pass instead of walking the plan up on loads
-    that were never allowed."""
-    plan = _ramp_plan([(100.0, False), (110.5, False), (122.0, False)])
+def test_the_trim_cascades_from_the_corrected_week():
+    """Each week is measured against the already-trimmed one. Judged against the
+    week as delivered, week 3 would sit under its ceiling and be left alone."""
+    plan = _ramp_plan([([60, 60, 30], False), ([61, 60, 45], False), ([65, 60, 55], False)])
 
     assert plan_service._auto_fix_ramp(plan) is True
-    weeks = plan.phases[0].weeks
-    assert weeks[1].target_load == 110.0
-    assert weeks[2].target_load == 121.0  # 110.0 + 10%, not 110.5 + 10%
+
+    loads = _loads(plan)
+    assert loads[1] <= 330.0  # 300 + 10%
+    assert loads[2] <= loads[1] * 1.10 + 0.05
 
 
-def test_the_clamp_never_touches_a_frozen_week():
-    plan = _ramp_plan([(100.0, False), (110.4, False), (121.5, False)])
+def test_the_trim_never_touches_a_frozen_week():
+    plan = _ramp_plan([([60, 60, 30], False), ([61, 60, 45], False)])
 
-    assert plan_service._auto_fix_ramp(plan, frozen_through=2) is True
-    weeks = plan.phases[0].weeks
-    assert weeks[1].target_load == 110.4  # frozen: already run, not ours to edit
-    assert weeks[2].target_load == 121.4  # 110.4 + 10%
+    assert plan_service._auto_fix_ramp(plan, frozen_through=2) is False
+    # Already run: not ours to shorten.
+    assert [s.duration_min for s in plan.phases[0].weeks[1].sessions] == [61, 60, 45]
 
 
-def test_the_clamp_leaves_a_compliant_plan_alone():
-    plan = _ramp_plan([(100.0, False), (108.0, False), (80.0, True), (115.0, False)])
+def test_the_trim_never_guts_a_session():
+    """Trimming is arithmetic; left alone it would satisfy the ceiling with
+    sessions too short to train anything."""
+    plan = _ramp_plan([([20, 20], False), ([21, 20], False)])
+
+    plan_service._auto_fix_ramp(plan)
+
+    assert all(
+        s.duration_min >= plan_service._MIN_TRIMMED_SESSION_MIN
+        for w in plan.phases[0].weeks
+        for s in w.sessions
+    )
+
+
+def test_the_trim_leaves_a_compliant_plan_alone():
+    plan = _ramp_plan([([60, 60], False), ([60, 66], False), ([40, 40], True), ([70, 65], False)])
     assert plan_service._auto_fix_ramp(plan) is False
 
 
 async def test_a_marginal_overshoot_no_longer_costs_a_model_call(db):
-    """End to end, and the point of the whole change: a plan that arrives 0.4%
-    over is mended by code and stored, with no repair round and no second
-    generation — one model call in total."""
+    """End to end, and the point of the whole change: a plan that arrives a
+    fraction over is mended by code and stored, with no repair round and no
+    second generation — one model call in total."""
     user_id = await _seed_user(db)
-    plan_dict = _valid_plan_dict()
-    weeks = plan_dict["phases"][0]["weeks"]
-    weeks[0]["target_load"] = 100.0
-    weeks[1]["target_load"] = 110.4  # the case from production
+    plan = _ramp_plan([([60, 60, 30], False), ([61, 60, 45], False)])
+    plan.phases[0].weeks.append(
+        Week(index=3, is_deload=True, sessions=[_s(Weekday.MONDAY, "easy", 40)])
+    )
 
-    create_mock = _create_mock(_mock_response(plan_dict))
+    create_mock = _create_mock(_mock_response(plan.model_dump(mode="json")))
     mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    # Three key runs per normal week, matching the fixture, so the ramp is the
+    # ONLY violation — otherwise the mechanical fix couldn't clear the plan and
+    # this would prove nothing about it.
+    request = PlanRequest(
+        goal_type="distance",
+        distance_km=21.1,
+        available_days=list(Weekday),
+        min_run_sessions_per_week=3,
+        max_run_sessions_per_week=3,
+    )
     with (
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        result = await plan_service.generate_plan(db, user_id, request)
 
     assert result.status == "ready", result.error_message
-    assert create_mock.await_count == 1, "the clamp should have made a retry unnecessary"
+    assert create_mock.await_count == 1, "the trim should have made a retry unnecessary"
     stored = [w for p in result.plan.phases for w in p.weeks]
-    assert stored[1].target_load == 110.0
+    assert stored[1].target_load <= 330.0
 
 
 async def test_repair_batches_a_systematic_violation():

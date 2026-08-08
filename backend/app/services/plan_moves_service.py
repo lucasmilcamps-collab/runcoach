@@ -18,6 +18,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.activity import SportType
 from app.models.plan import Plan, Session, Weekday, session_order_key
+from app.services import load_service
 
 
 class NoActivePlanError(Exception):
@@ -70,6 +71,40 @@ def apply_moves(plan: Plan, moves: dict[int, dict[str, str]]) -> None:
             # calendar order for the rest of the request.
             if moved:
                 week.sessions.sort(key=session_order_key)
+
+
+def session_load(session: Session) -> float:
+    """Prescribed Edwards TRIMP for one session (`load_service.planned_trimp`)."""
+    if session.type == "rest":
+        return 0.0
+    return load_service.planned_trimp(
+        duration_min=session.duration_min,
+        session_type=session.type,
+        hr_zone=session.hr_zone,
+        blocks=[(b.duration_min, b.hr_zone) for b in session.structure],
+    )
+
+
+def week_load(week) -> float:
+    """Prescribed Edwards TRIMP for a whole week."""
+    return round(sum(session_load(s) for s in week.sessions), 1)
+
+
+def apply_computed_load(plan: Plan) -> None:
+    """Rewrite every week's `target_load` from the sessions it actually contains.
+
+    `target_load` used to be a number the model wrote beside sessions it had
+    already composed, so every rule built on it — the 10% ramp, the deload floor,
+    the anchor on real recent load — policed a label rather than the plan. A week
+    could announce 100 and prescribe 140, and a generation once burned its whole
+    budget on a 0.4% discrepancy in a figure estimated by eye.
+
+    A skipped session still counts: the plan still prescribes it, and the skip is
+    a per-week decision, not a change to what the week asks for.
+    """
+    for phase in plan.phases:
+        for week in phase.weeks:
+            week.target_load = week_load(week)
 
 
 async def get_completions(db: AsyncIOMotorDatabase, user_id: str) -> set[tuple[int, str, str]]:
@@ -160,6 +195,10 @@ async def apply_overrides(
     apply_edits(plan, await get_edits(db, user_id, plan_version))
     apply_moves(plan, await get_moves(db, user_id, plan_version))
     apply_completions(plan, await get_completions(db, user_id))
+    # After the edits, never before: shortening a session changes what the week
+    # asks for, and computing the load first would report the plan as generated
+    # rather than the plan as it stands.
+    apply_computed_load(plan)
 
 
 def _find_session(week, day: Weekday, slot: str, existing_moves: dict[str, str]) -> Session | None:

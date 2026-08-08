@@ -83,3 +83,74 @@ async def test_move_without_plan_raises(db):
     user_id = await _seed_user(db)
     with pytest.raises(pms.NoActivePlanError):
         await pms.move_session(db, user_id, 1, Weekday.SATURDAY, Weekday.SUNDAY)
+
+
+# --- The weekly load is derived, not declared ---------------------------------
+
+
+async def test_the_week_load_is_computed_from_its_sessions(db):
+    """`target_load` used to be a number the model wrote beside sessions it had
+    already composed, so every load rule policed a label: a week could announce
+    100 and prescribe 140."""
+    from app.models.plan import Phase, Plan, PlanGoal, Session, Week
+    from app.services import plan_moves_service
+
+    plan = Plan(
+        goal=PlanGoal(description="T"),
+        phases=[
+            Phase(
+                name="base",
+                weeks=[
+                    Week(
+                        index=1,
+                        is_deload=False,
+                        target_load=999.0,  # a lie, and it must not survive
+                        sessions=[
+                            Session(
+                                day=Weekday.TUESDAY,
+                                sport=SportType.RUN,
+                                type="tempo",
+                                duration_min=45,
+                                rationale="x",
+                            ),
+                            Session(
+                                day=Weekday.SATURDAY,
+                                sport=SportType.RUN,
+                                type="long_run",
+                                duration_min=60,
+                                rationale="x",
+                            ),
+                            Session(
+                                day=Weekday.SUNDAY,
+                                sport=SportType.RUN,
+                                type="rest",
+                                duration_min=0,
+                                rationale="x",
+                            ),
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+
+    plan_moves_service.apply_computed_load(plan)
+
+    # 45 min Z3 + 60 min Z2 = 135 + 120; rest contributes nothing.
+    assert plan.phases[0].weeks[0].target_load == 255.0
+
+
+async def test_shortening_a_session_lowers_the_week_load(db):
+    """The reason the load is computed AFTER the edits: an athlete who trims a
+    session has trimmed the week, and a load computed first would report the plan
+    as generated rather than as it stands."""
+    from app.services import plan_moves_service, plan_service
+
+    user_id = await _seed_user(db)
+    await _seed_plan(db, user_id)
+    before = (await plan_service.get_current_plan(db, user_id)).plan.phases[0].weeks[0].target_load
+
+    await plan_moves_service.set_session_duration(db, user_id, 1, Weekday.TUESDAY, "primary", 20)
+
+    after = (await plan_service.get_current_plan(db, user_id)).plan.phases[0].weeks[0].target_load
+    assert after < before

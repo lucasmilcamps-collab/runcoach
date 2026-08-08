@@ -195,3 +195,45 @@ def test_zone_times_score_an_interval_session_well_above_its_average_hr():
     assert by_zones == pytest.approx(150.0)
     assert by_avg_hr == 135.0
     assert by_zones > by_avg_hr * 1.1  # the understatement the fallback causes
+
+
+# --- Load of a session that hasn't happened yet --------------------------------
+
+
+def test_planned_trimp_reads_the_blocks_when_it_can():
+    """The Edwards argument applied to a prescription: a 6×800 is a Z2 warm-up,
+    Z5 work and a Z1 cool-down. Scored at one average zone it would understate
+    exactly the session that fatigues most."""
+    blocks = [(12, 2), (20, 5), (10, 1)]
+
+    load = load_service.planned_trimp(42, "intervals", blocks=blocks)
+
+    assert load == 12 * 2 + 20 * 5 + 10 * 1  # 24 + 100 + 10 = 134
+
+
+def test_planned_trimp_ignores_blocks_that_do_not_cover_the_session():
+    """A structure describing 10 minutes of a 45-minute session would silently
+    drop the other 35."""
+    load = load_service.planned_trimp(45, "tempo", blocks=[(10, 5)])
+
+    assert load == 45 * 3  # the type's zone, not the partial structure
+
+
+def test_planned_trimp_falls_back_to_the_type_zone():
+    """Straight off the training-science zone table: easy work is Z2."""
+    assert load_service.planned_trimp(45, "easy") == 90.0
+    assert load_service.planned_trimp(45, "recovery") == 45.0
+    assert load_service.planned_trimp(45, "tempo") == 135.0
+    assert load_service.planned_trimp(45, "threshold") == 180.0
+    assert load_service.planned_trimp(45, "intervals") == 225.0
+
+
+def test_an_explicit_zone_beats_the_type_default():
+    """The default is a stand-in for a zone nobody set — never an override."""
+    assert load_service.planned_trimp(45, "cross_training", hr_zone=5) == 225.0
+
+
+def test_planned_trimp_scores_quality_above_volume():
+    """The property that makes the ramp rule mean something: an hour of easy
+    running is not the same week as an hour of threshold."""
+    assert load_service.planned_trimp(60, "threshold") > load_service.planned_trimp(60, "easy")

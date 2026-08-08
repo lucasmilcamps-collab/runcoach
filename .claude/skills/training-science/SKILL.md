@@ -37,6 +37,27 @@ TRIMP = 1×t(Z1) + 2×t(Z2) + 3×t(Z3) + 4×t(Z4) + 5×t(Z5)   (t en minutes)
 - Si pas de FC du tout (séance déclarée manuellement) : RPE de l'utilisateur (1–10) × durée_min / 10 (session-RPE de Foster).
 - Le TRIMP calculé est stocké dans le champ `training_load` du document activité (il n'existe pas de classe `Activity` — voir garmin-sync). **Jamais** utiliser le "Training Load" propriétaire Garmin dans les calculs (non reproductible) ; on peut l'afficher à titre indicatif.
 
+### Charge d'une séance PLANIFIÉE — `load_service.planned_trimp`
+
+Même formule, appliquée à des minutes prescrites au lieu de minutes enregistrées : `Σ durée_min × zone`. Elle existe parce que `Week.target_load` était **un nombre que le modèle écrivait** à côté de séances qu'il avait déjà composées : toutes les règles de charge (rampe 10 %, plancher de deload, ancrage semaine 1) surveillaient donc une **étiquette**, pas le plan. Un plan pouvait annoncer 100 et prescrire 140, et une génération a brûlé tout son budget sur un écart de 0,4 % dans un chiffre estimé à l'œil.
+
+Le modèle ne l'écrit plus (retiré des **deux** schémas d'outil) ; elle est calculée à la lecture par `plan_moves_service.apply_computed_load`, **après** les éditions — raccourcir une séance change ce que la semaine demande.
+
+Ordre de préférence, calqué sur `compute_trimp` :
+
+1. **Les blocs** quand ils portent une zone, et seulement s'ils couvrent la séance : un 6×800 est échauffement Z2 + travail Z5 + retour au calme Z1, et la zone moyenne sous-estimerait exactement la séance qui fatigue le plus. Une structure qui ne décrit que 10 min d'une séance de 45 est ignorée plutôt que de perdre les 35 autres.
+2. **`session.hr_zone`** quand le modèle l'a posée.
+3. **La zone du type**, via la table ci-dessus : `recovery`→Z1, `easy`/`long_run`→Z2, `tempo`→Z3, `threshold`→Z4, `intervals`/`test`/`race`→Z5.
+
+⚠️ **`cross_training` (Z3) et `strength` (Z2) sont les deux seules valeurs de ce module que ce skill ne fixe pas.** Descriptives, pas physiologiques — comme `_HILLY_M_PER_KM`. Une zone posée par le modèle l'emporte toujours. Elles **comptent** dans la charge de la semaine : règle métier du CLAUDE.md, et les exclure rendrait `_check_initial_load` incohérent puisqu'il compare à `avg_weekly_load_4w`, calculée sur **toutes** les activités.
+
+**Conséquences en cascade, toutes voulues :**
+
+- `_auto_fix_ramp` ne rabat plus une étiquette : il **rogne les durées** proportionnellement (même borne de 2 %, jamais une semaine gelée, jamais sous `_MIN_TRIMMED_SESSION_MIN`). Plus fort, et plus honnête — ça corrige le plan, pas sa description.
+- Le message de violation dit **combien de minutes retirer**, puisque réécrire un nombre n'est plus une correction possible.
+- Le prompt reçoit les **plafonds par semaine** (`_load_budget_directive`) et la règle de conversion : le modèle subit désormais la charge au lieu de la choisir, autant qu'il connaisse la contrainte avant d'écrire.
+- **Une fixture de test ne peut plus mentir** : pour créer une violation de rampe il faut vraiment prescrire trop, et un deload doit vraiment alléger.
+
 ## Forme et fatigue — CTL / ATL / TSB
 
 Moyennes exponentielles de la charge quotidienne (somme des TRIMP du jour) :
