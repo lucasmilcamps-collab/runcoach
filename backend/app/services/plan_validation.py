@@ -67,10 +67,16 @@ def _check_ramp(weeks: list[Week], frozen_through: int = 0) -> list[str]:
             and week.index > frozen_through
             and week.target_load > last_normal_load * RAMP_MAX_RATIO
         ):
-            pct = (week.target_load / last_normal_load - 1) * 100
+            # The numbers, not a rounded percentage. `+{pct:.0f}%` turned a real
+            # 10.4% overshoot into "charge +10% (> 10% autorisé)" — a message
+            # that contradicts itself and leaves nothing to act on. Three repair
+            # rounds were burned on it. Naming the ceiling means the fix is a
+            # number to write, not a ratio to re-derive.
+            ceiling = last_normal_load * RAMP_MAX_RATIO
             violations.append(
-                f"Semaine {week.index} : charge +{pct:.0f}% (> 10% autorisé) "
-                "par rapport à la dernière semaine normale."
+                f"Semaine {week.index} : charge {week.target_load:.1f}, maximum "
+                f"autorisé {ceiling:.1f} (+10% sur la dernière semaine normale à "
+                f"{last_normal_load:.1f})."
             )
         last_normal_load = week.target_load
     return violations
@@ -99,10 +105,11 @@ def _check_deload(weeks: list[Week]) -> list[str]:
                 last_normal_load is not None
                 and week.target_load > last_normal_load * DELOAD_MAX_RATIO
             ):
-                pct = week.target_load / last_normal_load * 100
+                ceiling = last_normal_load * DELOAD_MAX_RATIO
                 violations.append(
-                    f"Semaine {week.index} : marquée deload mais charge à {pct:.0f}% "
-                    "de la dernière semaine normale (≤ 85% attendu)."
+                    f"Semaine {week.index} : marquée deload mais charge "
+                    f"{week.target_load:.1f}, maximum autorisé {ceiling:.1f} "
+                    f"(85% de la dernière semaine normale à {last_normal_load:.1f})."
                 )
             continue
         consecutive += 1
@@ -295,11 +302,11 @@ def _check_initial_load(
         return []
     anchor = weeks[frozen_through]
     if anchor.target_load > baseline * INITIAL_RAMP_MAX_RATIO:
-        pct = (anchor.target_load / baseline - 1) * 100
+        ceiling = baseline * INITIAL_RAMP_MAX_RATIO
         return [
-            f"Semaine {anchor.index} : charge {anchor.target_load:.0f} TRIMP, +{pct:.0f}% "
-            f"au-dessus de la charge réelle récente ({baseline:.0f}) — départ trop haut "
-            "(≤ +10% attendu)."
+            f"Semaine {anchor.index} : charge {anchor.target_load:.1f} TRIMP, maximum "
+            f"autorisé {ceiling:.1f} (+10% sur la charge réelle récente de "
+            f"{baseline:.1f}) — départ trop haut."
         ]
     return []
 

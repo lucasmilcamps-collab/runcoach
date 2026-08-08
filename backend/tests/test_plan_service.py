@@ -129,7 +129,7 @@ def _no_repair():
     """Bypass the targeted-repair round. These tests are about the full
     regeneration retry and the time budget; repair has its own tests below."""
 
-    async def _passthrough(client, system, plan, violations, *args):
+    async def _passthrough(client, system, plan, violations, *args, **kwargs):
         return plan, violations, 0
 
     return patch("app.services.plan_service._repair_rounds", _passthrough)
@@ -1370,6 +1370,18 @@ def test_violation_weeks_reads_the_indices():
     ) == {3, 12}
 
 
+def test_violation_weeks_still_reads_the_ramp_message():
+    """The trap in rewording a violation: `_violation_weeks` parses it. If the
+    ramp message stops matching, every repair falls back to a full regeneration —
+    the opposite of the fix."""
+    assert plan_service._violation_weeks(
+        [
+            "Semaine 9 : charge 110.4, maximum autorisé 110.0 (+10% sur la "
+            "dernière semaine normale à 100.0)."
+        ]
+    ) == {9}
+
+
 def test_violation_weeks_refuses_plan_wide_problems():
     """A week count or an all-deload plan can't be fixed by rewriting weeks, so
     the caller must fall back to regenerating rather than silently drop it."""
@@ -1757,6 +1769,98 @@ def test_auto_fix_separates_two_strength_blocks():
         plan_service.WEEKDAY_ORDER.index(s.day) for s in week.sessions if s.type == "strength"
     )
     assert days[1] - days[0] >= 2  # 48h restored
+
+
+# --- Pulling a marginal ramp overshoot back, for free -------------------------
+
+
+def _ramp_plan(loads: list[tuple[float, bool]]) -> Plan:
+    """Weeks carrying only a load and a deload flag — this fix reads nothing else."""
+    return Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[
+            Phase(
+                name="base",
+                weeks=[
+                    Week(
+                        index=i,
+                        is_deload=deload,
+                        target_load=load,
+                        sessions=[_s(Weekday.TUESDAY, "tempo", 45)],
+                    )
+                    for i, (load, deload) in enumerate(loads, start=1)
+                ],
+            )
+        ],
+    )
+
+
+def test_a_marginal_overshoot_is_pulled_back_by_code():
+    """The failure that cost three attempts and the whole budget: 0.4% over the
+    ceiling, on a number the model estimated by eye."""
+    plan = _ramp_plan([(100.0, False), (110.4, False)])
+
+    assert plan_service._auto_fix_ramp(plan) is True
+    assert plan.phases[0].weeks[1].target_load == 110.0
+
+
+def test_a_real_overshoot_is_left_to_the_model():
+    """Past the tolerance the sessions themselves are too heavy. Rewriting the
+    label would leave them there under a compliant number."""
+    plan = _ramp_plan([(100.0, False), (140.0, False)])
+
+    assert plan_service._auto_fix_ramp(plan) is False
+    assert plan.phases[0].weeks[1].target_load == 140.0
+
+
+def test_the_clamp_cascades_from_the_corrected_baseline():
+    """Each week is measured against the already-clamped one, so a run of small
+    overshoots resolves in a single pass instead of walking the plan up on loads
+    that were never allowed."""
+    plan = _ramp_plan([(100.0, False), (110.5, False), (122.0, False)])
+
+    assert plan_service._auto_fix_ramp(plan) is True
+    weeks = plan.phases[0].weeks
+    assert weeks[1].target_load == 110.0
+    assert weeks[2].target_load == 121.0  # 110.0 + 10%, not 110.5 + 10%
+
+
+def test_the_clamp_never_touches_a_frozen_week():
+    plan = _ramp_plan([(100.0, False), (110.4, False), (121.5, False)])
+
+    assert plan_service._auto_fix_ramp(plan, frozen_through=2) is True
+    weeks = plan.phases[0].weeks
+    assert weeks[1].target_load == 110.4  # frozen: already run, not ours to edit
+    assert weeks[2].target_load == 121.4  # 110.4 + 10%
+
+
+def test_the_clamp_leaves_a_compliant_plan_alone():
+    plan = _ramp_plan([(100.0, False), (108.0, False), (80.0, True), (115.0, False)])
+    assert plan_service._auto_fix_ramp(plan) is False
+
+
+async def test_a_marginal_overshoot_no_longer_costs_a_model_call(db):
+    """End to end, and the point of the whole change: a plan that arrives 0.4%
+    over is mended by code and stored, with no repair round and no second
+    generation — one model call in total."""
+    user_id = await _seed_user(db)
+    plan_dict = _valid_plan_dict()
+    weeks = plan_dict["phases"][0]["weeks"]
+    weeks[0]["target_load"] = 100.0
+    weeks[1]["target_load"] = 110.4  # the case from production
+
+    create_mock = _create_mock(_mock_response(plan_dict))
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
+    ):
+        result = await plan_service.generate_plan(db, user_id, _request())
+
+    assert result.status == "ready", result.error_message
+    assert create_mock.await_count == 1, "the clamp should have made a retry unnecessary"
+    stored = [w for p in result.plan.phases for w in p.weeks]
+    assert stored[1].target_load == 110.0
 
 
 async def test_repair_batches_a_systematic_violation():

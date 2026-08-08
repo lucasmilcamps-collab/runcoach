@@ -373,6 +373,75 @@ async def test_replan_endpoint_on_a_finishing_plan_is_409(client, db):
     assert response.json()["detail"]["code"] == "NOTHING_TO_REPLAN"
 
 
+# --- The repair path has to survive being given frozen weeks ------------------
+
+
+async def test_a_repair_is_kept_when_replanning(db):
+    """Frozen weeks are context for the first validation but were defendants again
+    when a repaired candidate was re-checked: `still` came back longer than
+    `violations`, the "did it help?" test failed, and a repair that worked was
+    computed and thrown away — on every replan."""
+    from app.services import plan_validation
+
+    user_id = await _seed_user(db)
+    start = _monday(-2)  # today is in week 3, so weeks 1-3 freeze
+    # Week 1 carries two key runs where the request allows one: a real violation,
+    # in a week nobody can change any more.
+    original = _plan([(i, 100.0 + i, i == 4) for i in range(1, 7)])
+    await _seed_plan(db, user_id, original, start)
+
+    base = await plan_service.build_replan_base(db, user_id)
+    spliced = _splice_tail(base, loads={4: 60.0, 5: 90.0, 6: 300.0})
+
+    # Judged as a replan the only problem is week 6's load; judged blind to the
+    # freeze, the frozen weeks pile on and mask any improvement.
+    as_replan = plan_validation.validate_plan(
+        spliced, PlanRequest.model_validate(_REQUEST), start, None, frozen_through=3
+    )
+    blind = plan_validation.validate_plan(
+        spliced, PlanRequest.model_validate(_REQUEST), start, None
+    )
+    assert len(as_replan) < len(blind), "fixture no longer reproduces the masking"
+
+    repaired = plan_service._splice_weeks(
+        spliced,
+        [
+            Week(
+                index=6,
+                is_deload=False,
+                target_load=99.0,
+                sessions=[_s(Weekday.TUESDAY, "tempo")],
+            )
+        ],
+    )
+    assert repaired == 1
+    after = plan_validation.validate_plan(
+        spliced, PlanRequest.model_validate(_REQUEST), start, None, frozen_through=3
+    )
+    assert after == [], "the repair fixed it, so a replan must be able to see that"
+
+
+def _splice_tail(base, loads: dict[int, float]) -> Plan:
+    tail = Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[
+            Phase(
+                name="base",
+                weeks=[
+                    Week(
+                        index=index,
+                        is_deload=(index == 4),
+                        target_load=load,
+                        sessions=[_s(Weekday.TUESDAY, "tempo")],
+                    )
+                    for index, load in sorted(loads.items())
+                ],
+            )
+        ],
+    )
+    return plan_service._splice(base, tail)
+
+
 # --- The suggestion has to go quiet once it has been acted on -----------------
 
 

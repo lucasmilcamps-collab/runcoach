@@ -91,6 +91,10 @@ _TRANSIENT_BACKOFF_S = 2.0
 # large; 8k truncated it mid-list. Streaming removes the HTTP-timeout ceiling,
 # so cap high — the cap only limits, billing is on tokens actually produced.
 _MAX_TOKENS = 32000
+# How far over the ramp ceiling a week can sit and still be pulled back by code
+# rather than sent to the model. 2% of a number the model estimated by eye is
+# noise; past it the sessions themselves are too heavy and only a rewrite helps.
+_RAMP_AUTOFIX_MAX_OVERSHOOT = 1.02
 
 # Strong references to in-flight generation tasks (asyncio keeps only weak ones).
 _RUNNING_JOBS: set[asyncio.Task] = set()
@@ -1052,6 +1056,46 @@ def _auto_fix_strength_placement(plan: Plan, request: PlanRequest) -> bool:
     return moved_any
 
 
+def _auto_fix_ramp(plan: Plan, frozen_through: int = 0) -> bool:
+    """Pull a marginally-over week back to the ramp ceiling. Returns True if any
+    week moved.
+
+    Same reasoning as the strength relocation above, and the same evidence: a
+    week 0.4% over the +10% ceiling cost three attempts, three repair rounds and
+    the entire time budget, ending with "charge +10% (> 10% autorisé)" and no
+    plan at all.
+
+    Why writing the number is legitimate here: `target_load` is an estimate the
+    model produces by eye to describe sessions it has already composed. Precision
+    beyond about a percent is noise in it, so pulling 110.4 down to 110.0 aligns
+    the label with the rule rather than changing the training.
+
+    Why it stops at `_RAMP_AUTOFIX_MAX_OVERSHOOT`: past that the plan really is
+    too aggressive, and rewriting the label would leave heavy sessions sitting
+    under a compliant number — falsifying the plan to satisfy its own validator.
+    Those go to the model, which can rebuild the week's sessions.
+
+    It can only ever LOWER a load, so the 10%/week business rule cannot be
+    weakened through this path.
+    """
+    ceiling_ratio = plan_validation.RAMP_MAX_RATIO
+    last_normal_load: float | None = None
+    fixed_any = False
+    for week in (w for phase in plan.phases for w in phase.weeks):
+        if week.is_deload:
+            continue
+        if last_normal_load is not None and week.index > frozen_through:
+            ceiling = last_normal_load * ceiling_ratio
+            if ceiling < week.target_load <= ceiling * _RAMP_AUTOFIX_MAX_OVERSHOOT:
+                week.target_load = round(ceiling, 1)
+                fixed_any = True
+        # Read back from the week: a clamped week is the baseline the next one is
+        # measured against, so a run of small overshoots resolves in one pass
+        # instead of walking the plan up on loads that were never allowed.
+        last_normal_load = week.target_load
+    return fixed_any
+
+
 def _repair_tool_schema() -> dict:
     """Schema for handing back a few corrected weeks instead of a whole plan."""
     week = Week.model_json_schema(ref_template="#/$defs/{model}")
@@ -1102,7 +1146,11 @@ def _plan_outline(plan: Plan) -> str:
             )
             flag = " DELOAD" if week.is_deload else ""
             lines.append(
-                f"S{week.index} [{phase.name}{flag}] charge={week.target_load:.0f} — {days}"
+                # One decimal, because the validator's complaint is measured in
+                # tenths: rounded to units, a week at 100.4 and one at 110.4 read
+                # as "100" and "110" — a compliant-looking pair — and the repair
+                # was asked to fix an overshoot invisible in what it was shown.
+                f"S{week.index} [{phase.name}{flag}] charge={week.target_load:.1f} — {days}"
             )
     return "\n".join(lines)
 
@@ -1131,6 +1179,7 @@ async def _repair_rounds(
     context: dict,
     deadline: float,
     constraints: str = "",
+    frozen_through: int = 0,
 ) -> tuple[Plan, list[str], int]:
     """Fix the flagged weeks by rewriting only those weeks.
 
@@ -1215,7 +1264,13 @@ async def _repair_rounds(
         if _splice_weeks(candidate, repaired) == 0:
             return plan, violations, rounds
 
-        still = plan_validation.validate_plan(candidate, request, start, context)
+        # `frozen_through` matters as much here as in the first validation: judged
+        # without it, a partial replan's frozen weeks are re-reported, `still`
+        # comes back longer than `violations`, and a repair that actually worked
+        # is computed and then thrown away — on every replan.
+        still = plan_validation.validate_plan(
+            candidate, request, start, context, frozen_through=frozen_through
+        )
         # Only keep the repair if it actually helped: a rewrite that trades four
         # violations for five would otherwise be adopted and repaired again.
         if len(still) >= len(violations):
@@ -1275,6 +1330,10 @@ async def _generate_valid_plan(
 
     # Each entry: (assistant tool_use content, user tool_result content).
     history: list[tuple[list, list]] = []
+    # How many leading weeks a partial replan froze. Every validation below has to
+    # carry it: judged without it, frozen weeks are re-reported and a repair that
+    # worked looks like one that made things worse.
+    frozen_through = base.last_week if base else 0
     last_problem = "aucune réponse exploitable"
     repairs = 0
     transient = 0
@@ -1364,28 +1423,45 @@ async def _generate_valid_plan(
             # week rather than against nothing.
             plan = _splice(base, plan)
         violations = plan_validation.validate_plan(
-            plan, request, start, context, frozen_through=base.last_week if base else 0
+            plan, request, start, context, frozen_through=frozen_through
         )
         if not violations:
             return plan
 
-        # Mechanical violations first: a misplaced strength block has a
-        # deterministic fix, so it costs zero tokens and zero seconds — and the
-        # model had proven it would keep re-placing it badly, week after week.
-        if any("renforcement" in v for v in violations):
+        # Mechanical violations first: they cost zero tokens and zero seconds,
+        # and in both cases the model had proven it would keep making the same
+        # mistake — re-placing the strength block on the same day, or handing
+        # back a load a fraction over the ceiling, week after week.
+        mechanical = (
+            lambda candidate: _auto_fix_ramp(candidate, frozen_through),
+            lambda candidate: _auto_fix_strength_placement(candidate, request),
+        )
+        for apply_fix in mechanical:
             candidate = plan.model_copy(deep=True)
-            if _auto_fix_strength_placement(candidate, request):
-                still = plan_validation.validate_plan(candidate, request, start, context)
-                if len(still) < len(violations):
-                    plan, violations = candidate, still
-                    if not violations:
-                        return plan
+            if not apply_fix(candidate):
+                continue
+            still = plan_validation.validate_plan(
+                candidate, request, start, context, frozen_through=frozen_through
+            )
+            if len(still) < len(violations):
+                plan, violations = candidate, still
+                if not violations:
+                    return plan
 
         # Try to mend the flagged weeks before spending another full generation:
         # on a long plan a regeneration costs more than the whole remaining
         # budget, so this is the only retry that actually fits.
         plan, violations, rounds = await _repair_rounds(
-            client, system, plan, violations, request, start, context, deadline, constraints
+            client,
+            system,
+            plan,
+            violations,
+            request,
+            start,
+            context,
+            deadline,
+            constraints,
+            frozen_through=frozen_through,
         )
         repairs += rounds
         if not violations:
