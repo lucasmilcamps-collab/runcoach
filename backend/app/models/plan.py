@@ -400,6 +400,36 @@ class SessionLinkInfo(BaseModel):
     linked: ActivityResponse | None = None
 
 
+class PendingSession(BaseModel):
+    """A session of an elapsed week the athlete has neither validated nor
+    declared missed — a week that hasn't been settled."""
+
+    week_index: int
+    day: Weekday
+    slot: Literal["primary", "addon"] = "primary"
+    session_date: date
+    type: str
+    sport: SportType
+    duration_min: int
+    priority: Literal["key", "optional"]
+    #: An activity recorded that day that would plausibly validate it. Offered so
+    #: settling a week is one tap rather than a trip through the activity picker.
+    suggested_activity: ActivityResponse | None = None
+
+
+class WeekReconciliation(BaseModel):
+    """What is still undecided about weeks that have already gone by.
+
+    An unsettled session is not a neutral gap: adherence counts it as missed and
+    that feeds the replan trigger, so the athlete is being judged on something
+    they never actually said. This is where they say it."""
+
+    has_pending: bool
+    sessions: list[PendingSession] = Field(default_factory=list)
+    #: Weeks covered, oldest first — for a heading, and to show this is bounded.
+    week_indices: list[int] = Field(default_factory=list)
+
+
 class SessionMoveRequest(BaseModel):
     """Move a session to another weekday for one week only (a per-week override
     on the current plan; the stored plan version is never mutated)."""

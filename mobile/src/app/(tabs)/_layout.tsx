@@ -1,4 +1,5 @@
-import { Tabs } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { Redirect, Tabs } from 'expo-router';
 import { Text, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -6,6 +7,8 @@ import { Icon, type IconName } from '@/components/icon';
 import { useTheme } from '@/hooks/use-theme';
 import { MaxContentWidthWide, TabBarHeight, typeSize } from '@/constants/theme';
 import { useClampedFontScale } from '@/hooks/use-font-scale';
+import { getReconciliation } from '@/lib/api/reconcile';
+import { qk } from '@/lib/query-keys';
 
 /**
  * Three tabs (Accueil / Séances / Activités). Settings and the detail screens
@@ -31,6 +34,19 @@ export default function TabsLayout() {
   // The bar grows with the labels inside it, up to a point — see
   // `useClampedFontScale`.
   const fontScale = useClampedFontScale();
+
+  // A week left unsettled makes the plan react to decisions the athlete never
+  // took — adherence counts an untouched session as missed. So the tabs wait
+  // until it is settled.
+  //
+  // Only the tabs. Settings and the other root routes stay reachable on purpose:
+  // if the queue ever failed to clear, gating those too would shut someone
+  // inside the app with no way even to sign out.
+  //
+  // And never while the query is still in flight — redirecting on `undefined`
+  // would flash this screen on every cold start.
+  const reconcile = useQuery({ queryKey: qk.reconcile(), queryFn: getReconciliation });
+  if (reconcile.data?.has_pending) return <Redirect href="/week-reconcile" />;
 
   return (
     <Tabs

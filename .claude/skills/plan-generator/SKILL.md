@@ -206,6 +206,16 @@ Une liaison est enregistrée avec le jour que la séance affichait au moment du 
 
 ⚠️ **Côté mobile, toute mutation de liaison doit invalider `qk.plan()`**, pas seulement `qk.sessionLink(...)` : le ✓ de la liste vient désormais de la lecture du plan.
 
+### Solder une semaine écoulée (`plan_reconcile_service`)
+
+Une séance passée que personne n'a tranchée **n'est pas neutre** : `_make_run_done` rend `False`, elle compte donc comme manquée, ce qui alimente `_MISSED_KEY_TRIGGER` et le verdict du bilan. Le plan réagit à quelque chose que l'athlète n'a jamais dit. L'écran de règlement (bloquant, `week-reconcile`) est l'endroit où il le dit — lié, ou non fait.
+
+- **Réglée = `completed` ou `skipped`.** Une course détectée par l'heuristique (≥ 60 % de la durée prévue le bon jour) reste **en suspens**, mais pré-remplie avec son activité : un tap transforme une supposition en fait. Seul un lien explicite donne accès aux splits, à l'allure réelle et à la dérive.
+- **Borné à `_WINDOW_DAYS` (14 j).** Au-delà, `_counts_in_window` ignore déjà la séance : trancher n'y changerait rien. C'est ce qui empêche trois semaines d'absence de coûter quinze décisions.
+- **Deux actions de masse obligatoires** (`confirm_all_suggested`, `resolve_all_missed`). Sans elles un écran bloquant devient un mur : une semaine suivie doit se solder en un tap, une semaine ratée aussi.
+- ⚠️ **Le piège qui enfermerait l'athlète** : `pending` renvoie le jour **affiché** d'une séance, alors qu'un skip est stocké sur le jour **d'origine** du plan (`_edit_session` résout via `_find_session`). Si ces deux-là divergeaient, le skip ne prendrait pas, la séance resterait en suspens et l'app bloquerait indéfiniment. Vérifié par test, jamais supposé.
+- Côté mobile, **seuls les onglets sont bloqués**, pas les routes racine : Réglages doit rester atteignable pour qu'une file qui ne se vide pas n'enferme personne. Et l'écran redirige lui-même vers l'Accueil quand la file se vide, puisque le layout qui l'a déclenché est démonté.
+
 ### Un échec n'est pas un plan
 
 `generate_plan` **lève** `PlanGenerationError` et n'écrit rien. `run_generation_job` la rattrape, marque le job échoué avec le message et envoie la notification — le job est le registre d'une tentative, la collection `plans` celui des plans.

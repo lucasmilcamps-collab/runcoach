@@ -43,6 +43,10 @@ export const qk = {
   /** The review of the week that just ended, and its adjustment verdict. */
   weeklyReview: () => ['weekly-review'] as const,
 
+  /** Sessions of elapsed weeks still waiting to be settled. The tabs gate on
+   * this, so it is read on every app open. */
+  reconcile: () => ['reconcile'] as const,
+
   /** The stored plan versions, newest first. */
   planVersions: () => ['plan-versions'] as const,
 
