@@ -27,11 +27,20 @@ def _s(day: Weekday, stype: str, duration: int = 45) -> Session:
 
 
 def _week(index: int, load: float, deload: bool = False) -> Week:
+    """`load` is kept in the signature for readability of the fixtures, but it is
+    no longer what the plan carries: `target_load` is derived from the sessions.
+    A deload therefore has to actually prescribe less — a week that keeps the same
+    sessions and a `is_deload` flag is a normal week in disguise, which is exactly
+    what the rule is there to catch."""
+    minutes = (25, 35) if deload else (45, 60)
     return Week(
         index=index,
         is_deload=deload,
         target_load=load,
-        sessions=[_s(Weekday.TUESDAY, "tempo"), _s(Weekday.SATURDAY, "long_run", 60)],
+        sessions=[
+            _s(Weekday.TUESDAY, "tempo", minutes[0]),
+            _s(Weekday.SATURDAY, "long_run", minutes[1]),
+        ],
     )
 
 
@@ -316,8 +325,12 @@ async def test_replan_keeps_the_frozen_weeks_verbatim(db):
     assert result.status == "ready", result.error_message
     weeks = [w for p in result.plan.phases for w in p.weeks]
     assert [w.index for w in weeks] == [1, 2, 3, 4]
-    # Frozen weeks came through unchanged.
-    assert [w.target_load for w in weeks[:3]] == [100.0, 105.0, 110.0]
+    # Frozen weeks came through unchanged — asserted on the sessions, which is
+    # what "unchanged" means now that `target_load` is derived from them rather
+    # than written by the model.
+    assert [[(s.day, s.type, s.duration_min) for s in w.sessions] for w in weeks[:3]] == [
+        [(Weekday.TUESDAY, "tempo", 45), (Weekday.SATURDAY, "long_run", 60)]
+    ] * 3
 
     stored = await db.plans.find_one({"user_id": user_id, "version": 2})
     assert stored["start_date"] == start.isoformat()  # the grid never moved
@@ -456,8 +469,11 @@ def _plan_with_test(n_weeks: int) -> Plan:
                     Week(
                         index=i,
                         is_deload=(i == 4),
-                        target_load=(60.0 if i == 4 else 100.0),
-                        sessions=[_s(Weekday.TUESDAY, "test" if i == 1 else "tempo")],
+                        # A deload has to prescribe less now that the load is
+                        # derived — 25 min against 45.
+                        sessions=[
+                            _s(Weekday.TUESDAY, "test" if i == 1 else "tempo", 25 if i == 4 else 45)
+                        ],
                     )
                     for i in range(1, n_weeks + 1)
                 ],
@@ -522,8 +538,7 @@ async def test_replanning_silences_the_test_suggestion(db):
                     Week(
                         index=i,
                         is_deload=(i == 4),
-                        target_load=(60.0 if i == 4 else 90.0),
-                        sessions=[_s(Weekday.TUESDAY, "tempo")],
+                        sessions=[_s(Weekday.TUESDAY, "tempo", 25 if i == 4 else 45)],
                     )
                     for i in range(3, 7)
                 ],
@@ -644,7 +659,12 @@ async def test_injury_replan_freezes_the_weeks_already_run(client, db):
     assert stored["start_date"] == start.isoformat()  # the grid never moved
     weeks = [w for p in stored["plan"]["phases"] for w in p["weeks"]]
     assert [w["index"] for w in weeks] == [1, 2, 3, 4, 5, 6]
-    assert [w["target_load"] for w in weeks[:3]] == [101.0, 102.0, 103.0]
+    # The sessions, not the load: it is computed from them now.
+    assert all(
+        [(s["day"], s["type"]) for s in w["sessions"]]
+        == [("TUESDAY", "tempo"), ("SATURDAY", "long_run")]
+        for w in weeks[:3]
+    )
 
 
 async def test_injury_replan_on_a_finishing_plan_is_409(client, db):

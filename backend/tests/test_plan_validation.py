@@ -508,3 +508,31 @@ def test_strength_directive_states_the_trap_case():
     assert "J+1" in directive
     assert "INTERDIT" in directive
     assert "lundi de la semaine" in directive  # the Sunday boundary
+
+
+def test_the_model_cannot_declare_a_weekly_load():
+    """The root fix: `target_load` is derived from the sessions, so leaving it in
+    either tool schema would let the model keep writing a label the validator
+    then polices instead of the plan."""
+    from app.services import plan_service
+
+    for schema, defs_key in (
+        (plan_service._plan_tool_schema(), "$defs"),
+        (plan_service._repair_tool_schema(), "$defs"),
+    ):
+        week = schema.get(defs_key, {}).get("Week") or schema
+        assert "target_load" not in week.get("properties", {})
+        assert "target_load" not in (week.get("required") or [])
+
+
+def test_the_ramp_violation_says_how_much_to_remove():
+    """The model can no longer fix this by writing a smaller number — it has to
+    prescribe less. So the message states the work to drop, not just the gap."""
+    plan = _valid_plan()
+    plan.phases[0].weeks[0].target_load = 100.0
+    plan.phases[0].weeks[1].target_load = 130.0  # ceiling is 110
+
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+
+    ramp = next(v for v in violations if "Semaine 2" in v)
+    assert "10 min" in ramp  # (130 − 110) / 2 = 10 minutes of Z2 work

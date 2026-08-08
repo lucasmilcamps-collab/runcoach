@@ -73,10 +73,17 @@ def _check_ramp(weeks: list[Week], frozen_through: int = 0) -> list[str]:
             # rounds were burned on it. Naming the ceiling means the fix is a
             # number to write, not a ratio to re-derive.
             ceiling = last_normal_load * RAMP_MAX_RATIO
+            # The load is derived from the sessions now, so the fix is no longer
+            # "write a smaller number" — it is "prescribe less". Saying roughly
+            # how many minutes to drop turns the violation into an instruction:
+            # a Z2 minute costs 2, so the conversion is worth doing for the model
+            # rather than leaving it to guess.
+            excess_minutes = math.ceil((week.target_load - ceiling) / 2)
             violations.append(
                 f"Semaine {week.index} : charge {week.target_load:.1f}, maximum "
                 f"autorisé {ceiling:.1f} (+10% sur la dernière semaine normale à "
-                f"{last_normal_load:.1f})."
+                f"{last_normal_load:.1f}) — retire l'équivalent d'environ "
+                f"{excess_minutes} min de footing."
             )
         last_normal_load = week.target_load
     return violations

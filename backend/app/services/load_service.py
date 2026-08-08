@@ -120,6 +120,62 @@ def compute_trimp(
     return duration_min * zone_for_hr(avg_hr, hr_max, hr_rest)
 
 
+# The zone each session type is run in, straight off the training-science zone
+# table: Z1 recovery, Z2 fundamental endurance, Z3 tempo, Z4 threshold, Z5
+# VMA/intervals. Not a modelling choice — it is what those types mean.
+_TYPE_ZONE: dict[str, int] = {
+    "recovery": 1,
+    "easy": 2,
+    "long_run": 2,
+    "tempo": 3,
+    "threshold": 4,
+    "intervals": 5,
+    # A test and a race are run flat out, which is what makes them measurable.
+    "test": 5,
+    "race": 5,
+    # NOTE: the two below are the ONLY numbers in this function the skill does
+    # not fix. They are descriptive, not physiological: the skill calls padel and
+    # basketball "sport intense à impacts" (hence the ban on quality running the
+    # next day), and strength a short muscular block. A zone set by the model on
+    # such a session always wins over these.
+    "cross_training": 3,
+    "strength": 2,
+}
+
+
+def planned_trimp(
+    duration_min: int,
+    session_type: str,
+    hr_zone: int | None = None,
+    blocks: list[tuple[int, int | None]] | None = None,
+) -> float:
+    """Edwards TRIMP for a session that hasn't happened yet.
+
+    Same formula as `edwards_trimp`, applied to prescribed minutes instead of
+    recorded ones: `Σ duration(min) × zone`. It exists because a week's load was
+    a number the model wrote next to sessions it had already composed — so the
+    validator policed a label, and a plan could announce 100 while prescribing
+    140.
+
+    Same order of preference as `compute_trimp`, most accurate first:
+
+    1. **The blocks**, when they carry a zone. A 6×800 is a Z2 warm-up, Z5 work
+       and a Z1 cool-down; scoring it at one average zone would under-count
+       exactly the sessions that fatigue most — the argument the skill already
+       makes for recorded activities.
+    2. **The session's own `hr_zone`**, when the model set one.
+    3. **The zone the type is run in**, from the table above.
+    """
+    if blocks:
+        zoned = [(minutes, zone) for minutes, zone in blocks if zone and minutes > 0]
+        # Only when the blocks account for the session: a structure that covers
+        # 10 minutes of a 45-minute session would silently drop the other 35.
+        if zoned and sum(minutes for minutes, _ in zoned) >= duration_min:
+            return float(sum(minutes * zone for minutes, zone in zoned))
+    zone = hr_zone if hr_zone else _TYPE_ZONE.get(session_type, 2)
+    return float(duration_min * zone)
+
+
 def compute_session_rpe_load(duration_s: int, rpe: int | None) -> float | None:
     """Session-RPE fallback (Foster) for a manually-logged session with no HR:
     RPE (1–10) × duration(min) / 10 (training-science skill — the /10 keeps it on

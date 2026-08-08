@@ -199,7 +199,13 @@ class Session(BaseModel):
 class Week(BaseModel):
     index: int  # 1-based
     is_deload: bool
-    target_load: float  # weekly TRIMP target
+    # Weekly TRIMP, DERIVED from the sessions rather than declared: computed on
+    # read by `plan_moves_service.apply_computed_load`, and stripped from the
+    # generation tool schema. It used to be a number the model wrote beside
+    # sessions it had already composed, which made every load rule — the 10%
+    # ramp, the deload floor, the anchor on real recent load — police a label
+    # instead of the plan. Defaults to 0 so a model that omits it still parses.
+    target_load: float = 0.0
     sessions: list[Session]
 
     @field_validator("sessions")

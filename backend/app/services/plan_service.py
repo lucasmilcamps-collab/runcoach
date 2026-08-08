@@ -95,6 +95,9 @@ _MAX_TOKENS = 32000
 # rather than sent to the model. 2% of a number the model estimated by eye is
 # noise; past it the sessions themselves are too heavy and only a rewrite helps.
 _RAMP_AUTOFIX_MAX_OVERSHOOT = 1.02
+# Floor for a session the ramp auto-fix shortens. Trimming is arithmetic; a
+# 12-minute long run would satisfy the ceiling and prescribe nothing useful.
+_MIN_TRIMMED_SESSION_MIN = 20
 
 # Strong references to in-flight generation tasks (asyncio keeps only weak ones).
 _RUNNING_JOBS: set[asyncio.Task] = set()
@@ -106,12 +109,28 @@ def _plan_tool_schema() -> dict:
     `skipped` and `completed` are read-time state, not something a generated plan
     carries. Leaving them in the tool schema would invite the model to emit
     sessions already marked skipped or already done — and the athlete would be
-    told they had decided, or run, something they never did."""
+    told they had decided, or run, something they never did.
+
+    `target_load` goes for a different reason: it is DERIVED from the sessions
+    (`plan_moves_service.apply_computed_load`). Letting the model write it made
+    every load rule police a label — a week could announce 100 and prescribe 140,
+    and a generation once spent its entire budget on a 0.4% discrepancy in a
+    figure estimated by eye."""
     schema = Plan.model_json_schema()
     session = schema.get("$defs", {}).get("Session", {})
     for runtime_field in ("skipped", "completed"):
         session.get("properties", {}).pop(runtime_field, None)
+    _strip_target_load(schema.get("$defs", {}))
     return schema
+
+
+def _strip_target_load(defs: dict) -> None:
+    """Remove `target_load` from a `Week` schema, and from its required list —
+    left required, the model would be told to emit a field it must not set."""
+    week = defs.get("Week", {})
+    week.get("properties", {}).pop("target_load", None)
+    if isinstance(week.get("required"), list):
+        week["required"] = [name for name in week["required"] if name != "target_load"]
 
 
 _PLAN_TOOL = {
@@ -425,8 +444,13 @@ def _system_prompt(request: PlanRequest) -> str:
         "Tu es un coach de course à pied expert. Tu construis un plan "
         "d'entraînement personnalisé et SÛR. Règles de science de l'entraînement "
         "à respecter impérativement :\n"
-        "- La charge hebdomadaire (target_load) n'augmente jamais de plus de 10% "
-        "d'une semaine normale à la suivante.\n"
+        "- CHARGE : tu n'écris PAS la charge d'une semaine, elle est CALCULÉE à "
+        "partir de tes séances — charge = Σ (durée_min × zone), avec Z1=1, Z2=2, "
+        "Z3=3, Z4=4, Z5=5. Un footing (Z2) de 45 min pèse 90 ; un seuil (Z4) de "
+        "45 min pèse 180. Tu pilotes donc la charge par les DURÉES et les TYPES.\n"
+        "- Cette charge calculée n'augmente jamais de plus de 10% d'une semaine "
+        "normale à la suivante, et une semaine de deload descend au moins 15% "
+        "sous la dernière semaine normale.\n"
         "- Une semaine de deload (is_deload=true, charge réduite) au moins toutes "
         "les 3-4 semaines.\n"
         "- Périodisation en phases base → build → peak → taper (taper seulement "
@@ -439,9 +463,9 @@ def _system_prompt(request: PlanRequest) -> str:
         "`min_run_sessions_per_week` séances de course en priority='key' (les "
         "incontournables) chaque semaine normale ; les autres en priority='optional'. "
         "Le `rationale` des séances 'key' explique pourquoi elles priment.\n"
-        "- La charge de la semaine 1 (target_load) reste proche de la charge réelle "
-        "récente `avg_weekly_load_4w` (au plus +10%) : on démarre là où en est "
-        "l'athlète, pas à l'objectif.\n"
+        "- La charge calculée de la première semaine reste proche de la charge "
+        "réelle récente `avg_weekly_load_4w` (au plus +10%) : on démarre là où en "
+        "est l'athlète, pas à l'objectif.\n"
         "- Les allures d'entraînement s'appuient sur le chrono ACTUEL estimé "
         "(`chrono_actuel_estime` s'il est fourni), pas sur l'objectif : des allures "
         "adossées à l'objectif sont inatteignables en début de plan. On progresse "
@@ -591,6 +615,51 @@ def _elapsed_weeks_summary(base: ReplanBase) -> list[dict]:
         for phase in base.phases
         for week in phase.weeks
     ]
+
+
+def _budget_bounds(
+    context: dict, base: "ReplanBase | None", request: PlanRequest, start: date
+) -> tuple[float | None, int, int]:
+    """(baseline, first week, last week) for the load-ceiling list.
+
+    On a partial replan the baseline is the athlete's last REAL normal week, not
+    their 4-week average: the tail has to join onto the week they just ran.
+    """
+    if base is not None:
+        frozen = [w for phase in base.phases for w in phase.weeks if not w.is_deload]
+        baseline = frozen[-1].target_load if frozen else None
+        return baseline, base.last_week + 1, base.total_weeks
+    total = max(1, math.ceil((request.race_date - start).days / 7)) if request.race_date else 12
+    return context.get("avg_weekly_load_4w"), 1, total
+
+
+def _load_budget_directive(baseline: float | None, first_week: int, last_week: int) -> str:
+    """The per-week load ceiling, spelled out.
+
+    The model no longer writes the load — it produces it, through the durations
+    and types it chooses. Left to discover the constraint at the first rejection,
+    it spends a round finding out; given the numbers up front it can compose
+    under them. Each ceiling assumes the previous week sat exactly on its own, so
+    these are upper bounds, not targets.
+
+    Deloads are absent on purpose: a deload's ceiling depends on the last NORMAL
+    week's actual load, which isn't known until the model has written it. The
+    rule for it is stated in the system prompt instead.
+    """
+    if not baseline or baseline <= 0 or last_week < first_week:
+        return ""
+    ceilings = []
+    ceiling = baseline
+    for index in range(first_week, last_week + 1):
+        ceiling *= plan_validation.RAMP_MAX_RATIO
+        ceilings.append(f"S{index} ≤ {ceiling:.0f}")
+        if len(ceilings) >= 8:  # enough to set the trajectory; the rest follows
+            break
+    return (
+        " Plafonds de charge calculée (rappel : Σ durée_min × zone) — "
+        + ", ".join(ceilings)
+        + ". Une semaine de deload passe sous 85% de la dernière semaine normale."
+    )
 
 
 def _weeks_directive(request: PlanRequest, start: date) -> str:
@@ -832,7 +901,7 @@ def _user_prompt(
     req = request.model_dump(mode="json")
     weeks_directive = (
         _remaining_weeks_directive(request, base) if base else _weeks_directive(request, start)
-    )
+    ) + _load_budget_directive(*_budget_bounds(context, base, request, start))
     elapsed = (
         f"Semaines déjà faites (NE PAS régénérer) :\n"
         f"{json.dumps(_elapsed_weeks_summary(base), ensure_ascii=False)}\n\n"
@@ -1058,52 +1127,80 @@ def _auto_fix_strength_placement(plan: Plan, request: PlanRequest) -> bool:
 
 
 def _auto_fix_ramp(plan: Plan, frozen_through: int = 0) -> bool:
-    """Pull a marginally-over week back to the ramp ceiling. Returns True if any
-    week moved.
+    """Trim a marginally-over week back under the ramp ceiling. Returns True if
+    anything moved.
 
     Same reasoning as the strength relocation above, and the same evidence: a
     week 0.4% over the +10% ceiling cost three attempts, three repair rounds and
     the entire time budget, ending with "charge +10% (> 10% autorisé)" and no
     plan at all.
 
-    Why writing the number is legitimate here: `target_load` is an estimate the
-    model produces by eye to describe sessions it has already composed. Precision
-    beyond about a percent is noise in it, so pulling 110.4 down to 110.0 aligns
-    the label with the rule rather than changing the training.
+    It used to rewrite `target_load` — legitimate only while that number was the
+    model's own estimate. Now the load is derived from the sessions, so there is
+    no label left to adjust: the fix has to shorten the work, proportionally
+    across the week's sessions. That is a stronger intervention and a more honest
+    one, since it corrects the plan rather than its description.
 
-    Why it stops at `_RAMP_AUTOFIX_MAX_OVERSHOOT`: past that the plan really is
-    too aggressive, and rewriting the label would leave heavy sessions sitting
-    under a compliant number — falsifying the plan to satisfy its own validator.
-    Those go to the model, which can rebuild the week's sessions.
+    Three guards, because this touches training:
 
-    It can only ever LOWER a load, so the 10%/week business rule cannot be
-    weakened through this path.
+    - `_RAMP_AUTOFIX_MAX_OVERSHOOT` — past ~2% the week is genuinely too heavy
+      and trimming a few minutes would paper over it. Those go to the model.
+    - `_MIN_TRIMMED_SESSION_MIN` — no session is trimmed into uselessness; a
+      long run does not become 12 minutes to satisfy an arithmetic ceiling.
+    - Frozen weeks are never touched: they have already been run.
+
+    It can only ever REDUCE work, so the 10%/week rule cannot be weakened here.
     """
     ceiling_ratio = plan_validation.RAMP_MAX_RATIO
     last_normal_load: float | None = None
     fixed_any = False
     for week in (w for phase in plan.phases for w in phase.weeks):
         if week.is_deload:
-            continue
+            continue  # a deload is intentionally lower and never sets the baseline
+        load = plan_moves_service.week_load(week)
         if last_normal_load is not None and week.index > frozen_through:
             ceiling = last_normal_load * ceiling_ratio
-            if ceiling < week.target_load <= ceiling * _RAMP_AUTOFIX_MAX_OVERSHOOT:
-                week.target_load = round(ceiling, 1)
+            if ceiling < load <= ceiling * _RAMP_AUTOFIX_MAX_OVERSHOOT and _trim_week(
+                week, ceiling / load
+            ):
                 fixed_any = True
-        # Read back from the week: a clamped week is the baseline the next one is
-        # measured against, so a run of small overshoots resolves in one pass
-        # instead of walking the plan up on loads that were never allowed.
-        last_normal_load = week.target_load
+                load = plan_moves_service.week_load(week)
+        # Read back from the week as trimmed: a corrected week is the baseline the
+        # next one is measured against, so a run of small overshoots resolves in
+        # one pass instead of walking the plan up on loads never allowed.
+        last_normal_load = load
     return fixed_any
+
+
+def _trim_week(week: Week, factor: float) -> bool:
+    """Shorten a week's sessions by `factor` (<1). True if anything changed.
+
+    Proportional so the week keeps its shape — trimming the long run alone would
+    quietly turn an endurance week into a quality one. Sessions already at the
+    floor are left alone, which may leave the week a hair over; the validator
+    then reports it and the model rebuilds, which is the right outcome.
+    """
+    changed = False
+    for session in week.sessions:
+        if session.type == "rest":
+            continue
+        trimmed = max(_MIN_TRIMMED_SESSION_MIN, int(session.duration_min * factor))
+        if trimmed < session.duration_min:
+            session.duration_min = trimmed
+            changed = True
+    return changed
 
 
 def _repair_tool_schema() -> dict:
     """Schema for handing back a few corrected weeks instead of a whole plan."""
     week = Week.model_json_schema(ref_template="#/$defs/{model}")
     defs = week.pop("$defs", {})
-    # Same strip as the generation schema — a repair round emits sessions too.
+    # Same strips as the generation schema — a repair round emits whole weeks.
     for runtime_field in ("skipped", "completed"):
         defs.get("Session", {}).get("properties", {}).pop(runtime_field, None)
+    week.get("properties", {}).pop("target_load", None)
+    if isinstance(week.get("required"), list):
+        week["required"] = [name for name in week["required"] if name != "target_load"]
     return {
         "type": "object",
         "properties": {"weeks": {"type": "array", "items": week}},
@@ -1266,6 +1363,9 @@ async def _repair_rounds(
             return plan, violations, rounds
         if _splice_weeks(candidate, repaired) == 0:
             return plan, violations, rounds
+        # Repaired weeks arrive without a load too — they come through the same
+        # tool schema.
+        plan_moves_service.apply_computed_load(candidate)
 
         # `frozen_through` matters as much here as in the first validation: judged
         # without it, a partial replan's frozen weeks are re-reported, `still`
@@ -1315,7 +1415,7 @@ async def _generate_valid_plan(
     user = _user_prompt(request, context, start, injury, base)
     weeks_directive = (
         _remaining_weeks_directive(request, base) if base else _weeks_directive(request, start)
-    )
+    ) + _load_budget_directive(*_budget_bounds(context, base, request, start))
     constraints = f"{weeks_directive}\n{_counts_directive(request)}"
 
     # One client per generation (reused across attempts), not one per attempt.
@@ -1425,6 +1525,10 @@ async def _generate_valid_plan(
             # first generated week is compared against the athlete's REAL last
             # week rather than against nothing.
             plan = _splice(base, plan)
+        # The model no longer writes the weekly load, so nothing has one until it
+        # is derived from the sessions. Every load rule below reads it, and on a
+        # plan straight out of the tool they would all read zero.
+        plan_moves_service.apply_computed_load(plan)
         violations = plan_validation.validate_plan(
             plan, request, start, context, frozen_through=frozen_through
         )
@@ -1443,6 +1547,9 @@ async def _generate_valid_plan(
             candidate = plan.model_copy(deep=True)
             if not apply_fix(candidate):
                 continue
+            # Trimming durations changes the week's load, so re-derive before
+            # judging the result.
+            plan_moves_service.apply_computed_load(candidate)
             still = plan_validation.validate_plan(
                 candidate, request, start, context, frozen_through=frozen_through
             )
