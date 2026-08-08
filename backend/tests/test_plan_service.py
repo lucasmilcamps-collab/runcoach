@@ -201,11 +201,11 @@ async def test_generation_stops_when_deadline_exceeded(db):
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
         patch("app.services.plan_service.time.monotonic", _clock),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        with pytest.raises(plan_service.PlanGenerationError) as failure:
+            await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
     assert create_mock.call_count == 1  # never launched the doomed second attempt
-    assert "temps" in (result.error_message or "").lower()
+    assert "temps" in str(failure.value).lower()
 
 
 async def test_slow_first_attempt_still_leaves_room_for_a_second(db):
@@ -350,11 +350,15 @@ async def test_replan_injury_requires_existing_plan(client, db):
 
 async def test_generate_plan_without_key_fails_gracefully(db):
     user_id = await _seed_user(db)
-    with patch.object(plan_service.settings, "anthropic_api_key", ""):
-        result = await plan_service.generate_plan(db, user_id, _request())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", ""),
+        pytest.raises(plan_service.PlanGenerationError) as failure,
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
-    assert "clé API" in (result.error_message or "")
+    assert "clé API" in str(failure.value)
+    # A failure is an event, not a plan: nothing is written.
+    assert await db.plans.count_documents({"user_id": user_id}) == 0
 
 
 async def test_get_current_plan_returns_latest_version(db):
@@ -743,11 +747,11 @@ async def test_truncated_response_fails_fast(db):
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        with pytest.raises(plan_service.PlanGenerationError) as failure:
+            await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
     assert create_mock.call_count == 1  # no pointless retries on truncation
-    assert "tronqu" in (result.error_message or "").lower()
+    assert "tronqu" in str(failure.value).lower()
 
 
 async def test_generate_plan_computes_time_estimates(db):
@@ -832,6 +836,119 @@ async def test_a_short_source_effort_is_reported_as_low_confidence(db):
 
     assert result.status == "ready", result.error_message
     assert result.estimated_time_confidence == "low"
+
+
+# --- A failed attempt must not take the place of a working plan ---------------
+
+
+async def test_a_legacy_failed_document_no_longer_hides_the_plan(db):
+    """The dead-end screen, reproduced. `get_current_plan` was the only read in
+    the service that didn't filter on status, so a failed attempt at the newest
+    version became "the current plan" — while progress, today's session and the
+    review all carried on reading the real one. Failures aren't written any more,
+    but athletes have these documents already: the fix has to work on them, with
+    no migration."""
+    user_id = await _seed_user(db)
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 3,
+            "status": "ready",
+            "request": _request().model_dump(mode="json"),
+            "plan": _valid_plan_dict(),
+            "start_date": datetime.now(UTC).date().isoformat(),
+            "created_at": datetime.now(UTC) - timedelta(days=1),
+        }
+    )
+    await db.plans.insert_one(
+        {
+            "user_id": user_id,
+            "version": 4,
+            "status": "failed",
+            "request": _request().model_dump(mode="json"),
+            "plan": None,
+            "error_message": "Plan invalide après 3 tentatives.",
+            "created_at": datetime.now(UTC),
+        }
+    )
+
+    current = await plan_service.get_current_plan(db, user_id)
+
+    assert current is not None
+    assert current.status == "ready"
+    assert current.plan is not None  # the plan is back, and was never lost
+
+
+async def test_no_plan_at_all_stays_a_404_not_a_dead_end(db):
+    """A first generation that fails leaves nothing behind, so the app falls to
+    its empty state — which has a "create a plan" button. An error screen with no
+    action does not."""
+    user_id = await _seed_user(db)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", ""),
+        pytest.raises(plan_service.PlanGenerationError),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    assert await plan_service.get_current_plan(db, user_id) is None
+
+
+async def test_the_failure_is_reported_next_to_the_plan_it_did_not_replace(db):
+    """Handing back the older plan in silence would let the athlete think their
+    request went through."""
+    user_id = await _seed_user(db)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    assert (await plan_service.get_current_plan(db, user_id)).last_generation_error is None
+
+    # Now a replan attempt fails, well after that plan was stored.
+    with patch.object(plan_service.settings, "anthropic_api_key", ""):
+        job = await plan_service.start_generation(db, user_id, _request())
+        await _drain_jobs()
+    assert job is not None
+
+    current = await plan_service.get_current_plan(db, user_id)
+    assert current.status == "ready"  # the plan still stands
+    assert "clé API" in (current.last_generation_error or "")
+
+
+async def test_the_failure_notice_clears_itself_on_the_next_success(db):
+    """No dismiss button and no state to purge: a successful generation is newer
+    than the failure, so the notice stops applying on its own."""
+    user_id = await _seed_user(db)
+    with patch.object(plan_service.settings, "anthropic_api_key", ""):
+        await plan_service.start_generation(db, user_id, _request())
+        await _drain_jobs()
+
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    current = await plan_service.get_current_plan(db, user_id)
+    assert current.last_generation_error is None
+
+
+async def test_a_failed_attempt_no_longer_burns_a_version(db):
+    user_id = await _seed_user(db)
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", ""),
+        pytest.raises(plan_service.PlanGenerationError),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        await plan_service.generate_plan(db, user_id, _request())
+
+    stored = await db.plans.find_one({"user_id": user_id})
+    assert stored["version"] == 1  # not 2, with an unexplained gap in the history
 
 
 # --- Isolating the effort inside a structured session -------------------------
@@ -1206,10 +1323,10 @@ async def test_unparseable_tool_json_says_so(db):
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        with pytest.raises(plan_service.PlanGenerationError) as failure:
+            await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
-    message = result.error_message or ""
+    message = str(failure.value)
     assert "illisible" in message and "tronqu" in message
     assert "Field required" not in message
 
@@ -1276,10 +1393,10 @@ async def test_schema_error_reports_the_keys_that_did_arrive(db):
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        with pytest.raises(plan_service.PlanGenerationError) as failure:
+            await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
-    assert "clés reçues : objectif, semaines" in (result.error_message or "")
+    assert "clés reçues : objectif, semaines" in str(failure.value)
     feedback = create_mock.call_args_list[1].kwargs["messages"][2]["content"][0]["content"]
     assert "pas enveloppé" in feedback
 
@@ -1463,9 +1580,9 @@ async def test_repair_is_skipped_for_a_plan_wide_violation(db):
         patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
         patch("app.services.plan_service.anthropic.AsyncAnthropic", return_value=mock_client),
     ):
-        result = await plan_service.generate_plan(db, user_id, req)
+        with pytest.raises(plan_service.PlanGenerationError):
+            await plan_service.generate_plan(db, user_id, req)
 
-    assert result.status == "failed"
     # Three full generations, no repair call in between.
     assert create_mock.call_count == plan_service._MAX_ATTEMPTS
     assert all(
@@ -1586,11 +1703,11 @@ async def test_transient_error_gives_up_when_the_budget_is_gone(db):
         patch("app.services.plan_service.time.monotonic", _clock),
         patch("app.services.plan_service.asyncio.sleep", AsyncMock()),
     ):
-        result = await plan_service.generate_plan(db, user_id, _request())
+        with pytest.raises(plan_service.PlanGenerationError) as failure:
+            await plan_service.generate_plan(db, user_id, _request())
 
-    assert result.status == "failed"
-    assert "429" in (result.error_message or "")
-    assert "budget" in (result.error_message or "").lower()
+    assert "429" in str(failure.value)
+    assert "budget" in str(failure.value).lower()
     assert create_mock.call_count == 1  # no blind hammering of a rate limit
 
 

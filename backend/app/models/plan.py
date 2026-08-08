@@ -253,6 +253,12 @@ class PlanResponse(BaseModel):
     projected_time_min: int | None = None  # projected time at the plan's end
     feasibility_warning: str | None = None  # a notice, never a blocker
     error_message: str | None = None
+    # Why the athlete's most recent generation attempt failed, when it is newer
+    # than the plan being returned. Without it a failed attempt is invisible:
+    # the previous plan comes back looking untouched and the athlete believes
+    # their request went through. Self-clearing — a successful generation is
+    # newer than the failure, so the field goes back to null on its own.
+    last_generation_error: str | None = None
 
 
 class PlanVersionSummary(BaseModel):

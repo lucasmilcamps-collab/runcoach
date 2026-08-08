@@ -188,6 +188,19 @@ Une violation est un **message d'erreur adressé à un modèle**, pas un log. Tr
 - **Ce qu'on reproche doit être visible dans ce qu'on envoie.** `_plan_outline` affichait `charge={:.0f}` : deux semaines à 100,4 et 110,4 arrivaient en « 100 » et « 110 », un couple d'apparence conforme. On demandait de réparer l'invisible.
 - ⚠️ **`_violation_weeks` parse ces messages** (`_WEEK_IN_VIOLATION`, `r"Semaine (\d+)\s*:"`). Reformuler une violation sans garder le préfixe `Semaine N :` fait rendre `None`, et **tout bascule en régénération complète** — l'inverse du but. Un test verrouille ça.
 
+### Un échec n'est pas un plan
+
+`generate_plan` **lève** `PlanGenerationError` et n'écrit rien. `run_generation_job` la rattrape, marque le job échoué avec le message et envoie la notification — le job est le registre d'une tentative, la collection `plans` celui des plans.
+
+Ce qui a coûté cher avant ça : un échec était persisté en document `status: "failed"` à la version suivante. Or **`get_current_plan` était la seule lecture du service à ne pas filtrer sur le statut** (toutes les autres demandent `"ready"`). Le document échoué devenait donc « le plan actuel » sur le seul écran qui permet d'agir, pendant que progression, séance du jour et bilan continuaient de lire le vrai plan. Le plan de l'athlète semblait perdu alors qu'il était intact, et l'écran d'erreur n'offrait **aucune action** — tout y était conditionné à `ready`.
+
+Deux règles qui en sortent :
+
+- **Toute lecture de plan filtre sur le statut.** `get_current_plan` exclut explicitement `failed` (des documents antérieurs existent en base) et rend `None` sur `cancelled`.
+- **Ne jamais conditionner la seule porte de sortie à l'état heureux.** Le lien « Mes plans » — chemin vers la restauration — était masqué hors `ready`, c'est-à-dire précisément quand on en a besoin.
+
+`last_generation_error` sur `PlanResponse` porte la raison du dernier échec quand il est **postérieur** au plan rendu (`job_service.last_failure_since`). Auto-effaçant : une génération réussie est plus récente que l'échec, donc le champ redevient nul sans bouton ni état à purger.
+
 ### Correctifs mécaniques : ce que le code doit réparer lui-même
 
 Quand une violation a une correction déterministe, la faire en code — c'est gratuit, instantané, et le modèle a prouvé qu'il refaisait la même erreur à chaque tour. Deux en place, appliqués avant toute réparation modèle dans `_generate_valid_plan` :

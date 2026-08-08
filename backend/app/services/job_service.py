@@ -47,6 +47,25 @@ async def update_job(
     )
 
 
+async def last_failure_since(
+    db: AsyncIOMotorDatabase, user_id: str, job_type: str, since: datetime | None
+) -> str | None:
+    """The error of the newest job of this type, when it failed after `since`.
+
+    What it answers: "did the athlete's last attempt fail, and is that failure
+    newer than the plan they are looking at?". Newer matters — otherwise an old
+    failure would keep warning about a plan that has since been generated
+    successfully. Nothing is stored for this: the job row is already the record
+    of an attempt, and reading it back means there is no extra state to clear.
+    """
+    doc = await db.jobs.find_one({"user_id": user_id, "type": job_type}, sort=[("created_at", -1)])
+    if doc is None or doc.get("status") != JobStatus.FAILED:
+        return None
+    if since is not None and _as_utc(doc["created_at"]) <= _as_utc(since):
+        return None
+    return doc.get("error_message") or "La génération a échoué."
+
+
 async def get_job(db: AsyncIOMotorDatabase, job_id: str, user_id: str) -> JobResponse | None:
     if not ObjectId.is_valid(job_id):
         return None
