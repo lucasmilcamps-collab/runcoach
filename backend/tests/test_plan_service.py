@@ -905,6 +905,15 @@ async def test_the_failure_is_reported_next_to_the_plan_it_did_not_replace(db):
 
     assert (await plan_service.get_current_plan(db, user_id)).last_generation_error is None
 
+    # Age the plan by a day. Not a workaround for the clock: it is what actually
+    # happens — you generate a plan, then try to replan it later. Written back to
+    # back, the two timestamps can land in the same millisecond and "is the
+    # failure newer than the plan?" has no answer.
+    await db.plans.update_one(
+        {"user_id": user_id},
+        {"$set": {"created_at": datetime.now(UTC) - timedelta(days=1)}},
+    )
+
     # Now a replan attempt fails, well after that plan was stored.
     with patch.object(plan_service.settings, "anthropic_api_key", ""):
         job = await plan_service.start_generation(db, user_id, _request())

@@ -188,6 +188,24 @@ Une violation est un **message d'erreur adressé à un modèle**, pas un log. Tr
 - **Ce qu'on reproche doit être visible dans ce qu'on envoie.** `_plan_outline` affichait `charge={:.0f}` : deux semaines à 100,4 et 110,4 arrivaient en « 100 » et « 110 », un couple d'apparence conforme. On demandait de réparer l'invisible.
 - ⚠️ **`_violation_weeks` parse ces messages** (`_WEEK_IN_VIOLATION`, `r"Semaine (\d+)\s*:"`). Reformuler une violation sans garder le préfixe `Semaine N :` fait rendre `None`, et **tout bascule en régénération complète** — l'inverse du but. Un test verrouille ça.
 
+### Champs « runtime » de `Session` : `skipped`, `completed`
+
+Ils ne sont **jamais** produits par le générateur : ils sont posés à la lecture par `plan_moves_service.apply_overrides` et **retirés des deux schémas d'outil** (`_plan_tool_schema` et `_repair_tool_schema` — en oublier un laisserait le modèle annoncer à l'athlète qu'il a sauté ou couru une séance qu'il n'a jamais faite). Ils voyagent sur la session parce que la liste de semaine affiche déjà cet objet : demander « celle-ci est-elle faite ? » par ligne serait une requête par ligne pour une information que la lecture du plan connaît déjà.
+
+**L'ordre d'application est porteur, dans les deux sens :**
+
+```python
+apply_edits(...)        # indexées sur le jour d'ORIGINE — avant tout déplacement
+apply_moves(...)        # réécrit les jours
+apply_completions(...)  # indexées sur le jour AFFICHÉ — donc après
+```
+
+Une liaison est enregistrée avec le jour que la séance affichait au moment du tap. Appliquée avant `apply_moves`, une séance déplacée du mardi au jeudi puis validée ne serait jamais retrouvée.
+
+`get_completions` interroge `session_completions` **directement** : `plan_completion_service` importe déjà `plan_moves_service`, l'inverse fermerait un cycle. Et contrairement aux moves et aux edits, les liaisons ne sont **pas scopées par version de plan** — c'est précisément ce qui leur fait survivre à une replanification partielle, les semaines gelées gardant leur identité `(semaine, jour, slot)`.
+
+⚠️ **Côté mobile, toute mutation de liaison doit invalider `qk.plan()`**, pas seulement `qk.sessionLink(...)` : le ✓ de la liste vient désormais de la lecture du plan.
+
 ### Un échec n'est pas un plan
 
 `generate_plan` **lève** `PlanGenerationError` et n'écrit rien. `run_generation_job` la rattrape, marque le job échoué avec le message et envoie la notification — le job est le registre d'une tentative, la collection `plans` celui des plans.

@@ -72,6 +72,36 @@ def apply_moves(plan: Plan, moves: dict[int, dict[str, str]]) -> None:
                 week.sessions.sort(key=session_order_key)
 
 
+async def get_completions(db: AsyncIOMotorDatabase, user_id: str) -> set[tuple[int, str, str]]:
+    """{(week_index, day, slot)} for sessions with a recorded activity linked.
+
+    Read straight from the collection rather than through
+    `plan_completion_service`, which already imports this module — going the
+    other way would close an import cycle for what is one `find`.
+
+    Not scoped by plan version, unlike moves and edits: `session_completions`
+    carries no version. In practice that is what makes a link survive a partial
+    replan, since the frozen weeks keep their (week, day, slot) identity."""
+    completions: set[tuple[int, str, str]] = set()
+    async for doc in db.session_completions.find(
+        {"user_id": user_id, "activity_id": {"$ne": None}},
+        {"week_index": 1, "day": 1, "slot": 1},
+    ):
+        completions.add((doc["week_index"], doc["day"], doc.get("slot") or "primary"))
+    return completions
+
+
+def apply_completions(plan: Plan, completions: set[tuple[int, str, str]]) -> None:
+    """Flag the sessions the athlete has validated, in place."""
+    if not completions:
+        return
+    for phase in plan.phases:
+        for week in phase.weeks:
+            for session in week.sessions:
+                if (week.index, session.day.value, session.slot) in completions:
+                    session.completed = True
+
+
 async def get_edits(
     db: AsyncIOMotorDatabase, user_id: str, plan_version: int
 ) -> dict[int, dict[tuple[str, str], dict]]:
@@ -121,9 +151,15 @@ async def apply_overrides(
 
     Edits run first — they're keyed on the plan's original days, which a move
     would have already rewritten.
+
+    Completions run LAST, and that order is load-bearing too, in the opposite
+    direction: a link is recorded against the day the session was SHOWING when
+    the athlete tapped it. Applied before the moves, a session shifted from
+    Tuesday to Thursday and then validated would never be matched.
     """
     apply_edits(plan, await get_edits(db, user_id, plan_version))
     apply_moves(plan, await get_moves(db, user_id, plan_version))
+    apply_completions(plan, await get_completions(db, user_id))
 
 
 def _find_session(week, day: Weekday, slot: str, existing_moves: dict[str, str]) -> Session | None:

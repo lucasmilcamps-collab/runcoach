@@ -48,6 +48,7 @@ function session(over: Partial<PlanSession> = {}): PlanSession {
     slot: 'primary',
     rationale: '',
     skipped: false,
+    completed: false,
     ...over,
   };
 }

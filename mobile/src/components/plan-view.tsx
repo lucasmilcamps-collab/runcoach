@@ -283,7 +283,9 @@ function SessionRow({
       accessibilityRole="button"
       accessibilityLabel={`${sessionTitle(session)}, ${DAY_LABELS[session.day]}, ${meta}${
         isAddon ? ', complément' : `, séance ${position} sur ${total}`
-      }${isKey ? ', séance clé' : ''}${session.skipped ? ', sautée' : ''}`}>
+      }${isKey ? ', séance clé' : ''}${session.skipped ? ', sautée' : ''}${
+        session.completed ? ', validée' : ''
+      }`}>
       <ThemedText type="label" themeColor="inkMuted" style={styles.day}>
         {DAY_LABELS[session.day]}
       </ThemedText>
@@ -295,10 +297,16 @@ function SessionRow({
       />
       <SportIcon sport={session.sport} size={20} />
       <View style={styles.nameBlock}>
-        <ThemedText type="link" numberOfLines={1}>
-          {sessionTitle(session)}
-          {session.skipped ? ' · sautée' : ''}
-        </ThemedText>
+        <View style={styles.titleRow}>
+          {/* A glyph, never a colour. go/prudence/recup mean training load and
+              nothing else (DESIGN.md) — a green tick for "done" would break that
+              rule on the screen that carries it hardest. */}
+          {session.completed ? <Icon name="check" size={14} color={theme.inkMuted} /> : null}
+          <ThemedText type="link" numberOfLines={1} style={styles.title}>
+            {sessionTitle(session)}
+            {session.skipped ? ' · sautée' : ''}
+          </ThemedText>
+        </View>
         {session.rationale ? (
           <ThemedText type="small" themeColor="inkMuted" numberOfLines={1}>
             {session.rationale}
@@ -371,6 +379,8 @@ const useStyles = makeStyles((t) => ({
   day: { minWidth: 34 },
   tick: { width: 3, height: 22, borderRadius: 2 },
   nameBlock: { flex: 1, gap: Spacing.half },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  title: { flexShrink: 1 },
   name: { flex: 1 },
   meta: { fontSize: typeSize(13), lineHeight: typeSize(18) },
 }));

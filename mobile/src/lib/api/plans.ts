@@ -71,6 +71,10 @@ export type PlanSession = {
   /** Declared skipped for this week (a per-week override, reversible). The
    * session stays in the plan — the decision is worth seeing. */
   skipped: boolean;
+  /** An activity has been linked to this session: it is done. Carried on the
+   * session itself so the week list can mark it without a request per row, and
+   * so a validated session can be shown as closed rather than editable. */
+  completed: boolean;
 };
 
 export type PlanWeek = {
