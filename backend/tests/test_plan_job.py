@@ -53,8 +53,10 @@ async def test_a_failed_generation_surfaces_on_the_job(db):
     finished = await job_service.get_job(db, job.id, user_id)
     assert finished.status == JobStatus.FAILED
     assert "clé API" in (finished.error_message or "")
-    # The attempt is still on file — it is the athlete's record of what happened.
-    assert await db.plans.count_documents({"user_id": user_id, "status": "failed"}) == 1
+    # And NO plan document. A failed attempt has no weeks; stored as a plan it
+    # took the next version number and, being the newest document, took the place
+    # of the plan the athlete was actually using. The job is the record.
+    assert await db.plans.count_documents({"user_id": user_id}) == 0
 
 
 async def test_a_second_request_joins_the_running_job(db):

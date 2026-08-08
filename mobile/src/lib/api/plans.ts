@@ -122,6 +122,13 @@ export type PlanResponse = {
   projected_time_min: number | null; // projected time at the plan's end
   feasibility_warning: string | null;
   error_message: string | null;
+  /**
+   * Why the last generation attempt failed, when it is newer than the plan being
+   * returned. A failed attempt no longer replaces the plan — so without this the
+   * old plan would come back looking untouched and you'd think your request went
+   * through. Clears itself: a successful generation is newer than the failure.
+   */
+  last_generation_error: string | null;
 };
 
 export type DailyAdjustment = {

@@ -106,7 +106,10 @@ export default function PlanScreen() {
             </ThemedText>
           ) : null}
 
-          {ready ? (
+          {/* Not gated on `ready` any more. This is the way to restoring a past
+              version, and it was hidden in exactly the state where something had
+              just gone wrong — leaving a screen with no action at all. */}
+          {query.data ? (
             <View style={styles.historyRow}>
               <Pressable
                 onPress={() => router.push('/plan-history')}
@@ -118,6 +121,26 @@ export default function PlanScreen() {
                 </ThemedText>
                 <Icon name="chevron-right" size={16} color={theme.ink} />
               </Pressable>
+            </View>
+          ) : null}
+
+          {/* A failed attempt no longer replaces the plan, so the plan below is
+              intact — but saying nothing would read as "my request went
+              through". The reason, and one tap to try again. */}
+          {query.data?.last_generation_error ? (
+            <View style={styles.failureBanner}>
+              <ThemedText type="label" themeColor="alerte">
+                La dernière génération a échoué
+              </ThemedText>
+              <ThemedText type="small" themeColor="inkMuted">
+                {query.data.last_generation_error} Ton plan actuel est intact.
+              </ThemedText>
+              {ready ? (
+                <RegenerateButton
+                  onConfirm={() => replan.generate()}
+                  isRegenerating={replan.isGenerating}
+                />
+              ) : null}
             </View>
           ) : null}
 
@@ -403,6 +426,17 @@ const useStyles = makeStyles((t) => ({
     borderLeftColor: t.prudence,
     padding: Spacing.three,
     gap: Spacing.three,
+  },
+  // Neutral surface, same as the generation card. A failed generation is not a
+  // training-load state, and DESIGN.md keeps go/prudence/recup for load alone —
+  // `alerte` on the label is the error register this screen already uses.
+  failureBanner: {
+    backgroundColor: t.raised,
+    borderRadius: Rounded.sm,
+    borderWidth: 1,
+    borderColor: t.rule,
+    padding: Spacing.three,
+    gap: Spacing.two,
   },
   warnBanner: {
     backgroundColor: t.prudenceWash,

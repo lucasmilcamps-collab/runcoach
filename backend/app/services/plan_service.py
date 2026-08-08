@@ -1695,25 +1695,16 @@ async def generate_plan(
 
     version = await _next_version(db, user_id)
 
-    try:
-        plan = await _generate_valid_plan(request, context, start, injury, base)
-    except PlanGenerationError as exc:
-        doc = {
-            "user_id": user_id,
-            "version": version,
-            "status": "failed",
-            "request": request.model_dump(mode="json"),
-            "plan": None,
-            "error_message": str(exc),
-            "created_at": datetime.now(UTC),
-        }
-        result = await db.plans.insert_one(doc)
-        return PlanResponse(
-            id=str(result.inserted_id),
-            status="failed",
-            request=request,
-            error_message=str(exc),
-        )
+    # Raises `PlanGenerationError` on failure, and nothing is written.
+    #
+    # A failed attempt used to be stored as a plan document, which is what it is
+    # not: it has no weeks, it took the next version number, and — because
+    # `get_current_plan` reads the newest document rather than the newest ready
+    # one — it took the place of a plan that was working fine, on the one screen
+    # that offers any way to act on it. `run_generation_job` already turns this
+    # exception into a failed job carrying the message, which is where an event
+    # belongs.
+    plan = await _generate_valid_plan(request, context, start, injury, base)
 
     # Projected time at the plan's end (current estimate scaled by projected CTL).
     estimated_min = projected_min = None
@@ -1787,17 +1778,15 @@ async def run_generation_job(
     try:
         result = await generate_plan(db, user_id, request, injury, base)
     except Exception as exc:  # noqa: BLE001 — a background job must never crash silently
+        # The single failure path now that a failed attempt is not stored as a
+        # plan: the job row carries the reason, and the notification goes out
+        # here. It used to be sent only from the "result came back failed" branch
+        # below, so routing every failure through the exception would have
+        # silently stopped telling anyone.
         await job_service.update_job(db, job_id, JobStatus.FAILED, error_message=str(exc))
-        return
-
-    if result.status == "failed":
-        # The failed version is persisted either way (it is the athlete's record
-        # of what was attempted); the job carries the reason to the screen.
-        await job_service.update_job(
-            db, job_id, JobStatus.FAILED, error_message=result.error_message
-        )
         await _notify_generation_finished(db, user_id, succeeded=False)
         return
+
     await job_service.update_job(
         db,
         job_id,
@@ -1932,7 +1921,15 @@ async def cancel_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> None:
 
 
 async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanResponse | None:
-    doc = await db.plans.find_one({"user_id": user_id}, sort=[("version", -1)])
+    # `$ne: "failed"`, and it is the whole fix for a dead-end screen. Failed
+    # attempts are no longer written, but older ones are still in the database,
+    # and this was the ONLY read in the service that didn't filter on status —
+    # every other one asks for "ready". So a failed attempt replaced the athlete's
+    # working plan here while progress, today's session and the weekly review all
+    # carried on reading the real one: the plan looked lost and was not.
+    doc = await db.plans.find_one(
+        {"user_id": user_id, "status": {"$ne": "failed"}}, sort=[("version", -1)]
+    )
     if doc is None:
         return None
     # A stopped plan is not a current plan: return None so the API answers 404
@@ -1953,6 +1950,12 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
         projected_time_min=doc.get("projected_time_min"),
         feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
+        # Returning the older plan silently would let the athlete believe their
+        # request went through. They get their plan back AND the reason the last
+        # attempt didn't replace it.
+        last_generation_error=await job_service.last_failure_since(
+            db, user_id, PLAN_JOB_TYPE, doc.get("created_at")
+        ),
     )
 
 
