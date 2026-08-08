@@ -221,6 +221,22 @@ class Plan(BaseModel):
     phases: list[Phase]
 
 
+class EstimateSource(BaseModel):
+    """The performance a race-time estimate was extrapolated from.
+
+    Sent so the number can be checked rather than believed: the estimate was
+    22 minutes off precisely because nobody could see it had been built on a
+    whole session — warm-up and cool-down included — instead of its effort.
+    """
+
+    distance_km: float
+    time_s: int
+    pace_min_per_km: str
+    days_ago: int
+    #: True when this is the fast part of a session, False when it is a whole run.
+    isolated: bool
+
+
 class PlanResponse(BaseModel):
     """Public shape for a stored plan (api-conventions: never leaks user_id)."""
 
@@ -233,6 +249,7 @@ class PlanResponse(BaseModel):
     # but never stored, so the app showed a race time with the authority of a
     # number while the engine itself rated it "low" — see performance_service.
     estimated_time_confidence: Literal["high", "medium", "low"] | None = None
+    estimated_time_source: EstimateSource | None = None
     projected_time_min: int | None = None  # projected time at the plan's end
     feasibility_warning: str | None = None  # a notice, never a blocker
     error_message: str | None = None

@@ -26,6 +26,7 @@ from app.models.plan import (
     QUALITY_SESSION_TYPES,
     WEEKDAY_ORDER,
     DailyAdjustment,
+    EstimateSource,
     InjuryReport,
     Phase,
     Plan,
@@ -192,15 +193,52 @@ def _avg_weekly_load_4w(fitness: FitnessResponse, today: date) -> float:
     return round(total / 4, 1)
 
 
+def _pick_source_effort(candidates: list[dict], target_distance_km: float | None) -> dict | None:
+    """The effort to hand Riegel, chosen on the confidence it would produce.
+
+    Pace alone is the wrong criterion once efforts are isolated: a 2 km flat out
+    always beats a recent 10 km on pace, and it is the 2 km that carries the
+    drift — the skill is explicit that Riegel wanders as the distance ratio
+    grows. So rank by confidence first and let pace break ties, which keeps a
+    short effort as what it should be: the source of last resort.
+
+    Without a target there is no ratio to judge and the fastest wins, as before.
+    """
+    if not candidates:
+        return None
+    if target_distance_km:
+
+        def rank(candidate: dict) -> tuple[int, float]:
+            confidence = performance_service.confidence_for(
+                candidate["distance_km"], target_distance_km, candidate["days_ago"]
+            )
+            return performance_service.CONFIDENCE_ORDER.index(confidence), candidate["_pace_s"]
+
+    else:
+
+        def rank(candidate: dict) -> tuple[int, float]:
+            return 0, candidate["_pace_s"]
+
+    return dict(min(candidates, key=rank))
+
+
 async def build_context(
-    db: AsyncIOMotorDatabase, user_id: str, fitness: FitnessResponse | None = None
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    fitness: FitnessResponse | None = None,
+    target_distance_km: float | None = None,
 ) -> dict:
     """Real athlete state fed to the prompt: current fitness/fatigue/form and
     recent run volume. Cross-training counts toward load elsewhere, but the plan
     prompt needs the running baseline specifically to set volumes.
 
     `fitness` may be passed in to avoid recomputing the CTL/ATL curve (a full
-    activity scan) when the caller already has it."""
+    activity scan) when the caller already has it.
+
+    `target_distance_km` only affects WHICH effort is chosen as the Riegel
+    source: with a target, candidates are ranked by the confidence they would
+    produce, so a recent 10 km beats a 2 km flat out. Without one there is no
+    ratio to judge, and the fastest still wins."""
     if fitness is None:
         fitness = await fitness_service.compute_fitness(db, user_id)
 
@@ -213,8 +251,11 @@ async def build_context(
     weekly_minutes = [0] * 8  # index 0 = oldest week, index 7 = most recent
     latest_dt: datetime | None = None
     latest: dict | None = None  # most recent run overall, ignoring the 8-week window
-    best_pace_s: float | None = None  # fastest ≥3km run in the window (for Riegel)
-    best_effort: dict | None = None
+    # Every run in the window that could serve as a Riegel source — the isolated
+    # effort when the session had one, the whole run otherwise. Ranked at the end
+    # rather than kept as a running minimum, because "best" now depends on the
+    # target distance and not on pace alone.
+    candidates: list[dict] = []
     recent_paces_s: list[float] = []  # every measurable run's pace, for the median
 
     cursor = db.activities.find({"user_id": user_id, "sport": SportType.RUN})
@@ -241,24 +282,46 @@ async def build_context(
         if 0 <= weeks_ago <= 7:
             weekly_minutes[7 - weeks_ago] += minutes
 
-        if distance_m and distance_m >= 1500 and duration_s > 0:
-            pace = duration_s / (distance_m / 1000)  # s/km — faster is better
-            recent_paces_s.append(pace)
-            if best_pace_s is None or pace < best_pace_s:
-                best_pace_s = pace
-                best_effort = {
-                    "distance_km": round(distance_m / 1000, 2),
-                    "time_s": duration_s,
-                    "days_ago": (today - act_date).days,
-                }
+        if distance_m and distance_m >= performance_service.MIN_EFFORT_M and duration_s > 0:
+            # The median baseline stays built on WHOLE runs, never on isolated
+            # efforts: it is the athlete's typical pace, and feeding it maximal
+            # efforts would drag it fast enough to stop catching the mismeasured
+            # run it exists to catch.
+            recent_paces_s.append(duration_s / (distance_m / 1000))
 
-    # Riegel takes the fastest run at face value, so a mismeasured one (GPS
-    # drift, a run cut short) would set the paces for the whole plan. Flag it
-    # against the athlete's own median pace; the estimate is kept, its
-    # confidence is not (performance_service).
-    if best_effort is not None and best_pace_s is not None:
+        # A structured session averaged whole is a pace that was never held —
+        # 12 min of warm-up, 2 km flat out and 11 min easy came out 22 minutes
+        # slow on a half. When the laps show an effort, extrapolate the effort.
+        splits = doc.get("splits")
+        effort = (
+            performance_service.best_sustained_effort(splits)
+            if isinstance(splits, list) and splits
+            else None
+        )
+        if effort is None and distance_m and distance_m >= performance_service.MIN_EFFORT_M:
+            effort = performance_service.Effort(
+                distance_m=float(distance_m), time_s=float(duration_s), isolated=False
+            )
+        if effort is not None and duration_s > 0:
+            candidates.append(
+                {
+                    "distance_km": round(effort.distance_m / 1000, 2),
+                    "time_s": round(effort.time_s),
+                    "days_ago": (today - act_date).days,
+                    "isolated": effort.isolated,
+                    "_pace_s": effort.pace_s_per_km,
+                }
+            )
+
+    best_effort = _pick_source_effort(candidates, target_distance_km)
+
+    # Riegel takes its source at face value, so a mismeasured run (GPS drift, a
+    # run cut short) would set the paces for the whole plan. Flag it against the
+    # athlete's own median pace; the estimate is kept, its confidence is not
+    # (performance_service).
+    if best_effort is not None:
         best_effort["pace_implausible"] = performance_service.is_source_pace_implausible(
-            best_pace_s, recent_paces_s
+            best_effort.pop("_pace_s"), recent_paces_s
         )
 
     days_since_last_run = (today - latest["date"]).days if latest else None
@@ -297,7 +360,10 @@ async def build_context(
         "weekly_run_minutes_8w": weekly_minutes,
         "last_run": last_run,
         "longest_run_8w_min": longest_run_8w_min,
-        "best_recent_effort": best_effort,  # fastest ≥1.5km run in the window
+        # The run — or the isolated effort inside one — that Riegel extrapolates.
+        # `isolated` tells the model the pace comes from the fast part of a
+        # session, not from its average, so it doesn't recalibrate on a diluted one.
+        "best_recent_effort": best_effort,
         "needs_test": needs_test,
         "avg_weekly_load_4w": _avg_weekly_load_4w(fitness, today),
     }
@@ -787,7 +853,9 @@ def _user_prompt(
         "ont été manquées (voir progression_recente), repars du niveau actuel. "
         "Recale les allures sur `semaine_ecoulee` : pour chaque séance, `signal` "
         "dit ce qui est fiable — à 'hr' juge sur la FC et ignore l'allure (terrain "
-        "vallonné), à 'pace' juge sur l'allure."
+        "vallonné), à 'pace' juge sur l'allure. Quand `best_recent_effort.isolated` "
+        "est vrai, son allure est celle de la PARTIE RAPIDE d'une séance, pas de la "
+        "séance entière : ne la prends jamais pour une allure d'endurance."
     )
 
 
@@ -1343,6 +1411,21 @@ async def _next_version(db: AsyncIOMotorDatabase, user_id: str) -> int:
     return (latest["version"] + 1) if latest else 1
 
 
+def _estimate_source(source: dict | None) -> EstimateSource | None:
+    """The chosen effort, in the shape the app shows. Named rather than implied:
+    an estimate nobody can trace back to a run is one nobody can dispute, which
+    is how a 22-minute error survived until an athlete happened to ask."""
+    if not source or not source.get("distance_km") or not source.get("time_s"):
+        return None
+    return EstimateSource(
+        distance_km=source["distance_km"],
+        time_s=round(source["time_s"]),
+        pace_min_per_km=_avg_pace_min_per_km(source["time_s"], source["distance_km"] * 1000) or "—",
+        days_ago=source.get("days_ago") or 0,
+        isolated=bool(source.get("isolated")),
+    )
+
+
 def _recent_source(context: dict) -> dict | None:
     """Effort to base the Riegel estimate on: the best ≥3km run, else the last run."""
     best = context.get("best_recent_effort")
@@ -1482,7 +1565,9 @@ async def generate_plan(
     # Compute the CTL/ATL curve once and share it: both build_context and
     # compute_progress need it, and it scans every activity.
     fitness = await fitness_service.compute_fitness(db, user_id)
-    context = await build_context(db, user_id, fitness=fitness)
+    context = await build_context(
+        db, user_id, fitness=fitness, target_distance_km=request.distance_km
+    )
 
     # Replan awareness: if a prior plan exists, tell the model what was actually
     # done recently so the regenerated plan restarts from reality, not the paper
@@ -1513,6 +1598,7 @@ async def generate_plan(
     # on real form, not just the goal. Feasibility is a notice, never a blocker.
     current_estimate = None
     feasibility = None
+    estimate_source: EstimateSource | None = None
     source = _recent_source(context)
     if request.distance_km and source:
         current_estimate = performance_service.estimate_current_time(
@@ -1520,6 +1606,7 @@ async def generate_plan(
         )
         if source.get("pace_implausible"):
             current_estimate = performance_service.downgrade_confidence(current_estimate)
+        estimate_source = _estimate_source(source)
         context["chrono_actuel_estime"] = {
             "distance_km": request.distance_km,
             "temps_estime_min": round(current_estimate.seconds / 60),
@@ -1573,6 +1660,9 @@ async def generate_plan(
         "injury": injury.model_dump(mode="json") if injury else None,
         "estimated_time_min": estimated_min,
         "estimated_time_confidence": current_estimate.confidence if current_estimate else None,
+        "estimated_time_source": (
+            estimate_source.model_dump(mode="json") if estimate_source else None
+        ),
         "projected_time_min": projected_min,
         "feasibility_warning": feasibility,
         "error_message": None,
@@ -1592,6 +1682,7 @@ async def generate_plan(
         plan=plan,
         estimated_time_min=estimated_min,
         estimated_time_confidence=current_estimate.confidence if current_estimate else None,
+        estimated_time_source=estimate_source,
         projected_time_min=projected_min,
         feasibility_warning=feasibility,
     )
@@ -1782,6 +1873,7 @@ async def get_current_plan(db: AsyncIOMotorDatabase, user_id: str) -> PlanRespon
         plan=plan,
         estimated_time_min=doc.get("estimated_time_min"),
         estimated_time_confidence=doc.get("estimated_time_confidence"),
+        estimated_time_source=doc.get("estimated_time_source"),
         projected_time_min=doc.get("projected_time_min"),
         feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
@@ -1865,6 +1957,7 @@ async def get_plan_version(
         plan=Plan.model_validate(doc["plan"]) if doc.get("plan") else None,
         estimated_time_min=doc.get("estimated_time_min"),
         estimated_time_confidence=doc.get("estimated_time_confidence"),
+        estimated_time_source=doc.get("estimated_time_source"),
         projected_time_min=doc.get("projected_time_min"),
         feasibility_warning=doc.get("feasibility_warning"),
         error_message=doc.get("error_message"),
@@ -1911,6 +2004,7 @@ async def restore_plan_version(
         "injury": doc.get("injury"),
         "estimated_time_min": doc.get("estimated_time_min"),
         "estimated_time_confidence": doc.get("estimated_time_confidence"),
+        "estimated_time_source": doc.get("estimated_time_source"),
         "projected_time_min": doc.get("projected_time_min"),
         "feasibility_warning": doc.get("feasibility_warning"),
         "error_message": None,
@@ -1938,6 +2032,7 @@ async def restore_plan_version(
         plan=plan,
         estimated_time_min=restored.get("estimated_time_min"),
         estimated_time_confidence=restored.get("estimated_time_confidence"),
+        estimated_time_source=restored.get("estimated_time_source"),
         projected_time_min=restored.get("projected_time_min"),
         feasibility_warning=restored.get("feasibility_warning"),
         error_message=None,
