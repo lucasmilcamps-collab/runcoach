@@ -126,8 +126,25 @@ le graphe (AST seul, aucun appel LLM, aucun coût).
 
 ## État du projet
 
-Projet démarré de zéro. Phases prévues :
-1. **Phase 1** : backend + auth + sync Garmin (ingestion activités et métriques santé).
-2. **Phase 2** : moteur de charge (TSS/CTL/ATL) + génération de plan v1 (cas de test réel : semi-marathon avec basket hebdomadaire fixe).
-3. **Phase 3** : app Expo — consultation du plan, tracking des séances, dashboard charge/forme.
-4. **Phase 4** : adaptation dynamique du plan (HRV/sommeil/séances manquées) — le différenciateur.
+**Les quatre phases initiales sont en place et déployées.** L'app est utilisée pour de
+vrai sur un plan de semi-marathon.
+
+1. **Phase 1** — backend, auth, sync Garmin : activités, métriques santé, temps par
+   zone de FC, splits par tour.
+2. **Phase 2** — moteur de charge (TRIMP d'Edwards, CTL/ATL/TSB) et génération de
+   plan par IA, validée par `plan_validation` avant toute persistance.
+3. **Phase 3** — app Expo : plan, séances, liaison d'activités, dashboard charge/forme.
+4. **Phase 4** — adaptation dynamique : ajustement quotidien déterministe (HRV,
+   sommeil, TSB), bilan de fin de semaine, replanification partielle, reprise après
+   blessure, règlement des semaines écoulées.
+
+Le travail actuel n'est plus de construire des phases mais d'affiner ce qui tourne.
+Deux principes s'en dégagent, tirés de bugs réels et à respecter :
+
+- **Ce qui est dérivable se dérive.** La charge d'une semaine se calcule depuis ses
+  séances ; elle n'est pas déclarée par le modèle. Un chiffre écrit à côté de la
+  chose qu'il décrit finit par diverger d'elle, et le validateur ne surveille alors
+  qu'une étiquette.
+- **Ce qui est déjà arrivé ne se réécrit pas.** Une replanification gèle les semaines
+  écoulées, une séance validée est en lecture seule, un échec de génération ne
+  remplace pas le plan qui marchait.

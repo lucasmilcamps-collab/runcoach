@@ -1792,6 +1792,17 @@ async def generate_plan(
         )
         if source.get("pace_implausible"):
             current_estimate = performance_service.downgrade_confidence(current_estimate)
+        if not source.get("isolated"):
+            # Riegel relates one MAXIMAL effort to another — the skill is explicit
+            # that it needs an effort, not an average. A whole training run is
+            # rarely one, so extrapolating it is a weaker claim than extrapolating
+            # a deliberate effort of the same distance. The confidence scale only
+            # read the distance ratio and the age, so those two came out equal.
+            #
+            # It degrades one notch, never more, and the estimate itself is kept:
+            # a run at steady effort still says something, and removing it would
+            # leave the plan with no anchor at all.
+            current_estimate = performance_service.downgrade_confidence(current_estimate)
         estimate_source = _estimate_source(source)
         context["chrono_actuel_estime"] = {
             "distance_km": request.distance_km,

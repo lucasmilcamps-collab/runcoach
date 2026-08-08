@@ -789,3 +789,67 @@ async def test_a_failed_splits_request_is_retried_next_sync(db):
 
     assert await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance) == 1
     assert len((await db.activities.find_one({"garmin_activity_id": 21}))["splits"]) == 3
+
+
+async def test_a_run_without_zone_data_is_asked_once_and_then_left_alone(db):
+    """The same queue defect fixed for splits in the previous release, still in
+    place here. A run Garmin has no zone data for — no HR strap, an old device —
+    kept `hr_zone_seconds: None`, so it re-entered the queue on every sync.
+    Newest first, it sat at the front and spent the per-sync budget re-asking a
+    question already answered."""
+    user_id = await _seed_user_and_credentials(db)
+    await _seed_profile(db, user_id)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": "RUN",
+            "garmin_activity_id": 30,
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+        }
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_hr_in_timezones.return_value = []  # answered, empty
+
+    enriched = await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance)
+    assert enriched == 0
+    assert (await db.activities.find_one({"garmin_activity_id": 30}))["hr_zone_seconds"] == []
+
+    again = await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance)
+    assert again == 0
+    assert mock_instance.get_activity_hr_in_timezones.call_count == 1
+
+
+async def test_a_failed_zone_request_is_retried_next_sync(db):
+    """The other half of the same decision: a 500 says nothing about the
+    activity, so it must not be written off as having no zone data."""
+    user_id = await _seed_user_and_credentials(db)
+    await _seed_profile(db, user_id)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": "RUN",
+            "garmin_activity_id": 31,
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+        }
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_hr_in_timezones.side_effect = [
+        garminconnect.GarminConnectConnectionError("API Error 500 - boom"),
+        HR_TIME_IN_ZONES,
+    ]
+
+    assert await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance) == 0
+    assert (await db.activities.find_one({"garmin_activity_id": 31})).get("hr_zone_seconds") is None
+
+    assert await garmin_sync_service.enrich_run_zone_seconds(db, user_id, mock_instance) == 1
+    assert (await db.activities.find_one({"garmin_activity_id": 31}))["hr_zone_seconds"] is not None
+
+
+async def test_empty_zone_seconds_still_falls_back_to_average_hr(db):
+    """The marker must not cost the load: an empty list is not five values
+    summing above zero, so `compute_trimp` takes the average-HR form as before."""
+    from app.services import load_service
+
+    assert load_service.compute_trimp(2700, 150, 190, 50, zone_seconds=[]) == 135.0

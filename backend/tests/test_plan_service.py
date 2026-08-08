@@ -20,7 +20,7 @@ from app.models.plan import (
     Week,
     Weekday,
 )
-from app.services import plan_service
+from app.services import performance_service, plan_service
 
 
 def _s(day: Weekday, stype: str, duration: int) -> Session:
@@ -799,11 +799,12 @@ async def test_generate_plan_computes_time_estimates(db):
 
     # The confidence was computed and sent to the model all along, but never
     # stored — so the app showed a race time with the authority of a number the
-    # engine itself may rate "low". A 10k source for a half is a 2.1 ratio, so
-    # this one is genuinely trustworthy; what matters is that it survives the
-    # round-trip at all.
-    assert result.estimated_time_confidence == "high"
-    assert stored.estimated_time_confidence == "high"
+    # A 10k source for a half is a 2.1 ratio, which the scale rates "high" — but
+    # this source is a whole training run, and Riegel relates one MAXIMAL effort
+    # to another. Not being an effort costs it a notch, so "medium": the estimate
+    # stands, its authority doesn't.
+    assert result.estimated_time_confidence == "medium"
+    assert stored.estimated_time_confidence == "medium"
 
 
 async def test_a_short_source_effort_is_reported_as_low_confidence(db):
@@ -2113,3 +2114,30 @@ async def test_the_first_call_keeps_a_slice_for_the_repair(db):
     used = create_mock.call_args_list[0].kwargs["timeout"]
     assert used <= plan_service._TOTAL_DEADLINE_S - plan_service._REPAIR_RESERVE_S
     assert used == plan_service._ANTHROPIC_TIMEOUT_S
+
+
+async def test_an_isolated_effort_keeps_its_confidence(db):
+    """The other side of the rule: a deliberate effort IS what Riegel wants, so
+    it is not docked. Without this the downgrade would just be a blanket
+    pessimism rather than a statement about the source."""
+    user_id = await _seed_user(db)
+    # A structured session: the 2 km effort is isolated from warm-up and cool-down.
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=3),
+            "duration_s": 1927,
+            "distance_m": 5530,
+            "splits": _TEST_SESSION_SPLITS,
+        }
+    )
+
+    ctx = await plan_service.build_context(
+        db, user_id, fitness=_stub_fitness(), target_distance_km=21.1
+    )
+
+    assert ctx["best_recent_effort"]["isolated"] is True
+    # 2 km → 21.1 km is a 10x ratio: "low" on the scale, and nothing takes it
+    # lower because the source is exactly the maximal effort Riegel assumes.
+    assert performance_service.confidence_for(2.0, 21.1, 3) == "low"

@@ -175,16 +175,20 @@ def _fetch_zone_bands_sync(
     """Runs in a worker thread. One `hrTimeInZones` call per activity, spaced by
     the rate-limit delay. Each call is guarded on its own: a single activity
     without zone data (no HR strap that day, an old device) must not cost the
-    others."""
+    others.
+
+    Only activities whose call SUCCEEDED appear in the result, empty bands
+    included — the same distinction `_fetch_splits_sync` makes, and for the same
+    reason. An answered "this run has no zone data" is final; a request that blew
+    up says nothing about the activity and has to be asked again next sync."""
     out: dict[int, list[tuple[float, float, float]]] = {}
     for index, activity_id in enumerate(activity_ids):
         try:
             payload = client.get_activity_hr_in_timezones(str(activity_id))
         except Exception:  # noqa: BLE001 — enrichment is best-effort, per activity
             payload = None
-        bands = _zone_bands(payload)
-        if bands:
-            out[activity_id] = bands
+        else:
+            out[activity_id] = _zone_bands(payload)
         if index < len(activity_ids) - 1:
             time.sleep(_RATE_LIMIT_DELAY_S)
     return out
@@ -232,13 +236,21 @@ async def enrich_run_zone_seconds(
     enriched = 0
     for activity_id, bands in bands_by_id.items():
         zone_seconds = load_service.redistribute_zone_seconds(bands, hr_max, hr_rest)
-        if zone_seconds is None:
-            continue
+        # An empty list, not "leave it null", when Garmin answered but the answer
+        # is unusable — no HR strap that day, an old device, bands that can't be
+        # redistributed. The cursor selects on `hr_zone_seconds: None`, which an
+        # empty list does not match, so those activities leave the queue instead
+        # of being re-fetched on every sync for ever. Left null they sit at the
+        # front of the line (newest first) and spend the whole per-sync budget
+        # re-asking a question already answered — the rate-limit discipline this
+        # cap exists to protect. Readers are unaffected: `compute_trimp` requires
+        # five values summing above zero and falls back to average HR otherwise.
         await db.activities.update_one(
             {"garmin_activity_id": activity_id, "user_id": user_id},
-            {"$set": {"hr_zone_seconds": zone_seconds}},
+            {"$set": {"hr_zone_seconds": zone_seconds if zone_seconds is not None else []}},
         )
-        enriched += 1
+        if zone_seconds is not None:
+            enriched += 1
     return enriched
 
 
