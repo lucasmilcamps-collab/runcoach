@@ -17,10 +17,12 @@ async def weekly(
 ):
     """The review of the week that just ended.
 
-    Recomputed on every request, like the rest of the read models — nothing is
-    cached, so it can never go stale against a freshly synced activity. The AI
-    narrative is only produced when the deterministic verdict already says the
-    plan should move, so an ordinary week costs nothing."""
+    The numbers are recomputed on every request, like the rest of the read
+    models, so they can never go stale against a freshly synced activity. The AI
+    narrative is the one cached part: it is produced only when the deterministic
+    verdict already says the plan should move, and only once for that week —
+    this endpoint is refetched on focus, so regenerating the sentence each time
+    would spend an API call per visit to describe a week that is already over."""
     return await weekly_review_service.build_weekly_review(db, str(user["_id"]))
 
 

@@ -11,6 +11,12 @@ def _s(day: Weekday, stype: str, priority: str = "key") -> Session:
     )
 
 
+def _instant(day, hour: int = 9) -> datetime:
+    """A date as a UTC instant — plans and performances are now compared as
+    moments, so a replan the same afternoon as a test can silence it."""
+    return datetime(day.year, day.month, day.day, hour, tzinfo=UTC)
+
+
 async def _seed_user(db) -> str:
     result = await db.users.insert_one(
         {"email": "a@b.com", "hashed_password": "x", "created_at": datetime.now(UTC)}
@@ -218,6 +224,10 @@ async def test_completed_test_session_suggests_replan(db):
             "plan": plan.model_dump(mode="json"),
             "start_date": start.isoformat(),
             "created_at": datetime.now(UTC),
+            # Written before the week it plans — which is the only order that
+            # exists in reality, and what makes the test session it prescribes
+            # something this plan cannot already account for.
+            "generated_at": _instant(start - timedelta(days=1)),
         }
     )
     await _seed_activity(db, user_id, start)  # the test was run on its planned day
@@ -256,6 +266,7 @@ async def _seed_test_plan_on(db, user_id: str, test_date) -> None:
             "plan": plan.model_dump(mode="json"),
             "start_date": start.isoformat(),
             "created_at": datetime.now(UTC),
+            "generated_at": _instant(start - timedelta(days=1)),
         }
     )
 

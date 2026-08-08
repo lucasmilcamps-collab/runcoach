@@ -74,6 +74,70 @@ async def _load_run_days(db: AsyncIOMotorDatabase, user_id: str, since: date) ->
     return run_minutes_by_date
 
 
+def _as_utc(value: object) -> datetime | None:
+    """Mongo hands back naive datetimes; everything here reasons in UTC."""
+    if not isinstance(value, datetime):
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+async def _plan_generated_at(db: AsyncIOMotorDatabase, doc: dict) -> datetime | None:
+    """When this plan's content was written by the model.
+
+    Not `created_at`: a restore copies a plan forward, so its `created_at` is the
+    moment of the copy, and using it would let a restored plan claim to know
+    about a session run after it was written. New plans carry `generated_at`
+    directly; older ones are resolved by following `restored_from` back to the
+    version they came from, which needs no migration."""
+    seen: set[int] = set()
+    for _ in range(5):  # a restore chain deeper than this is a bug, not a plan
+        generated = _as_utc(doc.get("generated_at"))
+        if generated is not None:
+            return generated
+        source = doc.get("restored_from")
+        if source is None or source in seen:
+            break
+        seen.add(source)
+        previous = await db.plans.find_one({"user_id": doc["user_id"], "version": source})
+        if previous is None:
+            break
+        doc = previous
+    return _as_utc(doc.get("created_at"))
+
+
+async def _performance_instant(
+    db: AsyncIOMotorDatabase, user_id: str, day: date, slot: str
+) -> datetime | None:
+    """When the performance for a session on `day` actually landed.
+
+    An explicit link is the strongest signal and carries its own timestamp; a run
+    recorded on the day is the fallback. Returns None when neither exists — the
+    session wasn't done."""
+    completion = await db.session_completions.find_one(
+        {
+            "user_id": user_id,
+            "session_date": day.isoformat(),
+            "slot": {"$in": [slot, None]} if slot == "primary" else slot,
+            "activity_id": {"$ne": None},
+        }
+    )
+    if completion is not None:
+        linked_at = _as_utc(completion.get("linked_at"))
+        if linked_at is not None:
+            return linked_at
+
+    day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+    activity = await db.activities.find_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": {"$gte": day_start, "$lt": day_start + timedelta(days=1)},
+        },
+        sort=[("start_time", -1)],
+    )
+    return _as_utc(activity.get("start_time")) if activity else None
+
+
 async def _load_linked_dates(db: AsyncIOMotorDatabase, user_id: str) -> set[tuple[date, str]]:
     """Sessions the athlete explicitly linked to an activity, as (date, slot) —
     those count as done even when the activity lands on a different day than
@@ -261,7 +325,14 @@ async def compute_progress(
         reason = f"Fatigue élevée persistante (TSB {tsb:+.0f})."
 
     # A completed assessment ("test") session is fresh performance data — suggest
-    # regenerating so the plan re-anchors on the measured level (Lot 5 loop).
+    # replanning so the plan re-anchors on the measured level (Lot 5 loop).
+    #
+    # The suggestion only stands while the plan does NOT already account for that
+    # performance. Partial replanning freezes the week holding the test, so the
+    # session and its link survive every replan: without this gate the banner
+    # would fire forever, and re-suggesting a replan the athlete has already done
+    # is how a banner teaches people to ignore banners.
+    generated_at = await _plan_generated_at(db, doc)
     for week_pos, week in enumerate(weeks):
         for session in week.sessions:
             if session.type != "test":
@@ -269,14 +340,20 @@ async def compute_progress(
             test_date = start + timedelta(days=week_pos * 7 + WEEKDAY_ORDER.index(session.day))
             # `<=`, not `<`: a test run today is fresh performance data the moment
             # it lands. Waiting for the day to pass would hide the suggestion from
-            # the athlete on the one day they're most likely to look. Nothing is
-            # weakened by it — the second condition still demands a real activity,
-            # so a test that's only *planned* for today triggers nothing.
-            if test_date <= today and (
+            # the athlete on the one day they're most likely to look. The second
+            # condition still demands a real activity, so a test that's only
+            # *planned* for today triggers nothing.
+            if test_date > today or not (
                 test_date in run_minutes_by_date or (test_date, session.slot) in linked_dates
             ):
-                replan_suggested = True
-                reason = "Séance de test réalisée — réestime ton chrono et réajuste le plan."
+                continue
+            landed = await _performance_instant(db, user_id, test_date, session.slot)
+            # Instants, not dates: replanning the same afternoon the test was run
+            # has to silence it, and that is exactly the case this loop is for.
+            if generated_at is not None and landed is not None and landed <= generated_at:
+                continue
+            replan_suggested = True
+            reason = "Séance de test réalisée — réestime ton chrono et réajuste le plan."
 
     return PlanProgress(
         has_plan=True,

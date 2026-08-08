@@ -373,6 +373,157 @@ async def test_replan_endpoint_on_a_finishing_plan_is_409(client, db):
     assert response.json()["detail"]["code"] == "NOTHING_TO_REPLAN"
 
 
+# --- The suggestion has to go quiet once it has been acted on -----------------
+
+
+def _plan_with_test(n_weeks: int) -> Plan:
+    """Week 1 holds a `test` session; the rest are ordinary."""
+    return Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[
+            Phase(
+                name="base",
+                weeks=[
+                    Week(
+                        index=i,
+                        is_deload=(i == 4),
+                        target_load=(60.0 if i == 4 else 100.0),
+                        sessions=[_s(Weekday.TUESDAY, "test" if i == 1 else "tempo")],
+                    )
+                    for i in range(1, n_weeks + 1)
+                ],
+            )
+        ],
+    )
+
+
+async def _seed_ran_test(db, user_id: str, start: date) -> None:
+    """The athlete ran the week-1 test on its planned Tuesday and linked it."""
+    day = start + timedelta(days=1)
+    activity = await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "duration_s": 2700,
+            "distance_m": 5000,
+            "start_time": datetime(day.year, day.month, day.day, 10, tzinfo=UTC),
+            "garmin_activity_id": 1,
+        }
+    )
+    await db.session_completions.insert_one(
+        {
+            "user_id": user_id,
+            "week_index": 1,
+            "day": "TUESDAY",
+            "slot": "primary",
+            "session_date": day.isoformat(),
+            "activity_id": str(activity.inserted_id),
+            "linked_at": datetime(day.year, day.month, day.day, 11, tzinfo=UTC),
+        }
+    )
+
+
+async def test_replanning_silences_the_test_suggestion(db):
+    """The regression partial replanning introduced. A full rebuild used to drop
+    the test session outright, so the banner cleared. Freezing week 1 keeps it —
+    and its link — forever, so without this the banner fires for the life of the
+    plan and the athlete replans again and again on the same stale advice."""
+    from app.services import plan_progress
+
+    user_id = await _seed_user(db)
+    start = _monday(-1)  # today is in week 2; the test sits in week 1
+    await _seed_plan(db, user_id, _plan_with_test(6), start)
+    # Generated the day before the plan began, so it cannot know the test's result.
+    await db.plans.update_one(
+        {"user_id": user_id, "version": 1},
+        {"$set": {"generated_at": datetime(start.year, start.month, start.day, 8, tzinfo=UTC)}},
+    )
+    await _seed_ran_test(db, user_id, start)
+
+    before = await plan_progress.compute_progress(db, user_id)
+    assert before.replan_suggested is True
+    assert "test" in (before.replan_reason or "").lower()
+
+    tail = Plan(
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[
+            Phase(
+                name="base",
+                weeks=[
+                    Week(
+                        index=i,
+                        is_deload=(i == 4),
+                        target_load=(60.0 if i == 4 else 90.0),
+                        sessions=[_s(Weekday.TUESDAY, "tempo")],
+                    )
+                    for i in range(3, 7)
+                ],
+            )
+        ],
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(tail.model_dump(mode="json"))),
+    ):
+        base = await plan_service.build_replan_base(db, user_id)
+        result = await plan_service.generate_plan(
+            db, user_id, PlanRequest.model_validate(_REQUEST), base=base
+        )
+
+    assert result.status == "ready", result.error_message
+    after = await plan_progress.compute_progress(db, user_id)
+    assert after.replan_suggested is False, after.replan_reason
+    # The session itself is still there — it's the suggestion that's spent.
+    types = [s.type for p in result.plan.phases for w in p.weeks for s in w.sessions]
+    assert "test" in types
+
+
+async def test_restoring_an_older_plan_brings_the_suggestion_back(db):
+    """A restore regenerates nothing, so the plan it brings back still predates
+    the test. Stamping the copy with `now` would let it claim otherwise."""
+    from app.services import plan_progress
+
+    user_id = await _seed_user(db)
+    start = _monday(-1)
+    await _seed_plan(db, user_id, _plan_with_test(6), start)
+    await db.plans.update_one(
+        {"user_id": user_id, "version": 1},
+        {"$set": {"generated_at": datetime(start.year, start.month, start.day, 8, tzinfo=UTC)}},
+    )
+    await _seed_ran_test(db, user_id, start)
+
+    # A newer plan that DOES account for the test silences the suggestion...
+    await _seed_plan(db, user_id, _plan_with_test(6), start, version=2)
+    await db.plans.update_one(
+        {"user_id": user_id, "version": 2},
+        {"$set": {"generated_at": datetime.now(UTC)}},
+    )
+    assert (await plan_progress.compute_progress(db, user_id)).replan_suggested is False
+
+    # ...and going back to the one written before it must bring it back.
+    await plan_service.restore_plan_version(db, user_id, 1)
+
+    restored = await plan_progress.compute_progress(db, user_id)
+    assert restored.replan_suggested is True
+    assert "test" in (restored.replan_reason or "").lower()
+
+
+def test_a_replan_asks_for_the_test_in_the_first_open_week():
+    """`_test_directive` said "SEMAINE 1", always frozen on a partial replan — so
+    an athlete who still needed a test could never be given one."""
+    base = plan_service.ReplanBase(
+        start=_monday(-2),
+        goal=PlanGoal(description="Semi", distance_km=21.1),
+        phases=[Phase(name="base", weeks=[_week(i, 100.0) for i in (1, 2, 3)])],
+        last_week=3,
+        total_weeks=6,
+    )
+    context = {"needs_test": True}
+
+    assert "SEMAINE 4" in plan_service._test_directive(context, base)
+    assert "SEMAINE 1" in plan_service._test_directive(context)  # fresh plan, unchanged
+
+
 # --- An injury is a replan too ------------------------------------------------
 
 

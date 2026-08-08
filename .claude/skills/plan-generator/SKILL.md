@@ -169,12 +169,19 @@ Le **seul** chemin qui reconstruit tout depuis la semaine 1 est `POST /plans` (�
 changer d'objectif, c'est un autre plan. Si le plan se termine dans la semaine en cours il n'y a
 rien à replanifier → `409 NOTHING_TO_REPLAN`.
 
-**Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` en semaine 1 (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Une fois le test synchronisé, `compute_progress` détecte la séance test réalisée et **propose** (jamais n'impose) une replanification — la régénération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
+**Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Elle est placée dans la **première semaine réellement écrite** : semaine 1 sur un plan neuf, `base.last_week + 1` sur une replanification partielle — demander la semaine 1 là-bas, c'est demander une semaine gelée, donc ne jamais programmer le test. Une fois le test synchronisé, `compute_progress` détecte la séance réalisée et **propose** (jamais n'impose) une replanification — la génération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
+
+**La suggestion doit s'éteindre, et ça ne va pas de soi.** La replanification partielle gèle la semaine qui porte le test : la séance ET son lien survivent à chaque replanification, alors qu'une reconstruction complète les supprimait (`needs_test` devenu faux). Sans garde, le bandeau se rallumait indéfiniment. La règle : **la suggestion ne vaut que si la performance est arrivée après l'écriture du plan actif.**
+
+- Le plan porte `generated_at` — l'instant où son contenu a été **écrit par le modèle**. `restore_plan_version` le **recopie** de la source au lieu de le remettre à `now` : une restauration ne régénère rien, elle ne peut donc pas prétendre connaître une séance courue depuis. Les documents antérieurs au champ sont résolus en remontant la chaîne `restored_from` (`_plan_generated_at`), sans migration.
+- La performance porte `linked_at` (lien explicite) ou le `start_time` de la course du jour (`_performance_instant`).
+- On compare des **instants, pas des dates** : replanifier l'après-midi même du test doit l'éteindre.
 
 Chaque adaptation crée une nouvelle version du plan (`plan_versions`) — jamais de mutation en place, l'utilisateur peut voir l'historique.
 
 ## Coûts et robustesse
 
 - Cache : une génération = ~1 appel ; pas de régénération silencieuse en boucle (max 3 tentatives puis erreur explicite à l'utilisateur).
+- **Bilan hebdo : la narration s'écrit une fois par semaine et se relit ensuite** (`weekly_reviews`, clé `(user_id, week_start)`, index unique). Le piège qu'on a payé : `GET /reviews/weekly` est refetché au focus de l'onglet (`staleTime` 5 min), donc régénérer la phrase à chaque lecture dépensait un appel par ouverture d'app — pour décrire une semaine déjà terminée, qui ne changera plus. Les **chiffres** restent recalculés à chaque lecture (le TSB affiché doit être vivant) ; seule la phrase est en cache. Le cron du dimanche n'écrit rien d'autre : il ne fait que pré-écrire cette phrase avant que l'athlète n'ouvre l'app. Règle générale : **avant de mettre un appel modèle derrière un GET, regarder à quelle fréquence le client le refetche.**
 - Timeout httpx 60 s ; les générations passent par une tâche de fond (le mobile poll `GET /plans/{id}/status`).
 - Logguer les prompts/réponses en dev uniquement, jamais en prod (données santé).

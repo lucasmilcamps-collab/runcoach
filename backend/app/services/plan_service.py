@@ -730,14 +730,20 @@ async def _recent_week_detail(db, user_id: str) -> list[dict]:
     return rows
 
 
-def _test_directive(context: dict) -> str:
-    """Ask for a week-1 assessment run when we lack a reliable performance to
-    estimate from (feeds the chrono estimation once synced back)."""
+def _test_directive(context: dict, base: ReplanBase | None = None) -> str:
+    """Ask for an assessment run when we lack a reliable performance to estimate
+    from (feeds the chrono estimation once synced back).
+
+    In the first week the model is actually writing — which is week 1 on a fresh
+    plan, but the first OPEN week on a partial replan. Asking for it in week 1
+    there would be asking for a week that is frozen, so an athlete who still
+    needs a test would never be given one."""
     if not context.get("needs_test"):
         return ""
+    week = base.last_week + 1 if base else 1
     return (
         "\nSÉANCE DE TEST — l'historique ne permet pas d'estimer le niveau de "
-        "façon fiable. Place en SEMAINE 1 une séance type='test' : échauffement, "
+        f"façon fiable. Place en SEMAINE {week} une séance type='test' : échauffement, "
         "un effort MAXIMAL sur 2 km (ou 1500 m), puis retour au calme. Son "
         "`rationale` explique qu'elle sert à mesurer le niveau et à recaler les "
         "allures. Conseille dans le rationale de lancer l'effort comme une "
@@ -770,7 +776,7 @@ def _user_prompt(
         f"{_counts_directive(request)}"
         f"{_injury_directive(injury, base)}"
         f"{_detraining_directive(context)}"
-        f"{_test_directive(context)}"
+        f"{_test_directive(context, base)}"
         "Construis le plan complet, semaine par semaine, du niveau actuel "
         "jusqu'à l'objectif, puis soumets-le via l'outil submit_plan. La sortie "
         "longue progresse d'au plus 15 min d'une semaine à l'autre. Reste TRÈS "
@@ -1571,6 +1577,12 @@ async def generate_plan(
         "feasibility_warning": feasibility,
         "error_message": None,
         "created_at": datetime.now(UTC),
+        # When this plan's CONTENT was written by the model — which a restore
+        # carries over rather than resetting, since a restore regenerates
+        # nothing. It answers "does this plan already account for the session I
+        # just ran?", and `created_at` cannot: on a restored plan that is the
+        # moment of the copy, not of the thinking.
+        "generated_at": datetime.now(UTC),
     }
     result = await db.plans.insert_one(doc)
     return PlanResponse(
@@ -1903,6 +1915,11 @@ async def restore_plan_version(
         "feasibility_warning": doc.get("feasibility_warning"),
         "error_message": None,
         "created_at": datetime.now(UTC),
+        # Carried, not reset: a restore brings back a plan written before, so it
+        # cannot account for anything that happened since. Stamping it with now
+        # would make a restored plan claim to already know about a session run
+        # yesterday, and silence the suggestion to re-anchor on it.
+        "generated_at": doc.get("generated_at") or doc.get("created_at"),
         # So the history can say "Version 1 restaurée" instead of inventing a
         # reason from a request diff that didn't change.
         "restored_from": version,

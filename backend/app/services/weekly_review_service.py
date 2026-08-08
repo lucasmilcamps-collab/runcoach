@@ -372,20 +372,57 @@ async def explain(review: WeeklyReviewResponse) -> str | None:
 
 async def build_weekly_review(db: AsyncIOMotorDatabase, user_id: str) -> WeeklyReviewResponse:
     """The full review: deterministic verdict, plus the narrative when — and only
-    when — the verdict warrants one."""
+    when — the verdict warrants one.
+
+    The narrative is written ONCE per athlete per week and reused afterwards.
+    Without that, every read regenerated it: the app refetches this on focus, so
+    a flagged week spent an API call each time the athlete opened the Plan tab —
+    tens of calls for a sentence that describes a week which is already over and
+    cannot change. The cost promise of this feature is one short call per flagged
+    week, and this is what actually keeps it.
+
+    Only the sentence is cached. The numbers are recomputed on every call, so the
+    TSB and adherence on screen stay live.
+    """
     review = await compute_review(db, user_id)
-    if review.needs_adjustment:
-        review.summary = await explain(review)
+    if not review.needs_adjustment:
+        return review
+
+    key = {"user_id": user_id, "week_start": review.week_start.isoformat()}
+    stored = await db.weekly_reviews.find_one(key)
+    if stored and stored.get("summary"):
+        review.summary = stored["summary"]
+        return review
+
+    review.summary = await explain(review)
+    if review.summary:
+        # `$set` on the summary alone, never the whole review: a mid-week write of
+        # the full snapshot would leave stale numbers sitting in the collection
+        # looking authoritative. The unique (user_id, week_start) index makes this
+        # a real upsert.
+        await db.weekly_reviews.update_one(
+            key,
+            {"$set": {**key, "summary": review.summary, "summary_at": datetime.now(UTC)}},
+            upsert=True,
+        )
     return review
 
 
 async def run_due_reviews(db: AsyncIOMotorDatabase) -> dict:
     """Build every athlete's weekly review, for the Sunday-evening scheduler.
 
-    Persisted to `weekly_reviews` so the app shows the same verdict the athlete
-    was notified about, rather than one recomputed hours later against a
-    different TSB. Returns counts only — no health data leaves this function,
-    and none is logged (project security rules)."""
+    It writes nothing itself: `build_weekly_review` already persists the one
+    thing worth keeping — the narrative, once per athlete per week. The batch's
+    job is to get that written before the athlete opens the app, so their first
+    read on Sunday evening is instant and no API call happens while they wait.
+
+    The numbers are deliberately NOT stored. They are recomputed on every read
+    from live fitness data, so a stored copy could only ever be a staler version
+    of something already free to derive — and it would be a second copy of health
+    data to protect for no gain.
+
+    Returns counts only: no health data leaves this function, and none is logged.
+    """
     user_ids: list[str] = await db.plans.distinct("user_id", {"status": "ready"})
     reviewed = 0
     adjusting = 0
@@ -397,11 +434,6 @@ async def run_due_reviews(db: AsyncIOMotorDatabase) -> dict:
             continue
         if not review.has_plan:
             continue
-        await db.weekly_reviews.update_one(
-            {"user_id": user_id, "week_start": review.week_start.isoformat()},
-            {"$set": {**review.model_dump(mode="json"), "user_id": user_id}},
-            upsert=True,
-        )
         reviewed += 1
         if review.needs_adjustment:
             adjusting += 1
