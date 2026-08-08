@@ -179,6 +179,24 @@ rien à replanifier → `409 NOTHING_TO_REPLAN`.
 
 Chaque adaptation crée une nouvelle version du plan (`plan_versions`) — jamais de mutation en place, l'utilisateur peut voir l'historique.
 
+### Écrire une violation que le modèle peut corriger
+
+Une violation est un **message d'erreur adressé à un modèle**, pas un log. Trois règles, payées cher :
+
+- **Ne jamais arrondir le nombre dont dépend la correction.** `+{pct:.0f}%` a transformé un dépassement réel de 10,4 % en « charge +10% (> 10% autorisé) » — un message qui se contredit et ne laisse rien à corriger. Trois tentatives, trois réparations et tout le budget, sans plan. Une décimale partout.
+- **Donner le plafond, pas seulement l'écart.** « charge 110.4, maximum autorisé 110.0 (+10% sur la dernière semaine normale à 100.0) » : le modèle n'a plus qu'un nombre à écrire, au lieu d'un ratio à re-dériver.
+- **Ce qu'on reproche doit être visible dans ce qu'on envoie.** `_plan_outline` affichait `charge={:.0f}` : deux semaines à 100,4 et 110,4 arrivaient en « 100 » et « 110 », un couple d'apparence conforme. On demandait de réparer l'invisible.
+- ⚠️ **`_violation_weeks` parse ces messages** (`_WEEK_IN_VIOLATION`, `r"Semaine (\d+)\s*:"`). Reformuler une violation sans garder le préfixe `Semaine N :` fait rendre `None`, et **tout bascule en régénération complète** — l'inverse du but. Un test verrouille ça.
+
+### Correctifs mécaniques : ce que le code doit réparer lui-même
+
+Quand une violation a une correction déterministe, la faire en code — c'est gratuit, instantané, et le modèle a prouvé qu'il refaisait la même erreur à chaque tour. Deux en place, appliqués avant toute réparation modèle dans `_generate_valid_plan` :
+
+- `_auto_fix_strength_placement` : déplace un renfo mal placé.
+- `_auto_fix_ramp` : rabat une charge marginalement au-dessus du plafond de rampe. **Borné à `_RAMP_AUTOFIX_MAX_OVERSHOOT` (2 %)** : `target_load` est une estimation que le modèle produit à l'œil, une précision meilleure que ~1 % y est du bruit, donc rabattre 110,4 à 110,0 aligne l'étiquette. Au-delà, le plan est réellement trop lourd et réécrire l'étiquette laisserait des séances trop dures sous un nombre conforme — falsifier le plan pour satisfaire son propre validateur. Le correctif ne fait **jamais monter** une charge : la règle des 10 % ne peut pas être affaiblie par ce chemin.
+
+**Toute re-validation d'un candidat réparé doit passer `frozen_through`.** Omis, les semaines gelées sont rejugées, le compte de violations gonfle, la condition « moins qu'avant » échoue et une réparation qui marchait est jetée — silencieusement, sur chaque replanification.
+
 ## Coûts et robustesse
 
 - Cache : une génération = ~1 appel ; pas de régénération silencieuse en boucle (max 3 tentatives puis erreur explicite à l'utilisateur).

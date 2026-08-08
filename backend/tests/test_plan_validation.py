@@ -115,7 +115,36 @@ def test_ramp_over_10_percent_flagged():
     plan = _valid_plan()
     plan.phases[0].weeks[1].target_load = 130.0  # +30% vs week 1
     violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
-    assert any("10%" in v for v in violations)
+    assert any("maximum autorisé" in v for v in violations)
+
+
+def test_a_marginal_overshoot_names_its_numbers():
+    """The message that cost a whole generation: rounded to units, a 10.4%
+    overshoot printed "charge +10% (> 10% autorisé)" — a contradiction with
+    nothing to act on. It has to carry the load, the ceiling and the baseline."""
+    plan = _valid_plan()
+    plan.phases[0].weeks[0].target_load = 100.0
+    plan.phases[0].weeks[1].target_load = 110.4  # +10.4%, reads as "+10%" rounded
+    plan.phases[0].weeks[2].target_load = 115.0
+
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+
+    ramp = next(v for v in violations if "Semaine 2" in v)
+    assert "110.4" in ramp  # what the plan says
+    assert "110.0" in ramp  # what it may not exceed
+    assert "100.0" in ramp  # what that ceiling comes from
+    assert "+10% (> 10%" not in ramp
+
+
+def test_a_deload_that_does_not_deload_names_its_numbers():
+    plan = _valid_plan()
+    plan.phases[0].weeks[3].target_load = 110.0  # 95% of week 3's 116
+
+    violations = plan_validation.validate_plan(plan, _valid_request(), TODAY)
+
+    deload = next(v for v in violations if "deload" in v)
+    assert "110.0" in deload
+    assert "98.6" in deload  # 85% of 116.0
 
 
 def test_missing_deload_flagged():
