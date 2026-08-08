@@ -57,6 +57,11 @@ déclenche **aucun** appel à l'API Anthropic. Le modèle n'est sollicité que p
 les athlètes dont la semaine justifie un ajustement, et uniquement pour rédiger
 l'explication — il ne régénère jamais un plan tout seul.
 
+Cette explication est écrite **une seule fois par semaine** puis relue : le cron
+ne fait que la préparer avant que tu n'ouvres l'app. Sans lui rien n'est perdu —
+le bilan se calcule à la lecture et la phrase s'écrit à ce moment-là. Le secret
+n'est donc pas obligatoire, il évite juste l'attente au premier affichage.
+
 ## 4. Côté utilisateur
 
 1. Ouvre la PWA (installée sur l'écran d'accueil sur iPhone).

@@ -45,7 +45,7 @@ export default function InjuryReportScreen() {
     <FormScreen
       kicker="Signaler une blessure"
       title="Adapter mon plan"
-      blurb="Le plan sera régénéré en reprise progressive : une période allégée puis une remontée douce de la charge. Ce n’est pas un avis médical — en cas de doute ou de douleur qui persiste, consulte un professionnel de santé."
+      blurb="Les semaines suivantes seront replanifiées en reprise progressive : une période allégée puis une remontée douce de la charge. La semaine en cours et les précédentes sont conservées — passe les séances que tu ne peux pas faire. Ce n’est pas un avis médical — en cas de doute ou de douleur qui persiste, consulte un professionnel de santé."
       actions={[
         <Button
           key="submit"

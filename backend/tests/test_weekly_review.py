@@ -502,7 +502,10 @@ async def test_run_endpoint_requires_the_shared_secret(client, db):
         assert ok.json() == {"users": 0, "reviewed": 0, "adjusting": 0}
 
 
-async def test_run_batch_persists_and_survives_one_bad_athlete(client, db):
+async def test_run_batch_counts_and_survives_one_bad_athlete(client, db):
+    """A normal week is reviewed but writes nothing: the numbers are recomputed
+    from live fitness data on every read, so a stored copy could only ever be a
+    staler version of something already free to derive."""
     user_id = await _seed_user(db)
     start = _last_completed_week_start()
     await _seed_plan(db, user_id, [_s(Weekday.MONDAY, "long_run")], start=start)
@@ -512,6 +515,97 @@ async def test_run_batch_persists_and_survives_one_bad_athlete(client, db):
         response = await client.post("/api/v1/reviews/run", headers={"X-Review-Secret": "s3cr3t"})
 
     assert response.json() == {"users": 1, "reviewed": 1, "adjusting": 0}
-    stored = await db.weekly_reviews.find_one({"user_id": user_id})
-    assert stored["week_start"] == start.isoformat()
-    assert stored["needs_adjustment"] is False
+    assert await db.weekly_reviews.count_documents({}) == 0
+
+
+# --- The cost guarantee, the half that was missing -----------------------------
+
+
+async def _seed_flagged_week(db) -> str:
+    """Three key sessions planned, none run — a verdict that warrants a narrative."""
+    user_id = await _seed_user(db)
+    await _seed_plan(
+        db,
+        user_id,
+        [
+            _s(Weekday.MONDAY, "long_run"),
+            _s(Weekday.WEDNESDAY, "tempo"),
+            _s(Weekday.FRIDAY, "threshold"),
+        ],
+        start=_last_completed_week_start(),
+    )
+    return user_id
+
+
+def _text_response(text: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
+
+
+async def test_the_narrative_is_written_once_and_reused(db):
+    """The load-bearing cost assertion for a FLAGGED week.
+
+    This endpoint is refetched on focus, so a narrative regenerated per read
+    spent an API call every time the athlete opened the Plan tab — for a sentence
+    about a week that is over and cannot change. One call, then reuse."""
+    user_id = await _seed_flagged_week(db)
+
+    with (
+        patch.object(weekly_review_service.settings, "anthropic_api_key", "sk-test"),
+        patch("app.services.weekly_review_service.anthropic.AsyncAnthropic") as client_cls,
+    ):
+        client_cls.return_value.messages.create = AsyncMock(
+            return_value=_text_response("Trois séances clés manquées.")
+        )
+        first = await weekly_review_service.build_weekly_review(db, user_id)
+        second = await weekly_review_service.build_weekly_review(db, user_id)
+        third = await weekly_review_service.build_weekly_review(db, user_id)
+        calls = client_cls.return_value.messages.create.await_count
+
+    assert calls == 1, f"the narrative was regenerated {calls} times"
+    assert first.summary == second.summary == third.summary == "Trois séances clés manquées."
+    # And the numbers stayed live rather than being served from the stored copy.
+    assert third.key_missed == 3
+
+
+async def test_a_stored_narrative_is_not_shown_once_the_week_recovers(db):
+    """The verdict is recomputed, the sentence is only cached. A week that stops
+    warranting an adjustment must not keep showing last read's explanation."""
+    user_id = await _seed_flagged_week(db)
+    review = await weekly_review_service.compute_review(db, user_id)
+    await db.weekly_reviews.insert_one(
+        {"user_id": user_id, "week_start": review.week_start.isoformat(), "summary": "vieux texte"}
+    )
+
+    # Everything run after all → no verdict, so no narrative, stored or not.
+    with patch.object(weekly_review_service, "compute_review", AsyncMock(return_value=review)):
+        review.needs_adjustment = False
+        review.signals = []
+        result = await weekly_review_service.build_weekly_review(db, user_id)
+
+    assert result.needs_adjustment is False
+    assert result.summary is None
+
+
+async def test_the_batch_prewarms_the_narrative_for_the_app(db, client):
+    """What the Sunday cron is actually for, now that it stores nothing else: the
+    athlete's first read costs no call and no wait."""
+    user_id = await _seed_flagged_week(db)
+
+    with (
+        patch.object(weekly_review_service.settings, "anthropic_api_key", "sk-test"),
+        patch.object(weekly_review_service.settings, "review_run_secret", "s3cr3t"),
+        patch("app.services.weekly_review_service.anthropic.AsyncAnthropic") as client_cls,
+    ):
+        client_cls.return_value.messages.create = AsyncMock(
+            return_value=_text_response("Semaine à réajuster.")
+        )
+        await client.post("/api/v1/reviews/run", headers={"X-Review-Secret": "s3cr3t"})
+        after_cron = client_cls.return_value.messages.create.await_count
+        read = await weekly_review_service.build_weekly_review(db, user_id)
+        after_read = client_cls.return_value.messages.create.await_count
+
+    assert after_cron == 1
+    assert after_read == 1, "the athlete's read regenerated what the cron had written"
+    assert read.summary == "Semaine à réajuster."

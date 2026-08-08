@@ -293,16 +293,21 @@ def _fetch_splits_sync(
 ) -> dict[int, list[dict]]:
     """Runs in a worker thread. One `/splits` call per activity, spaced by the
     rate-limit delay — same shape and same guarantees as `_fetch_zone_bands_sync`:
-    one activity without laps must never cost the others."""
+    one activity without laps must never cost the others.
+
+    Only activities whose call SUCCEEDED appear in the result, empty laps
+    included. That distinction is the point: an answered "this run has no usable
+    laps" is final, while a request that blew up says nothing about the activity
+    and has to be asked again next sync. Collapsing the two would either retry
+    treadmill runs forever or permanently write off a run that hit a 500."""
     out: dict[int, list[dict]] = {}
     for index, activity_id in enumerate(activity_ids):
         try:
             payload = client.get_activity_splits(str(activity_id))
         except Exception:  # noqa: BLE001 — enrichment is best-effort, per activity
             payload = None
-        laps = _laps(payload)
-        if laps:
-            out[activity_id] = laps
+        else:
+            out[activity_id] = _laps(payload)
         if index < len(activity_ids) - 1:
             time.sleep(_RATE_LIMIT_DELAY_S)
     return out
@@ -346,11 +351,20 @@ async def enrich_run_splits(
 
     enriched = 0
     for activity_id, splits in splits_by_id.items():
+        # Written even when empty — a treadmill run, or auto-lap switched off.
+        # The cursor selects on `splits: None`, which an empty list does not
+        # match, so an activity Garmin has already answered "no usable laps" for
+        # leaves the queue. Left null it would sit at the front of the line
+        # (newest first) and spend the per-sync budget re-asking a question whose
+        # answer is known, which is the rate-limit discipline this cap exists to
+        # protect. Activities whose request failed are absent here on purpose and
+        # stay null, so they get asked again next sync.
         await db.activities.update_one(
             {"garmin_activity_id": activity_id, "user_id": user_id},
             {"$set": {"splits": splits}},
         )
-        enriched += 1
+        if splits:
+            enriched += 1
     return enriched
 
 

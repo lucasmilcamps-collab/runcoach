@@ -736,3 +736,56 @@ async def test_resync_does_not_wipe_enriched_splits(db):
 
     stored = await db.activities.find_one({"garmin_activity_id": 111})
     assert len(stored["splits"]) == 3  # survived the re-`$set`
+
+
+async def test_a_lapless_run_is_asked_once_and_then_left_alone(db):
+    """A treadmill run has no laps and never will. Left null it re-entered the
+    queue on every sync — newest first, so it sat at the front and spent the
+    per-sync budget re-asking a question Garmin had already answered."""
+    user_id = await _seed_user_and_credentials(db)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": "RUN",
+            "garmin_activity_id": 20,
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+        }
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_splits.return_value = {"lapDTOs": []}
+
+    enriched = await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance)
+    assert enriched == 0
+    assert (await db.activities.find_one({"garmin_activity_id": 20}))["splits"] == []
+
+    # Second sync: it must not come back round.
+    again = await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance)
+    assert again == 0
+    assert mock_instance.get_activity_splits.call_count == 1
+
+
+async def test_a_failed_splits_request_is_retried_next_sync(db):
+    """The other half of the same decision: a 500 says nothing about the
+    activity, so it must NOT be written off as lapless."""
+    user_id = await _seed_user_and_credentials(db)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": "RUN",
+            "garmin_activity_id": 21,
+            "start_time": datetime.now(UTC),
+            "duration_s": 1800,
+        }
+    )
+    mock_instance = MagicMock()
+    mock_instance.get_activity_splits.side_effect = [
+        garminconnect.GarminConnectConnectionError("API Error 500 - boom"),
+        SPLITS_PAYLOAD,
+    ]
+
+    assert await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance) == 0
+    assert (await db.activities.find_one({"garmin_activity_id": 21})).get("splits") is None
+
+    assert await garmin_sync_service.enrich_run_splits(db, user_id, mock_instance) == 1
+    assert len((await db.activities.find_one({"garmin_activity_id": 21}))["splits"]) == 3

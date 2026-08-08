@@ -237,7 +237,7 @@ export default function PlanSetupScreen() {
     <FormScreen
       kicker="Mon plan"
       title="Configurer mon plan"
-      blurb="Le plan s’adapte à ta forme et à ta fatigue réelles. Tu pourras le régénérer à tout moment en changeant ces réglages."
+      blurb="Le plan s’adapte à ta forme et à ta fatigue réelles. Ces réglages écrivent un plan complet, à partir de la semaine 1 — pour réajuster la suite d’un plan déjà en cours sans perdre ce que tu as couru, c’est « Replanifier » dans l’onglet Plan."
       actions={[
         <Button
           key="submit"

@@ -139,14 +139,49 @@ En cas d'échec : renvoyer les violations dans le message de retry ("Le plan vio
 Deux niveaux, à ne pas confondre :
 
 - **Ajustement quotidien** (sans IA) : règles du skill training-science (HRV/sommeil/TSB) appliquées par le code → dégrade ou confirme la séance du jour. Rapide, déterministe, gratuit.
-- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, changement d'objectif, TSB chroniquement < −25, **ou séance de test réalisée**). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
+- **Replanification** (avec IA) : déclenchée par un événement structurel (≥ 2 séances clés manquées, blessure déclarée, TSB chroniquement < −25, **ou séance de test réalisée**). On régénère les semaines restantes avec le même pipeline, en passant l'historique réel réalisé.
 
-**Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` en semaine 1 (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Une fois le test synchronisé, `compute_progress` détecte la séance test réalisée et **propose** (jamais n'impose) une replanification — la régénération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
+### Replanification partielle — le comportement par défaut
+
+**Implémenté.** Une replanification ne reconstruit jamais le plan entier. `build_replan_base`
+(`plan_service.py`) gèle les semaines **1 à N incluses**, N étant la semaine en cours :
+
+- la coupe est la **fin de la semaine en cours**, pas aujourd'hui — une semaine commencée est
+  une semaine qu'on court, et une séance déjà faite et liée s'y trouve ;
+- le `start_date` d'origine est **conservé**, donc la grille des semaines ne bouge pas et les
+  liens `session_completions` continuent de désigner les séances qu'ils décrivaient ;
+- les semaines gelées portent les **overrides** de l'athlète (`apply_overrides`) — geler le plan
+  brut annulerait silencieusement chaque déplacement de séance ;
+- le modèle ne produit que la **queue** (`_remaining_weeks_directive`, en indices absolus), puis
+  `_splice` renumérote, fusionne une phase coupée par la couture et **garde l'objectif de
+  l'athlète** ;
+- le plan **recollé** est validé en entier avec `frozen_through=N` : les semaines gelées sont du
+  **contexte, pas des accusées** — les règles de continuité (rampe, deload, raccord au réel, durée
+  totale vs date de course) les voient toutes, les règles par semaine ne jugent que l'ouvert. Une
+  violation dans une semaine que personne ne peut plus changer brûlerait les 3 tentatives.
+
+`POST /plans/replan` (sans corps, réutilise l'objectif du plan actif) et `POST
+/plans/replan-injury` passent tous les deux par cette base. Pour la blessure,
+`_injury_directive` **retranche les jours d'arrêt qui tombent déjà dans la semaine gelée** : sinon
+on prescrit jusqu'à une semaine de repos de plus que ce que l'athlète a déclaré.
+
+Le **seul** chemin qui reconstruit tout depuis la semaine 1 est `POST /plans` (écran plan-setup) :
+changer d'objectif, c'est un autre plan. Si le plan se termine dans la semaine en cours il n'y a
+rien à replanifier → `409 NOTHING_TO_REPLAN`.
+
+**Séance de test (Lot 5)** : quand `build_context.needs_test` est vrai (pas de perf mesurable récente, `low_confidence`, ou > 21 j sans courir), le prompt (`_test_directive`) demande une séance `type="test"` (échauffement + 2 km max + retour au calme, lancée idéalement en activité Garmin propre). Elle est placée dans la **première semaine réellement écrite** : semaine 1 sur un plan neuf, `base.last_week + 1` sur une replanification partielle — demander la semaine 1 là-bas, c'est demander une semaine gelée, donc ne jamais programmer le test. Une fois le test synchronisé, `compute_progress` détecte la séance réalisée et **propose** (jamais n'impose) une replanification — la génération recalcule le chrono estimé via `performance_service` à partir de la nouvelle perf.
+
+**La suggestion doit s'éteindre, et ça ne va pas de soi.** La replanification partielle gèle la semaine qui porte le test : la séance ET son lien survivent à chaque replanification, alors qu'une reconstruction complète les supprimait (`needs_test` devenu faux). Sans garde, le bandeau se rallumait indéfiniment. La règle : **la suggestion ne vaut que si la performance est arrivée après l'écriture du plan actif.**
+
+- Le plan porte `generated_at` — l'instant où son contenu a été **écrit par le modèle**. `restore_plan_version` le **recopie** de la source au lieu de le remettre à `now` : une restauration ne régénère rien, elle ne peut donc pas prétendre connaître une séance courue depuis. Les documents antérieurs au champ sont résolus en remontant la chaîne `restored_from` (`_plan_generated_at`), sans migration.
+- La performance porte `linked_at` (lien explicite) ou le `start_time` de la course du jour (`_performance_instant`).
+- On compare des **instants, pas des dates** : replanifier l'après-midi même du test doit l'éteindre.
 
 Chaque adaptation crée une nouvelle version du plan (`plan_versions`) — jamais de mutation en place, l'utilisateur peut voir l'historique.
 
 ## Coûts et robustesse
 
 - Cache : une génération = ~1 appel ; pas de régénération silencieuse en boucle (max 3 tentatives puis erreur explicite à l'utilisateur).
+- **Bilan hebdo : la narration s'écrit une fois par semaine et se relit ensuite** (`weekly_reviews`, clé `(user_id, week_start)`, index unique). Le piège qu'on a payé : `GET /reviews/weekly` est refetché au focus de l'onglet (`staleTime` 5 min), donc régénérer la phrase à chaque lecture dépensait un appel par ouverture d'app — pour décrire une semaine déjà terminée, qui ne changera plus. Les **chiffres** restent recalculés à chaque lecture (le TSB affiché doit être vivant) ; seule la phrase est en cache. Le cron du dimanche n'écrit rien d'autre : il ne fait que pré-écrire cette phrase avant que l'athlète n'ouvre l'app. Règle générale : **avant de mettre un appel modèle derrière un GET, regarder à quelle fréquence le client le refetche.**
 - Timeout httpx 60 s ; les générations passent par une tâche de fond (le mobile poll `GET /plans/{id}/status`).
 - Logguer les prompts/réponses en dev uniquement, jamais en prod (données santé).

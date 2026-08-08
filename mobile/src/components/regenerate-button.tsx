@@ -7,21 +7,21 @@ import { Spacing } from '@/constants/theme';
 import { makeStyles } from '@/lib/themed-styles';
 
 /**
- * The one way to ask for a regenerated plan, with the confirmation it needs.
+ * The one way to ask for a replan, with the note that says what it spares.
  *
- * Regenerating rebuilds the plan from scratch — the current week included, and
- * the athlete's per-week moves and duration edits with it. That used to happen
- * on a single tap, under copy that said "les semaines restantes", which is not
- * what it does. An athlete who had just run and linked a session could lose the
- * week they had run it in, with no warning and no way back through the app.
+ * This button used to rebuild the plan from scratch, current week included, and
+ * an athlete who had just run and linked a session could lose the week they had
+ * run it in. It no longer does: weeks up to and including the one under way are
+ * frozen, and only what comes after is replanned. Hence a note about what is
+ * *kept* rather than a warning about what is lost.
  *
- * So: two taps, and the second one states plainly what changes. Same pattern as
- * deleting a session (an Alert barely exists on react-native-web).
+ * The confirmation step stays, because this still costs minutes of generation
+ * and changes weeks the athlete may have read and planned around — but it is
+ * now a "here is what happens", not a "are you sure you accept the damage".
  *
  * It lives in one component rather than at each call site because there are two
- * of them — the weekly review and the replan banner — and a warning that exists
- * on one button and not the other is worse than none: it teaches that the
- * unwarned button is the safe one.
+ * of them — the weekly review and the replan banner — and the two must not
+ * describe the same action differently.
  */
 export function RegenerateButton({
   onConfirm,
@@ -37,13 +37,13 @@ export function RegenerateButton({
     <View style={styles.wrap}>
       {confirming ? (
         <ThemedText type="small" themeColor="inkMuted">
-          Le plan est reconstruit entièrement, semaine en cours comprise : tes déplacements de
-          séances et tes durées personnalisées seront perdus. Le plan actuel reste consultable dans
-          Mes plans, et tu peux le restaurer.
+          La semaine en cours et les précédentes sont conservées telles quelles — séances,
+          déplacements, durées et séances liées. Seules les semaines suivantes sont replanifiées à
+          partir de ta forme actuelle. Le plan actuel reste consultable dans Mes plans.
         </ThemedText>
       ) : null}
       <Button
-        label={confirming ? 'Confirmer la régénération ?' : 'Régénérer un plan adapté'}
+        label={confirming ? 'Confirmer la replanification ?' : 'Replanifier les semaines suivantes'}
         variant="ghost"
         loading={isRegenerating}
         onPress={() => {
