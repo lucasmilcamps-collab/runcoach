@@ -103,6 +103,98 @@ def test_no_flag_without_enough_history():
     assert ps.is_source_pace_implausible(210.0, [300.0, 305.0]) is False
 
 
+# --- Isolating the effort inside a structured session -------------------------
+
+# The real session behind this feature, lap for lap (Garmin, half-marathon plan):
+# warm-up 12:00 for 1,94 km, effort 9:05 for 2,00 km, cool-down 11:03 for 1,59 km.
+# Taken whole it averages 5:49/km, a pace never actually held.
+_TEST_SESSION = [
+    {"distance_m": 1940.0, "duration_s": 720},
+    {"distance_m": 2000.0, "duration_s": 545},
+    {"distance_m": 1590.0, "duration_s": 662},
+]
+
+
+def test_effort_is_isolated_from_a_warmup_and_cooldown():
+    effort = ps.best_sustained_effort(_TEST_SESSION)
+
+    assert effort is not None
+    assert effort.distance_m == 2000.0
+    assert effort.time_s == 545
+    assert effort.isolated is True
+    assert effort.pace_s_per_km == pytest.approx(272.5)  # 4:32/km, not 5:49
+
+
+def test_the_isolated_effort_fixes_the_estimate():
+    """The whole point, in one assertion: the same session predicts 2h15 taken
+    whole and ~1h51 taken at its effort. The first number was never run."""
+    whole = ps.riegel_predict(5.53, 1927, 21.1)
+    effort = ps.best_sustained_effort(_TEST_SESSION)
+    isolated = ps.riegel_predict(effort.distance_m / 1000, effort.time_s, 21.1)
+
+    assert whole / 60 == pytest.approx(135, abs=3)  # ~2h15, the bug
+    assert isolated / 60 == pytest.approx(111, abs=3)  # ~1h51
+
+
+def test_an_even_run_has_no_effort_to_isolate():
+    """The guard that stops every steady run from becoming a fake personal best:
+    a run held at one pace must come back None and be judged whole."""
+    even = [{"distance_m": 1000.0, "duration_s": 330} for _ in range(6)]
+    assert ps.best_sustained_effort(even) is None
+
+
+def test_a_mildly_uneven_run_is_still_judged_whole():
+    """Every run has a fast patch. Only a deliberate structure counts — a few
+    percent of natural variation must not be reinterpreted as an effort."""
+    uneven = [
+        {"distance_m": 1000.0, "duration_s": 340},
+        {"distance_m": 1000.0, "duration_s": 325},
+        {"distance_m": 1000.0, "duration_s": 318},
+        {"distance_m": 1000.0, "duration_s": 336},
+    ]
+    assert ps.best_sustained_effort(uneven) is None
+
+
+def test_a_short_burst_never_qualifies():
+    """The anti-"your best kilometre" floor. A 400 m sprint is genuinely the
+    fastest stretch here and must still be refused: Riegel from 400 m to a half
+    is not an estimate, it's a number."""
+    session = [
+        {"distance_m": 400.0, "duration_s": 80},  # 3:20/km
+        {"distance_m": 3000.0, "duration_s": 1050},  # 5:50/km
+    ]
+    effort = ps.best_sustained_effort(session)
+
+    assert effort is None or effort.distance_m >= ps.MIN_EFFORT_M
+
+
+def test_an_effort_spanning_several_laps_is_found():
+    """Auto-lap splits a 3 km effort into kilometres. Contiguous windows are what
+    make it readable; picking the single fastest lap would report 1 km."""
+    session = [
+        {"distance_m": 2000.0, "duration_s": 720},  # warm-up, 6:00/km
+        {"distance_m": 1000.0, "duration_s": 265},
+        {"distance_m": 1000.0, "duration_s": 270},
+        {"distance_m": 1000.0, "duration_s": 268},
+        {"distance_m": 2000.0, "duration_s": 780},  # cool-down
+    ]
+    effort = ps.best_sustained_effort(session)
+
+    assert effort is not None
+    assert effort.distance_m == 3000.0
+    assert effort.time_s == 803
+
+
+def test_unusable_splits_are_ignored_rather_than_guessed():
+    """A lap with no distance would divide by zero; a run with nothing usable
+    left has no effort to report."""
+    assert ps.best_sustained_effort([]) is None
+    assert ps.best_sustained_effort([{"distance_m": 0, "duration_s": 100}]) is None
+    assert ps.best_sustained_effort([{"distance_m": None, "duration_s": None}]) is None
+    # Too short overall to extrapolate from at all.
+    assert ps.best_sustained_effort([{"distance_m": 800.0, "duration_s": 200}]) is None
+
+
 def test_downgrade_confidence_steps_down_and_floors_at_low():
     high = ps.TimeEstimate(seconds=5000.0, confidence="high")
     stepped = ps.downgrade_confidence(high)

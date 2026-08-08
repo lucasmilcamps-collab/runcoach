@@ -834,6 +834,131 @@ async def test_a_short_source_effort_is_reported_as_low_confidence(db):
     assert result.estimated_time_confidence == "low"
 
 
+# --- Isolating the effort inside a structured session -------------------------
+
+# The session that exposed the bug, lap for lap: 12:00 warm-up over 1,94 km,
+# 9:05 flat out over 2,00 km, 11:03 cool-down over 1,59 km. Averaged whole it is
+# 5,53 km at 5:49/km — a pace never held, and worth 22 minutes on a half.
+_TEST_SESSION_SPLITS = [
+    {"index": 1, "distance_m": 1940.0, "duration_s": 720},
+    {"index": 2, "distance_m": 2000.0, "duration_s": 545},
+    {"index": 3, "distance_m": 1590.0, "duration_s": 662},
+]
+
+
+async def _seed_structured_session(db, user_id: str, days_ago: int = 2) -> None:
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=days_ago),
+            "duration_s": 1927,
+            "distance_m": 5530,
+            "splits": _TEST_SESSION_SPLITS,
+        }
+    )
+
+
+async def test_the_effort_is_extrapolated_not_the_whole_session(db):
+    """The 22-minute bug, end to end. Taken whole the session says 2h15; taken at
+    its effort it says ~1h51. Only one of those was ever run."""
+    user_id = await _seed_user(db)
+    await _seed_structured_session(db, user_id)
+
+    ctx = await plan_service.build_context(
+        db, user_id, fitness=_stub_fitness(), target_distance_km=21.1
+    )
+
+    source = ctx["best_recent_effort"]
+    assert source["distance_km"] == 2.0
+    assert source["time_s"] == 545
+    assert source["isolated"] is True
+
+
+async def test_a_steady_run_is_still_taken_whole(db):
+    """The guard, from the other side: a run held at one pace has no effort to
+    isolate, so nothing about its handling changes."""
+    user_id = await _seed_user(db)
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=2),
+            "duration_s": 1800,
+            "distance_m": 6000,
+            "splits": [{"index": i, "distance_m": 1000.0, "duration_s": 300} for i in range(1, 7)],
+        }
+    )
+
+    ctx = await plan_service.build_context(
+        db, user_id, fitness=_stub_fitness(), target_distance_km=21.1
+    )
+
+    assert ctx["best_recent_effort"]["distance_km"] == 6.0
+    assert ctx["best_recent_effort"]["isolated"] is False
+
+
+async def test_a_longer_effort_beats_a_faster_short_one(db):
+    """Isolating efforts makes short sources win on pace, and short sources are
+    exactly where Riegel drifts. A recent 10 km has to outrank a 2 km flat out."""
+    user_id = await _seed_user(db)
+    await _seed_structured_session(db, user_id)  # 2 km at 4:33
+    await db.activities.insert_one(
+        {
+            "user_id": user_id,
+            "sport": SportType.RUN,
+            "start_time": datetime.now(UTC) - timedelta(days=5),
+            "duration_s": 2700,  # 10 km at 4:30... no: 45:00, i.e. 4:30/km
+            "distance_m": 10000,
+        }
+    )
+
+    ctx = await plan_service.build_context(
+        db, user_id, fitness=_stub_fitness(), target_distance_km=21.1
+    )
+
+    assert ctx["best_recent_effort"]["distance_km"] == 10.0
+
+
+async def test_the_estimate_names_the_effort_it_came_from(db):
+    """An estimate nobody can trace back to a run is one nobody can dispute —
+    which is how a 22-minute error survived until an athlete asked."""
+    user_id = await _seed_user(db)
+    await _seed_structured_session(db, user_id)
+    from datetime import date
+
+    req = PlanRequest(
+        goal_type="race",
+        distance_km=21.1,
+        race_date=date.today() + timedelta(weeks=4),
+        available_days=list(Weekday),
+        min_run_sessions_per_week=2,
+        max_run_sessions_per_week=3,
+    )
+    with (
+        patch.object(plan_service.settings, "anthropic_api_key", "sk-test"),
+        _patched_client(_mock_response(_valid_plan_dict())),
+    ):
+        result = await plan_service.generate_plan(db, user_id, req)
+
+    assert result.status == "ready", result.error_message
+    source = result.estimated_time_source
+    assert source is not None
+    assert source.distance_km == 2.0
+    # 545 s over 2 km = 4:32.5. The watch shows 4:33 because it keeps the tenths
+    # (9:05.2); lap durations are stored as whole seconds, so we land a second
+    # under. Irrelevant at this distance, but worth not "fixing" by accident.
+    assert source.pace_min_per_km == "4:32"
+    assert source.isolated is True
+    # ~1h51, not the 2h15 the whole session used to produce.
+    assert 105 <= result.estimated_time_min <= 117
+    # And still honestly flagged: 2 km to a half is a 10x ratio.
+    assert result.estimated_time_confidence == "low"
+
+    stored = await plan_service.get_current_plan(db, user_id)
+    assert stored.estimated_time_source.pace_min_per_km == "4:32"
+
+
 # --- Lot 5: test session ---
 
 

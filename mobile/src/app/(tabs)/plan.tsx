@@ -21,6 +21,7 @@ import { makeStyles } from '@/lib/themed-styles';
 import { listActivities } from '@/lib/api/activities';
 import { ApiError } from '@/lib/api/client';
 import {
+  EstimateSource,
   getCurrentPlan,
   getPlanProgress,
   PlanProgress,
@@ -152,6 +153,7 @@ export default function PlanScreen() {
                     estimated={query.data.estimated_time_min}
                     projected={query.data.projected_time_min}
                     confidence={query.data.estimated_time_confidence}
+                    source={query.data.estimated_time_source}
                   />
                 ) : null,
               ].filter(Boolean)}
@@ -253,10 +255,12 @@ function ForecastCard({
   estimated,
   projected,
   confidence,
+  source,
 }: {
   estimated: number;
   projected: number | null;
   confidence: 'high' | 'medium' | 'low' | null;
+  source: EstimateSource | null;
 }) {
   const styles = useStyles();
   const theme = useTheme();
@@ -291,8 +295,29 @@ function ForecastCard({
           {CONFIDENCE_NOTE[confidence]}
         </ThemedText>
       ) : null}
+      {/* Where the number came from. The estimate was 22 minutes out because a
+          whole test session — warm-up and cool-down included — was extrapolated
+          as if it were the effort, and nothing on screen said so. */}
+      {source ? (
+        <ThemedText type="small" themeColor="inkMuted">
+          {sourceLabel(source)}
+        </ThemedText>
+      ) : null}
     </View>
   );
+}
+
+/** "Basée sur ton effort de 2,0 km à 4:32/km, il y a 3 jours." */
+function sourceLabel(source: EstimateSource): string {
+  const what = source.isolated ? 'ton effort de' : 'ta course de';
+  const distance = source.distance_km.toFixed(1).replace('.', ',');
+  const when =
+    source.days_ago === 0
+      ? "aujourd’hui"
+      : source.days_ago === 1
+        ? 'hier'
+        : `il y a ${source.days_ago} jours`;
+  return `Basée sur ${what} ${distance} km à ${source.pace_min_per_km}/km, ${when}.`;
 }
 
 function EmptyPlan() {

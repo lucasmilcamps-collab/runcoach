@@ -34,13 +34,112 @@ _OUTLIER_PACE_RATIO = 0.80
 _MIN_RUNS_FOR_PACE_MEDIAN = 4
 
 Confidence = Literal["high", "medium", "low"]
-_CONFIDENCE_ORDER: tuple[Confidence, ...] = ("high", "medium", "low")
+#: Best first. Public so candidate efforts can be ranked by it, not just labelled.
+CONFIDENCE_ORDER: tuple[Confidence, ...] = ("high", "medium", "low")
+
+# Shortest window that can stand as a performance. Same 1.5 km the activity-level
+# selection already uses — one threshold for "is this long enough to extrapolate
+# from", not two that could drift apart.
+MIN_EFFORT_M = 1500.0
+
+# How much faster than the whole activity a window must be before it counts as a
+# deliberate effort rather than the natural fast patch every run contains.
+#
+# NOTE: this is the one number in this module the training-science skill does not
+# pin down — it is a descriptive cut-off for "was this session structured", not a
+# physiological constant. It is set wide on purpose: a steady run's best window
+# sits a few percent under its average, while a warm-up/effort/cool-down session
+# is 15-25% apart, so nothing in between gets silently reinterpreted.
+_EFFORT_GAIN_RATIO = 0.90
+
+# Two windows within this much of each other count as the same pace, so the
+# longer one wins. A single second per kilometre should not cost a kilometre of
+# source distance.
+_PACE_TIE_RATIO = 1.01
 
 
 @dataclass(frozen=True)
 class TimeEstimate:
     seconds: float
     confidence: Confidence
+
+
+@dataclass(frozen=True)
+class Effort:
+    """A performance to extrapolate from: a whole run, or the fast part of one."""
+
+    distance_m: float
+    time_s: float
+    #: False when this is the entire activity, True when it was isolated from it.
+    isolated: bool
+
+    @property
+    def pace_s_per_km(self) -> float:
+        return self.time_s / (self.distance_m / 1000)
+
+
+def best_sustained_effort(
+    splits: list[dict], min_distance_m: float = MIN_EFFORT_M
+) -> Effort | None:
+    """The fastest sustained stretch inside a run, from its per-lap splits.
+
+    Why this exists: Riegel extrapolates whatever it is handed, and a structured
+    session handed over whole is an average of things that were never run
+    together. A 12-minute warm-up, a 2 km flat out and an 11-minute cool-down
+    average to a pace the athlete never held — worth 22 minutes of error on a
+    half marathon.
+
+    Contiguous windows, not "the fastest lap": a single lap can be a GPS artefact
+    or a downhill, while a stretch held across laps is an effort. And a floor of
+    `min_distance_m` on the window, so this can never degenerate into "your best
+    kilometre", which would turn every steady run into a fake personal best.
+
+    Returns None when nothing stands out — the window has to be
+    `_EFFORT_GAIN_RATIO` faster than the activity as a whole to count, so an even
+    run keeps being judged as an even run. None means "use the whole activity".
+    """
+    laps = [
+        s
+        for s in splits
+        if isinstance(s, dict)
+        and isinstance(s.get("distance_m"), (int, float))
+        and isinstance(s.get("duration_s"), (int, float))
+        and s["distance_m"] > 0
+        and s["duration_s"] > 0
+    ]
+    if not laps:
+        return None
+
+    total_m = sum(lap["distance_m"] for lap in laps)
+    total_s = sum(lap["duration_s"] for lap in laps)
+    if total_m < min_distance_m:
+        return None
+    whole_pace = total_s / (total_m / 1000)
+
+    windows: list[Effort] = []
+    for start in range(len(laps)):
+        distance = time = 0.0
+        for end in range(start, len(laps)):
+            distance += laps[end]["distance_m"]
+            time += laps[end]["duration_s"]
+            if distance >= min_distance_m:
+                windows.append(Effort(distance_m=distance, time_s=time, isolated=True))
+    if not windows:
+        return None
+
+    # Fastest window, then the LONGEST among those effectively tied with it.
+    # Riegel drifts as the distance ratio grows, so between a 2 km and a 3 km
+    # held at the same pace the 3 km is strictly better evidence — and auto-lap
+    # splitting one effort into kilometres produces exactly those near-ties.
+    fastest = min(window.pace_s_per_km for window in windows)
+    best = max(
+        (w for w in windows if w.pace_s_per_km <= fastest * _PACE_TIE_RATIO),
+        key=lambda w: w.distance_m,
+    )
+
+    if best.pace_s_per_km > whole_pace * _EFFORT_GAIN_RATIO:
+        return None
+    return best
 
 
 def riegel_predict(
@@ -65,9 +164,15 @@ def daniels_vdot(distance_m: float, time_s: float) -> float:
     return vo2 / pct_max
 
 
-def _confidence(recent_distance_km: float, target_distance_km: float, days_ago: int) -> Confidence:
+def confidence_for(
+    recent_distance_km: float, target_distance_km: float, days_ago: int
+) -> Confidence:
     """Trust the estimate more when the effort is recent and its distance is
-    close to the target (Riegel drifts as the ratio grows)."""
+    close to the target (Riegel drifts as the ratio grows).
+
+    Public because it also RANKS candidate efforts, not just labels the chosen
+    one: picking a source on pace alone would always hand a 2 km flat out to
+    Riegel over a recent 10 km, and the short one carries the bigger drift."""
     ratio = max(target_distance_km, recent_distance_km) / min(
         target_distance_km, recent_distance_km
     )
@@ -98,10 +203,10 @@ def downgrade_confidence(estimate: TimeEstimate) -> TimeEstimate:
     """One notch down, never up, and never below `low`. The estimate itself is
     kept: discarding it would leave no anchor at all, which is worse than a
     flagged one — the caller and the UI decide how much to lean on it."""
-    index = _CONFIDENCE_ORDER.index(estimate.confidence)
+    index = CONFIDENCE_ORDER.index(estimate.confidence)
     return TimeEstimate(
         seconds=estimate.seconds,
-        confidence=_CONFIDENCE_ORDER[min(index + 1, len(_CONFIDENCE_ORDER) - 1)],
+        confidence=CONFIDENCE_ORDER[min(index + 1, len(CONFIDENCE_ORDER) - 1)],
     )
 
 
@@ -114,7 +219,8 @@ def estimate_current_time(
     """Estimated current time at the target distance from a recent effort."""
     seconds = riegel_predict(recent_distance_km, recent_time_s, target_distance_km)
     return TimeEstimate(
-        seconds=seconds, confidence=_confidence(recent_distance_km, target_distance_km, days_ago)
+        seconds=seconds,
+        confidence=confidence_for(recent_distance_km, target_distance_km, days_ago),
     )
 
 

@@ -90,6 +90,15 @@ export type Plan = {
   phases: PlanPhase[];
 };
 
+export type EstimateSource = {
+  distance_km: number;
+  time_s: number;
+  pace_min_per_km: string;
+  days_ago: number;
+  /** True when this is the fast part of a session, false when it is a whole run. */
+  isolated: boolean;
+};
+
 export type PlanResponse = {
   id: string;
   status: 'generating' | 'ready' | 'failed';
@@ -103,6 +112,13 @@ export type PlanResponse = {
    * a race time with the authority of a number the engine itself rated "low".
    */
   estimated_time_confidence: 'high' | 'medium' | 'low' | null;
+  /**
+   * The run the estimate was extrapolated from. Shown, not just stored: the
+   * estimate was 22 minutes off precisely because nobody could see it had been
+   * built on a whole session — warm-up and cool-down included — rather than on
+   * its effort. A number you can trace back to a run is one you can dispute.
+   */
+  estimated_time_source: EstimateSource | null;
   projected_time_min: number | null; // projected time at the plan's end
   feasibility_warning: string | null;
   error_message: string | null;
