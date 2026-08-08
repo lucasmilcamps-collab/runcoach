@@ -224,3 +224,90 @@ async def test_legacy_link_without_slot_still_counts_as_primary(db):
     docs = [d async for d in db.session_completions.find({"user_id": user_id})]
     assert len(docs) == 1
     assert docs[0]["slot"] == "primary"
+
+
+# --- The flag the week list reads ---------------------------------------------
+
+
+async def _sessions_of(db, user_id: str, week_index: int = 1) -> list[Session]:
+    from app.services import plan_service
+
+    current = await plan_service.get_current_plan(db, user_id)
+    week = next(w for p in current.plan.phases for w in p.weeks if w.index == week_index)
+    return week.sessions
+
+
+async def test_a_linked_session_comes_back_completed(db):
+    """What the week list renders: it already receives these sessions, so the
+    validated one has to say so here rather than cost a request per row."""
+    user_id = await _seed_user(db)
+    start = await _seed_plan(db, user_id)
+    activity_id = await _seed_activity(db, user_id, start)  # the Monday long run
+
+    await pcs.set_session_link(db, user_id, 1, Weekday.MONDAY, activity_id)
+
+    done = {s.day: s.completed for s in await _sessions_of(db, user_id)}
+    assert done[Weekday.MONDAY] is True
+    assert done[Weekday.WEDNESDAY] is False
+    assert done[Weekday.FRIDAY] is False
+
+
+async def test_unlinking_clears_the_flag(db):
+    """`Délier` is the only way out of a read-only session, so it has to reopen
+    it completely."""
+    user_id = await _seed_user(db)
+    start = await _seed_plan(db, user_id)
+    activity_id = await _seed_activity(db, user_id, start)
+    await pcs.set_session_link(db, user_id, 1, Weekday.MONDAY, activity_id)
+
+    await pcs.set_session_link(db, user_id, 1, Weekday.MONDAY, None)
+
+    assert all(s.completed is False for s in await _sessions_of(db, user_id))
+
+
+async def test_a_moved_session_stays_completed(db):
+    """The ordering trap. A link is recorded against the day the session was
+    SHOWING when it was tapped, while an edit is keyed on the original day —
+    so completions have to be applied after the moves, not before."""
+    from app.services import plan_moves_service
+
+    user_id = await _seed_user(db)
+    start = await _seed_plan(db, user_id)
+    await plan_moves_service.move_session(db, user_id, 1, Weekday.MONDAY, Weekday.THURSDAY)
+    activity_id = await _seed_activity(db, user_id, start + timedelta(days=3))
+
+    # Linked on Thursday — the day it now shows on.
+    await pcs.set_session_link(db, user_id, 1, Weekday.THURSDAY, activity_id)
+
+    done = {s.day: s.completed for s in await _sessions_of(db, user_id)}
+    assert done[Weekday.THURSDAY] is True
+
+
+async def test_validating_the_addon_does_not_validate_the_run(db):
+    """Same identity rule as the adherence count: a day can hold both, and one
+    link must not close the other."""
+    user_id = await _seed_user(db)
+    start = await _seed_plan_with_addon(db, user_id)
+    activity_id = await _seed_activity(db, user_id, start + timedelta(days=1))
+
+    await pcs.set_session_link(db, user_id, 1, Weekday.TUESDAY, activity_id, slot="addon")
+
+    by_slot = {s.slot: s.completed for s in await _sessions_of(db, user_id)}
+    assert by_slot["addon"] is True
+    assert by_slot["primary"] is False
+
+
+def test_the_generator_cannot_emit_a_completed_session():
+    """Both schemas, not one: a repair round emits sessions too, and a model free
+    to write `completed` would tell the athlete they had run something."""
+    from app.services import plan_service
+
+    plan_schema = plan_service._plan_tool_schema()
+    repair_schema = plan_service._repair_tool_schema()
+
+    for schema in (
+        plan_schema.get("$defs", {}).get("Session", {}),
+        repair_schema.get("$defs", {}).get("Session", {}),
+    ):
+        assert "completed" not in schema.get("properties", {})
+        assert "skipped" not in schema.get("properties", {})

@@ -103,13 +103,14 @@ _RUNNING_JOBS: set[asyncio.Task] = set()
 def _plan_tool_schema() -> dict:
     """`Plan`'s JSON schema, minus the fields the model must never set.
 
-    `skipped` is a per-week user override applied on read, not something a
-    generated plan carries. Leaving it in the tool schema would invite the model
-    to emit sessions already marked skipped — and the athlete would be told they
-    had decided something they never did."""
+    `skipped` and `completed` are read-time state, not something a generated plan
+    carries. Leaving them in the tool schema would invite the model to emit
+    sessions already marked skipped or already done — and the athlete would be
+    told they had decided, or run, something they never did."""
     schema = Plan.model_json_schema()
     session = schema.get("$defs", {}).get("Session", {})
-    session.get("properties", {}).pop("skipped", None)
+    for runtime_field in ("skipped", "completed"):
+        session.get("properties", {}).pop(runtime_field, None)
     return schema
 
 
@@ -1100,7 +1101,9 @@ def _repair_tool_schema() -> dict:
     """Schema for handing back a few corrected weeks instead of a whole plan."""
     week = Week.model_json_schema(ref_template="#/$defs/{model}")
     defs = week.pop("$defs", {})
-    defs.get("Session", {}).get("properties", {}).pop("skipped", None)
+    # Same strip as the generation schema — a repair round emits sessions too.
+    for runtime_field in ("skipped", "completed"):
+        defs.get("Session", {}).get("properties", {}).pop(runtime_field, None)
     return {
         "type": "object",
         "properties": {"weeks": {"type": "array", "items": week}},

@@ -67,6 +67,9 @@ export default function LinkActivityScreen() {
       setSessionLink(weekIndex, day as Weekday, activityId, slot),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.sessionLink(weekIndex, day, slot) });
+      // The plan too: sessions now carry `completed`, and the week list's tick
+      // is read from this query.
+      queryClient.invalidateQueries({ queryKey: qk.plan() });
       queryClient.invalidateQueries({ queryKey: qk.planProgress() });
       queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
       // Linking changes which sessions the weekly review counts as done, so

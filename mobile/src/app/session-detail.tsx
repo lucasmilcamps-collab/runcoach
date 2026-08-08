@@ -141,6 +141,10 @@ export default function SessionDetailScreen() {
     mutationFn: () => setSessionLink(data!.weekNumber, data!.session.day, null, data!.session.slot),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: linkKey });
+      // The plan too: sessions now carry `completed`, so the week list's tick
+      // comes from this query and would otherwise still show a session as done
+      // after it was unlinked.
+      queryClient.invalidateQueries({ queryKey: qk.plan() });
       queryClient.invalidateQueries({ queryKey: qk.planProgress() });
       queryClient.invalidateQueries({ queryKey: qk.planOverview.all() });
       // Linking changes which sessions the weekly review counts as done, so
@@ -288,17 +292,24 @@ export default function SessionDetailScreen() {
         {/* Stats — the duration is editable in place, so the footer doesn't
             grow another button for it. */}
         <View style={styles.stats}>
-          <Pressable
-            onPress={() => setEditingDuration((v) => !v)}
-            accessibilityRole="button"
-            accessibilityLabel={`Durée ${formatDuration(session.duration_min)}, modifier`}
-            accessibilityState={{ expanded: editingDuration }}
-            style={pressable(styles.statPress)}>
-            <Stat
-              label={editingDuration ? 'Durée · fermer' : 'Durée · modifier'}
-              value={formatDuration(session.duration_min)}
-            />
-          </Pressable>
+          {/* Read-only once validated: the duration describes what to do, and it
+              has been done. Rendered as a plain stat rather than a disabled
+              button — an affordance that does nothing is worse than none. */}
+          {linked ? (
+            <Stat label="Durée" value={formatDuration(session.duration_min)} />
+          ) : (
+            <Pressable
+              onPress={() => setEditingDuration((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={`Durée ${formatDuration(session.duration_min)}, modifier`}
+              accessibilityState={{ expanded: editingDuration }}
+              style={pressable(styles.statPress)}>
+              <Stat
+                label={editingDuration ? 'Durée · fermer' : 'Durée · modifier'}
+                value={formatDuration(session.duration_min)}
+              />
+            </Pressable>
+          )}
           {distanceKm != null ? (
             <Stat label="Distance ≈" value={frDistance(distanceKm)} bordered />
           ) : null}
@@ -447,63 +458,76 @@ export default function SessionDetailScreen() {
             ) : null}
           </View>
         ) : null}
-        <Button
-          label={linked ? 'Changer l’activité liée' : 'J’ai fait cette séance'}
-          onPress={openPicker}
-        />
+        {linked ? null : <Button label="J’ai fait cette séance" onPress={openPicker} />}
 
-        {/* The two real secondary actions share one compact row. Stacking every
-            action as a full-width 52pt block gave four bars of identical weight
-            and buried the one commitment among them. */}
-        <View style={styles.utilityRow}>
-          {session.sport === 'RUN' ? (
-            <UtilityAction
-              label={pushMutation.isSuccess ? 'Envoyée ✓' : 'Vers ma montre'}
-              busy={pushMutation.isPending}
-              disabled={pushMutation.isSuccess}
-              onPress={() =>
-                pushMutation.mutate({
-                  session_type: session.type,
-                  duration_min: session.duration_min,
-                  structure: session.structure,
-                  pace_range: session.pace_range,
-                  hr_zone: session.hr_zone,
-                  rationale: session.rationale,
-                  week_number: weekNumber,
-                })
-              }
-            />
-          ) : null}
-          <UtilityAction
-            label={moving ? 'Annuler' : 'Déplacer'}
-            selected={moving}
-            onPress={() => setMoving((v) => !v)}
-          />
-          {/* Offered on runs too, unlike deleting: skipping says "not this
-              week" without pretending the plan changed. On a key session it
-              counts as missed straight away and feeds the replan suggestion. */}
-          <UtilityAction
-            label={session.skipped ? 'Reprendre' : 'Passer'}
-            selected={session.skipped}
-            busy={skipMutation.isPending}
-            onPress={() => skipMutation.mutate(!session.skipped)}
-          />
-          {/* A run is never deletable: losing one breaks the plan's guaranteed
-              run count, which is a replan decision. The backend refuses it too —
-              this only keeps the control from being offered. */}
-          {session.sport !== 'RUN' ? (
-            <UtilityAction
-              label={confirmDelete ? 'Confirmer ?' : 'Supprimer'}
-              danger
-              selected={confirmDelete}
-              busy={deleteMutation.isPending}
-              onPress={() => {
-                if (confirmDelete) deleteMutation.mutate();
-                else setConfirmDelete(true);
-              }}
-            />
-          ) : null}
-        </View>
+        {/* A validated session is closed. Moving, skipping, re-sending it to the
+            watch or deleting it all describe a session still to come, and it has
+            already been run — so the controls go rather than sit there greyed
+            out, which would only invite six questions about why.
+            Removing them silently would read as a broken screen, so the line
+            below says what happened and where the way out is: `Délier`, on the
+            card above, reopens everything. */}
+        {linked ? (
+          <ThemedText type="small" themeColor="inkMuted">
+            Séance validée : elle n’est plus modifiable. Délie l’activité ci-dessus pour la
+            rouvrir.
+          </ThemedText>
+        ) : (
+          <>
+            {/* The two real secondary actions share one compact row. Stacking
+                every action as a full-width 52pt block gave four bars of
+                identical weight and buried the one commitment among them. */}
+            <View style={styles.utilityRow}>
+              {session.sport === 'RUN' ? (
+                <UtilityAction
+                  label={pushMutation.isSuccess ? 'Envoyée ✓' : 'Vers ma montre'}
+                  busy={pushMutation.isPending}
+                  disabled={pushMutation.isSuccess}
+                  onPress={() =>
+                    pushMutation.mutate({
+                      session_type: session.type,
+                      duration_min: session.duration_min,
+                      structure: session.structure,
+                      pace_range: session.pace_range,
+                      hr_zone: session.hr_zone,
+                      rationale: session.rationale,
+                      week_number: weekNumber,
+                    })
+                  }
+                />
+              ) : null}
+              <UtilityAction
+                label={moving ? 'Annuler' : 'Déplacer'}
+                selected={moving}
+                onPress={() => setMoving((v) => !v)}
+              />
+              {/* Offered on runs too, unlike deleting: skipping says "not this
+                  week" without pretending the plan changed. On a key session it
+                  counts as missed straight away and feeds the replan suggestion. */}
+              <UtilityAction
+                label={session.skipped ? 'Reprendre' : 'Passer'}
+                selected={session.skipped}
+                busy={skipMutation.isPending}
+                onPress={() => skipMutation.mutate(!session.skipped)}
+              />
+              {/* A run is never deletable: losing one breaks the plan's
+                  guaranteed run count, which is a replan decision. The backend
+                  refuses it too — this only keeps the control from being offered. */}
+              {session.sport !== 'RUN' ? (
+                <UtilityAction
+                  label={confirmDelete ? 'Confirmer ?' : 'Supprimer'}
+                  danger
+                  selected={confirmDelete}
+                  busy={deleteMutation.isPending}
+                  onPress={() => {
+                    if (confirmDelete) deleteMutation.mutate();
+                    else setConfirmDelete(true);
+                  }}
+                />
+              ) : null}
+            </View>
+          </>
+        )}
 
         {moving ? (
           <View style={styles.moveRow}>

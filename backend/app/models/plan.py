@@ -174,6 +174,12 @@ class Session(BaseModel):
     # session stays in the plan, visibly struck through, because "I'm not doing
     # this one" is information the athlete wants to keep seeing.
     skipped: bool = False
+    # Runtime-only in the same way: true when the athlete has linked a recorded
+    # activity to this session. It rides on the session rather than being fetched
+    # per row because the week list already renders this object — asking the
+    # server "is this one done?" once per session would be a request per line for
+    # something the plan read already knows.
+    completed: bool = False
 
     @field_validator("sport", mode="before")
     @classmethod
