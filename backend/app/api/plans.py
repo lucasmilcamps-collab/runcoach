@@ -21,11 +21,13 @@ from app.models.plan import (
     SessionSkipRequest,
     TodaySession,
     Weekday,
+    WeekReconciliation,
 )
 from app.services import (
     plan_completion_service,
     plan_moves_service,
     plan_progress,
+    plan_reconcile_service,
     plan_service,
 )
 
@@ -151,6 +153,39 @@ async def plan_progress_endpoint(
     """Recent adherence + whether a replan is warranted (missed key sessions or
     persistent fatigue)."""
     return await plan_progress.compute_progress(db, str(user["_id"]))
+
+
+@router.get("/reconcile", response_model=WeekReconciliation)
+async def reconcile(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Sessions of elapsed weeks the athlete has neither validated nor declared
+    missed.
+
+    Not an error state and never a 404: with no plan it answers `has_pending:
+    false`. The app blocks on this, so it must not be able to block on the
+    absence of a plan."""
+    return await plan_reconcile_service.pending(db, str(user["_id"]))
+
+
+@router.post("/reconcile/confirm-all")
+async def reconcile_confirm_all(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Link every pending session that came with a suggested activity."""
+    return {"linked": await plan_reconcile_service.confirm_all_suggested(db, str(user["_id"]))}
+
+
+@router.post("/reconcile/skip-all")
+async def reconcile_skip_all(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Declare every remaining pending session not done. Reversible, like any
+    skip — the sessions stay in the plan, flagged."""
+    return {"skipped": await plan_reconcile_service.resolve_all_missed(db, str(user["_id"]))}
 
 
 @router.get("/session/link", response_model=SessionLinkInfo)
